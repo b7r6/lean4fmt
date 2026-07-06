@@ -4,9 +4,11 @@ A source-code formatter for Lean 4, targeting systems programming style.
 
 ## Status
 
-Skeleton works: `Parser → PrettyPrinter → Format → String` pipeline runs on
-simple files. Import resolution fails on files with complex dependencies —
-needs investigation.
+Working! The parser pipeline now handles all standard Lean 4 syntax including
+imports with complex dependencies.
+
+**Key insight**: The lakefile needs `supportInterpreter := true` to run module
+initializers when loading syntax extensions from imports.
 
 ## Architecture
 
@@ -238,11 +240,11 @@ let y := - x
 
 ## Implementation Phases
 
-### Phase 1: Make It Work
+### Phase 1: Make It Work ✓
 
-- [ ] Fix import resolution for complex files
+- [x] Fix import resolution for complex files
+- [x] Basic CLI: `--check`, `--write`, `--width`
 - [ ] Round-trip safety: parse → format → parse ≡ original AST
-- [ ] Basic CLI: `--check`, `--write`, `--width`
 - [ ] Handle all stdlib files without crashing
 
 ### Phase 2: Style Rules
@@ -287,16 +289,35 @@ Lean's `PrettyPrinter` module:
 The `Format` type is a tree of text, line breaks, and groups. The layout
 algorithm decides which groups to break based on available width.
 
-### Why Parsing Fails
+### Known Limitations
 
-Current hypothesis: `testParseModule` uses a fresh `ParserState` but the
-environment's syntax extensions may need additional setup. The `processHeader`
-call loads imports but something about the parser context is incomplete.
+**Multi-file processing**: Due to Lean's module initialization semantics,
+the `interpretedModInits` global tracks which modules have run their initializers.
+After processing one file, subsequent files may fail because Init's initializers
+won't run again. Workaround: use `xargs -n1` to invoke the formatter once per file.
 
-Investigation needed:
-- Compare with how `lake build` invokes the parser
-- Check if we need `initSearchPath` before `processHeader`
-- Look at `Lean.Elab.Frontend` for the full elaboration setup
+```bash
+find . -name '*.lean' | xargs -n1 lean4fmt --check
+```
+
+### Why Parsing Worked
+
+The fix required two things:
+
+1. **`enableInitializersExecution`**: Must be called before `processHeader` so
+   that `[init]` attributes run when loading modules. This registers syntax
+   extensions, macros, etc.
+
+2. **`supportInterpreter := true`**: In the lakefile's `lean_exe` declaration.
+   Without this, the compiled binary can't run the interpreted code that
+   registers syntax extensions. The error message is:
+   
+   ```
+   Could not find native implementation of external declaration 'IO.getRandomBytes'
+   ```
+
+The `opaque`/`@[implemented_by]` pattern lets us call `unsafe` functions like
+`enableInitializersExecution` from a safe `main`.
 
 ### Alternatives Considered
 

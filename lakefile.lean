@@ -17,6 +17,11 @@ open Lake DSL
 package «lean4fmt» where
   leanOptions := #[⟨`autoImplicit, false⟩]
 
+lean_lib «Lean4Fmt» where
+  roots := #[`Lean4Fmt.Emitter]
+
 @[default_target]
 lean_exe «lean4fmt» where
   root := `Lean4Fmt
+  -- Required to run module initializers when importing syntax extensions
+  supportInterpreter := true
