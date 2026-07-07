@@ -194,11 +194,14 @@ partial def isSimpleExpr (stx : Syntax) : Bool :=
   | .atom _ _ => true
   | .ident _ _ _ _ => true
   | .node _ kind args =>
-    -- Complex control flow - not simple
+    -- Complex control flow / layout-sensitive - not simple (must not be inlined)
     if kind == ``Lean.Parser.Term.doIf || kind == ``Lean.Parser.Term.doMatch ||
        kind == ``Lean.Parser.Term.do || kind == ``Lean.Parser.Term.let ||
        kind == ``Lean.Parser.Term.doLet || kind == ``Lean.Parser.Term.doFor ||
-       kind == ``Lean.Parser.Term.doSeqIndent || kind == ``Lean.Parser.Term.doSeqItem then false
+       kind == ``Lean.Parser.Term.doSeqIndent || kind == ``Lean.Parser.Term.doSeqItem ||
+       kind == ``Lean.Parser.Term.byTactic || kind == ``Lean.Parser.Term.have ||
+       kind == ``Lean.Parser.Term.show || kind == ``Lean.Parser.Term.suffices ||
+       kind == ``Lean.Parser.Term.letrec then false
     -- Match is only simple if it has few arms and simple bodies
     else if kind == ``Lean.Parser.Term.match then
       -- Allow simple matches (<=3 arms with simple bodies)
