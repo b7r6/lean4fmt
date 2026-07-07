@@ -245,8 +245,16 @@ partial def emitSyntax (stx : Syntax) : EmitterM Unit := do
 
 where
   emitNode (stx : Syntax) (kind : SyntaxNodeKind) (args : Array Syntax) : EmitterM Unit := do
+    -- Inline-prone term containers that carry a line comment must be reproduced
+    -- verbatim: flattening them would let the comment swallow following tokens
+    -- (list/ctor elements, applied args, match arms).
+    let inlineProne :=
+      kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.anonymousCtor ||
+      kind == ``Lean.Parser.Term.match ||
+      kind.toString == "«term[_]»" || kind.toString == "«term{_}»"
+    if inlineProne && hasLineComment stx then emitVerbatim stx
     -- Check for binary operators first
-    if isBinOp kind && args.size == 3 then
+    else if isBinOp kind && args.size == 3 then
       emitBinOp args
     -- Top-level
     else if kind == ``Lean.Parser.Module.module then emitModule args
