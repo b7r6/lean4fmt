@@ -115,15 +115,20 @@ def emitVerbatimStr (s : String) : EmitterM Unit := do
 def emitVerbatim (stx : Syntax) : EmitterM Unit := do
   match stx.reprint with
   | some s =>
+    -- Strip only trailing whitespace; KEEP the first line's leading indentation
+    -- so `emitVerbatimStr`'s base-indent computation (and thus re-anchoring) is a
+    -- fixed point across reformat passes. `t` (both ends) is only for the
+    -- emptiness / multi-line tests.
+    let sTrim := (s.trimAsciiEnd).toString
     let t := (s.trimAscii).toString
     if t.isEmpty then return
     if (t.any (· == '\n')) && !(← getState).inlineMode then
       newline
       modifyState fun st => { st with indentLevel := st.indentLevel + 1 }
-      emitVerbatimStr s
+      emitVerbatimStr sTrim
       modifyState fun st => { st with indentLevel := st.indentLevel - 1 }
     else
-      emitVerbatimStr s
+      emitVerbatimStr sTrim
   | none => pure ()
 
 
