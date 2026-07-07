@@ -151,7 +151,9 @@ def processLeading (stx : Syntax) : EmitterM Unit := do
     let atStart := st.output.isEmpty && st.pendingNewlines == 0
     let newlines := countNewlines leading
     if hasComment leading then
-      let trimmed := (leading.trimAsciiStart).toString
+      -- trim BOTH ends: keep the comment text, drop surrounding whitespace so
+      -- trailing newlines can't accumulate across reformat passes (idempotency)
+      let trimmed := (leading.trimAscii).toString
       if !trimmed.isEmpty then
         -- Don't add blank lines at file start
         if !atStart then
