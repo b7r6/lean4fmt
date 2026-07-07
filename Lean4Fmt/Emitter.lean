@@ -187,8 +187,26 @@ def isBinOp (kind : SyntaxNodeKind) : Bool :=
   let s := kind.toString
   s.startsWith "«term_" && (s.toList.filter (· == '_')).length >= 2
 
+/-- True if any token in the subtree carries a line comment (`-- …`) in its
+    trivia. Such subtrees must never be inlined/flattened: the comment would
+    swallow the rest of the line (e.g. an `else` branch or a match-arm body). -/
+partial def hasLineComment (stx : Syntax) : Bool :=
+  let inTrivia (info : SourceInfo) : Bool :=
+    match info with
+    | .original l _ t _ =>
+      let ls := Substring.Raw.toString l
+      let ts := Substring.Raw.toString t
+      (ls.splitOn "--").length > 1 || (ts.splitOn "--").length > 1
+    | _ => false
+  match stx with
+  | .atom info _ => inTrivia info
+  | .ident info _ _ _ => inTrivia info
+  | .node info _ args => inTrivia info || args.any hasLineComment
+  | .missing => false
+
 /-- Check if a syntax should be emitted inline (simple expressions without control flow) -/
 partial def isSimpleExpr (stx : Syntax) : Bool :=
+  if hasLineComment stx then false else
   match stx with
   | .missing => true
   | .atom _ _ => true
@@ -326,7 +344,10 @@ where
     else if kind == ``Lean.Parser.Term.doIfProp then emitDoIfProp args
     else if kind == ``Lean.Parser.Term.doIfLet then emitDoIfLet args
     else if kind == ``Lean.Parser.Term.doIfLetPure then emitDoIfLetPure args
-    else if kind.toString == "termIfThenElse" then emitTermIf args
+    else if kind.toString == "termIfThenElse" then
+      -- if a branch carries a line comment, inlining would let it swallow the
+      -- `else`; reproduce verbatim to preserve the original line breaks
+      if hasLineComment stx then emitVerbatim stx else emitTermIf args
     else if kind == `group then emitGroup args
     -- Strings and literals
     else if kind == `str then emitStr args
