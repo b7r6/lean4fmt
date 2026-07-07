@@ -123,10 +123,13 @@ def emitVerbatim (stx : Syntax) : EmitterM Unit := do
     let t := (s.trimAscii).toString
     if t.isEmpty then return
     if (t.any (· == '\n')) && !(← getState).inlineMode then
-      newline
-      modifyState fun st => { st with indentLevel := st.indentLevel + 1 }
+      -- ensure a fresh line, but do NOT add a blank if a newline is already
+      -- pending (avoids splitting a `let`/expression body from its head).
+      -- Emit at the CURRENT indent level (no extra nesting): a verbatim body
+      -- must stay column-aligned with its enclosing let-chain / continuation,
+      -- which some column-sensitive custom syntaxes require.
+      modifyState fun st => { st with pendingNewlines := Nat.max st.pendingNewlines 1, pendingSpace := false }
       emitVerbatimStr sTrim
-      modifyState fun st => { st with indentLevel := st.indentLevel - 1 }
     else
       emitVerbatimStr sTrim
   | none => pure ()
