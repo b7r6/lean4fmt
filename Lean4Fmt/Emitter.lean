@@ -81,6 +81,53 @@ def withInline {α : Type} (m : EmitterM α) : EmitterM α := do
   modifyState fun st => { st with inlineMode := oldInline }
   return result
 
+/-- Emit a block of pre-rendered source text, RE-ANCHORED to the current indent:
+    the block's own minimum indentation becomes the current indent level, and
+    internal relative indentation is preserved. This is what makes verbatim
+    reproduction safe for indentation-sensitive constructs (tactic blocks,
+    `let rec`, `where`) even when the surrounding signature has been reflowed. -/
+def emitVerbatimStr (s : String) : EmitterM Unit := do
+  let nonblank (l : String) : Bool := l.any (· != ' ')
+  -- split; drop leading/trailing blank lines
+  let mut ls := s.splitOn "\n"
+  ls := ls.dropWhile (fun l => !nonblank l)
+  ls := (ls.reverse.dropWhile (fun l => !nonblank l)).reverse
+  if ls.isEmpty then return
+  let indentOf (l : String) : Nat := (l.toList.takeWhile (· == ' ')).length
+  let base := (ls.filter nonblank).foldl (fun m l => Nat.min m (indentOf l)) 1000000
+  let base := if base == 1000000 then 0 else base
+  let st ← getState
+  let mut first := true
+  for l in ls do
+    let ded := if l.length ≥ base then String.ofList (l.toList.drop base) else l
+    if first then
+      emit ded; first := false
+    else if st.inlineMode then
+      -- inline context: fold newlines into single spaces (best-effort)
+      space; emit (ded.trimAsciiStart).toString
+    else
+      modifyState fun s => { s with pendingNewlines := s.pendingNewlines + 1, pendingSpace := false }
+      emit ded
+
+/-- Reproduce a syntax node's original source text (never mangles unhandled
+    constructs). Multi-line blocks start on a fresh, indented line and are
+    re-anchored; single-line blocks are emitted inline. -/
+def emitVerbatim (stx : Syntax) : EmitterM Unit := do
+  match stx.reprint with
+  | some s =>
+    let t := (s.trimAscii).toString
+    if t.isEmpty then return
+    if (t.any (· == '\n')) && !(← getState).inlineMode then
+      newline
+      modifyState fun st => { st with indentLevel := st.indentLevel + 1 }
+      emitVerbatimStr s
+      modifyState fun st => { st with indentLevel := st.indentLevel - 1 }
+    else
+      emitVerbatimStr s
+  | none => pure ()
+
+
+
 def getLeading (stx : Syntax) : Option String :=
   match stx.getHeadInfo with
   | .original leading .. => some (Substring.Raw.toString leading)
@@ -157,16 +204,18 @@ partial def emitSyntax (stx : Syntax) : EmitterM Unit := do
   | .missing => pure ()
   | .atom _info val => processLeading stx; emit val
   | .ident _info _rawVal name _ => processLeading stx; emit name.toString
-  | .node _info kind args => emitNode kind args
+  | .node _info kind args => emitNode stx kind args
 
 where
-  emitNode (kind : SyntaxNodeKind) (args : Array Syntax) : EmitterM Unit := do
+  emitNode (stx : Syntax) (kind : SyntaxNodeKind) (args : Array Syntax) : EmitterM Unit := do
     -- Check for binary operators first
     if isBinOp kind && args.size == 3 then
       emitBinOp args
     -- Top-level
     else if kind == ``Lean.Parser.Module.module then emitModule args
     else if kind == ``Lean.Parser.Module.header then emitHeader args
+    else if kind == ``Lean.Parser.Module.import then emitImport args
+    else if kind == ``Lean.Parser.Command.open then emitOpen args
     else if kind == ``Lean.Parser.Command.namespace then emitNamespace args
     else if kind == ``Lean.Parser.Command.end then emitEnd args
     -- Declarations
@@ -193,13 +242,14 @@ where
     else if kind == ``Lean.Parser.Command.derivingClass then emitDerivingClass args
     -- Instance
     else if kind == ``Lean.Parser.Command.instance then emitInstance args
-    else if kind == ``Lean.Parser.Command.whereStructInst then emitWhereStructInst args
+    else if kind == ``Lean.Parser.Command.whereStructInst then space; emitVerbatim stx
     else if kind == ``Lean.Parser.Term.structInstFields then for arg in args do emitSyntax arg
     else if kind == ``Lean.Parser.Term.structInstField then emitStructInstField args
     else if kind == ``Lean.Parser.Term.structInstLVal then emitStructInstLVal args
     else if kind == ``Lean.Parser.Term.structInstFieldDef then emitStructInstFieldDef args
     -- Value bindings
     else if kind == ``Lean.Parser.Command.declValSimple then emitDeclValSimple args
+    else if kind == ``Lean.Parser.Command.declValEqns then emitDeclValEqns args
     else if kind == ``Lean.Parser.Term.binderDefault then emitBinderDefault args
     -- Signature parts
     else if kind == ``Lean.Parser.Command.declSig then emitDeclSig args
@@ -211,9 +261,9 @@ where
     -- Binders
     else if kind == ``Lean.Parser.Term.explicitBinder then emitExplicitBinder args
     else if kind == ``Lean.Parser.Term.implicitBinder then emitImplicitBinder args
-    else if kind == ``Lean.Parser.Term.instBinder then emitInstBinder args
+    -- instBinder [Foo x] handled via verbatim fallback (spacing is subtle)
     -- Terms
-    else if kind == ``Lean.Parser.Term.app then emitApp args
+    else if kind == ``Lean.Parser.Term.app then emitApp stx args
     else if kind == ``Lean.Parser.Term.anonymousCtor then emitAnonCtor args
     else if kind == ``Lean.Parser.Term.forall then emitForall args
     else if kind == ``Lean.Parser.Term.arrow then emitArrow args
@@ -279,7 +329,9 @@ where
       if h : 0 < args.size then emitSyntax args[0]!
     -- Null and unknown
     else if kind == `null then for arg in args do emitSyntax arg
-    else for arg in args do emitSyntax arg
+    -- Anything we don't actively restyle: reproduce verbatim from source so it
+    -- is never mangled and always parses (tactics, where, calc, notations, …).
+    else emitVerbatim stx
 
   -- ─────────────────────────────────────────────────────────────────────────────
   -- Binary operators
@@ -303,6 +355,32 @@ where
 
   emitHeader (args : Array Syntax) : EmitterM Unit := do
     for arg in args do emitSyntax arg
+
+  emitImport (args : Array Syntax) : EmitterM Unit := do
+    -- Module.import = [_, _, ATOM "import", _, IDENT path, _] (plus optional modifiers)
+    let mut firstAtom := true
+    for a in args do
+      match a with
+      | .atom _ v =>
+        if firstAtom then processLeading a; emit v; firstAtom := false
+        else space; emit v
+      | .ident .. => space; emitSyntax a
+      | _ => pure ()  -- skip empty null modifier slots
+    newline
+
+  emitOpen (args : Array Syntax) : EmitterM Unit := do
+    -- Command.open = [ATOM "open", openSimple | openOnly | openHiding | ...]
+    if h : 0 < args.size then processLeading args[0]!
+    emit "open"
+    for i in [1:args.size] do
+      let a := args[i]!
+      if a.getKind == ``Lean.Parser.Command.openSimple then
+        -- null node of namespace idents; space-separate them
+        for sub in a.getArgs do
+          for id in sub.getArgs do space; emitSyntax id
+      else if !a.isNone then
+        space; emitSyntax a
+    newline
 
   emitNamespace (args : Array Syntax) : EmitterM Unit := do
     processLeading args[0]!; emit "namespace"; space; emitSyntax args[1]!; newline; blankLine
@@ -432,37 +510,46 @@ where
           emitSyntax typeArgs[1]!
     emit "}"
 
-  emitInstBinder (args : Array Syntax) : EmitterM Unit := do
-    emit "["; for i in [1:args.size-1] do emitSyntax args[i]!; emit "]"
-
   -- ─────────────────────────────────────────────────────────────────────────────
   -- Terms
   -- ─────────────────────────────────────────────────────────────────────────────
 
-  emitApp (args : Array Syntax) : EmitterM Unit := do
-    if h : 0 < args.size then emitSyntax args[0]
-    if h : 1 < args.size then
-      for arg in args[1]!.getArgs do
-        space
-        emitSyntax arg
+  emitApp (stx : Syntax) (args : Array Syntax) : EmitterM Unit := do
+    -- args[0] = fn, args[1] = null of argument terms
+    let fn := if h : 0 < args.size then args[0]! else Syntax.missing
+    let argList := if h : 1 < args.size then args[1]!.getArgs else #[]
+    -- If every part is simple, flatten to a single line (suppressing any stray
+    -- source newlines). Otherwise reproduce verbatim so a complex argument's
+    -- own layout (do/match/tactic) is preserved and never mangled.
+    if isSimpleExpr fn && argList.all isSimpleExpr then
+      withInline do
+        emitSyntax fn
+        for arg in argList do space; emitSyntax arg
+    else
+      emitVerbatim stx
 
   emitAnonCtor (args : Array Syntax) : EmitterM Unit := do
     emit "⟨"
     if h : 1 < args.size then
       let vals := args[1]!.getArgs
-      for i in [:vals.size] do
-        if i > 0 then emit ", "
-        emitSyntax vals[i]!
+      let mut first := true
+      for v in vals do
+        if v.isAtom then continue  -- skip existing comma separators
+        if !first then emit ", "
+        first := false
+        emitSyntax v
     emit "⟩"
 
   emitForall (args : Array Syntax) : EmitterM Unit := do
     -- args[0] = "∀", args[1] = binders (null), args[2] = type? (null), args[3] = ",", args[4] = body
     emit "∀"
     space
-    -- Emit binders
+    -- Emit binders (space-separated)
     if h : 1 < args.size then
-      for binder in args[1]!.getArgs do
-        emitSyntax binder
+      let binders := args[1]!.getArgs
+      for i in [:binders.size] do
+        if i > 0 then space
+        emitSyntax binders[i]!
     -- Type ascription if present (skip empty null)
     if h : 2 < args.size then
       let typeAsc := args[2]!
@@ -627,19 +714,6 @@ where
     if h : 5 < args.size then emitSyntax args[5]!
     blankLine
 
-  emitWhereStructInst (args : Array Syntax) : EmitterM Unit := do
-    -- args[0] = "where", args[1] = structInstFields, args[2] = optWhere?
-    space
-    emit "where"
-    newline
-    if h : 1 < args.size then
-      let fieldsNode := args[1]!
-      -- structInstFields has a null child containing the actual fields
-      if fieldsNode.getArgs.size > 0 then
-        let fields := fieldsNode.getArgs[0]!
-        for field in fields.getArgs do
-          emitSyntax field
-
   emitStructInstField (args : Array Syntax) : EmitterM Unit := do
     -- args[0] = structInstLVal (field name), args[1] = null with [binders?, type?, fieldDef]
     emit "  "  -- indent
@@ -682,6 +756,22 @@ where
     emit ":="
     space
     if h : 1 < args.size then emitSyntax args[1]!
+    -- termination_by / decreasing_by suffix (verbatim, indentation-sensitive)
+    if h : 2 < args.size then
+      let t := args[2]!
+      if !t.isNone && !(t.reprint.getD "").trimAscii.toString.isEmpty then space; emitVerbatim t
+    -- where clause (verbatim, indentation-sensitive)
+    if h : 3 < args.size then
+      let w := args[3]!
+      if !w.isNone && !(w.reprint.getD "").trimAscii.toString.isEmpty then space; emitVerbatim w
+
+  emitDeclValEqns (args : Array Syntax) : EmitterM Unit := do
+    -- equation-style body: `| pat => e | pat => e`
+    -- args[0] = matchAltsWhereDecls ([matchAlts, termination, where?])
+    newline
+    indent
+    for arg in args do emitSyntax arg
+    dedent
 
   emitBinderDefault (args : Array Syntax) : EmitterM Unit := do
     -- args[0] = ":=", args[1] = value
@@ -863,12 +953,17 @@ where
 
   emitBasicFun (args : Array Syntax) : EmitterM Unit := do
     -- args[0] = binders (null), args[1] = type? (null), args[2] = "=>", args[3] = body
-    -- Emit binders
+    -- Emit binders (idents, holes `_`, typed `(x : T)`, etc.) via emitSyntax
     if h : 0 < args.size then
-      for binder in args[0]!.getArgs do
-        if let .ident _ _ name _ := binder then
-          emit name.toString
-          space
+      let binders := args[0]!.getArgs
+      for i in [:binders.size] do
+        if i > 0 then space
+        emitSyntax binders[i]!
+    -- optional return-type ascription
+    if h : 1 < args.size then
+      let t := args[1]!
+      if !t.isNone then space; emitSyntax t
+    space
     emit "=>"
     space
     if h : 3 < args.size then emitSyntax args[3]!
