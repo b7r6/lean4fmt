@@ -113,7 +113,13 @@ def emitVerbatimStr (s : String) : EmitterM Unit := do
     constructs). Multi-line blocks start on a fresh, indented line and are
     re-anchored; single-line blocks are emitted inline. -/
 def emitVerbatim (stx : Syntax) : EmitterM Unit := do
-  match stx.reprint with
+  -- Prefer reprint; fall back to the exact original source slice (reliable even
+  -- when reprint is unavailable, e.g. some nodes after `updateLeading`).
+  let src? : Option String :=
+    match stx.reprint with
+    | some s => some s
+    | none => (stx.getSubstring? true false).map (·.toString)
+  match src? with
   | some s =>
     -- Strip only trailing whitespace; KEEP the first line's leading indentation
     -- so `emitVerbatimStr`'s base-indent computation (and thus re-anchoring) is a
@@ -259,7 +265,7 @@ where
     else if kind == ``Lean.Parser.Term.structInstFieldDef then emitStructInstFieldDef args
     -- Value bindings
     else if kind == ``Lean.Parser.Command.declValSimple then emitDeclValSimple args
-    else if kind == ``Lean.Parser.Command.declValEqns then emitDeclValEqns args
+    else if kind == ``Lean.Parser.Command.declValEqns then emitVerbatim stx
     else if kind == ``Lean.Parser.Term.binderDefault then emitBinderDefault args
     -- Signature parts
     else if kind == ``Lean.Parser.Command.declSig then emitDeclSig args
