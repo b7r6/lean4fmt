@@ -1073,13 +1073,13 @@ where
     space
     -- letDecl
     if h : 2 < args.size then emitSyntax args[2]!
-    -- body (continuation)
+    -- body (continuation): always on its own line. A newline here is safe —
+    -- processLeading on the continuation no-ops when a newline is already
+    -- pending, so this can't double, and it can't merge when the separating
+    -- newline lived in the value's trailing trivia.
     if h : 4 < args.size then
-      let body := args[4]!
-      -- If body is another let, only need one newline (not a blank line)
-      if body.getKind != ``Lean.Parser.Term.let then
-        newline
-      emitSyntax body
+      newline
+      emitSyntax args[4]!
 
   emitDoLet (args : Array Syntax) : EmitterM Unit := do
     -- args[0] = "let", args[1] = opt, args[2] = config, args[3] = letDecl
