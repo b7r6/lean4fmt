@@ -250,7 +250,7 @@ where
     -- (list/ctor elements, applied args, match arms).
     let inlineProne :=
       kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.anonymousCtor ||
-      kind == ``Lean.Parser.Term.match ||
+      kind == ``Lean.Parser.Term.match || kind == ``Lean.Parser.Term.structInst ||
       kind.toString == "«term[_]»" || kind.toString == "«term{_}»"
     if inlineProne && hasLineComment stx then emitVerbatim stx
     -- Check for binary operators first
