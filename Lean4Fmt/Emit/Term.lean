@@ -79,6 +79,18 @@ partial def emit (walk : Walk) (stx : Lean.Syntax) : EmitM Doc := do
           ++ .nest 2 (.line ++ thenB)
           ++ .line ++ .text "else"
           ++ .nest 2 (.line ++ elseB))
+    else if kind == ``Lean.Parser.Term.let then
+      -- [let, letConfig, letDecl, sep(`;`?), body]. The binding head (config +
+      -- decl + optional `;`) is reproduced token-for-token; the body — usually a
+      -- nested `let` (a chain) or the final expression — is walked and placed on
+      -- the next line at the SAME indent (Lean let-chains don't nest). The
+      -- hardline makes flatWidth=none, so the value always drops to its own line.
+      let cfgT := (((args[1]?.map bareSrc).getD "").trimAscii.toString)
+      let declDoc ← walk (args[2]?.getD .missing)
+      let sepT := (((args[3]?.map bareSrc).getD "").trimAscii.toString)
+      let bodyDoc ← walk (args[args.size-1]?.getD .missing)
+      let cfgDoc : Doc := if cfgT.isEmpty then .nil else .text cfgT ++ .space
+      return .text "let " ++ cfgDoc ++ declDoc ++ .text sepT ++ .hardline ++ bodyDoc
     else if kind == ``Lean.Parser.Term.hole then
       return .text "_"
     else if kind == `str || kind == `num || kind == `scientific || kind == `char then

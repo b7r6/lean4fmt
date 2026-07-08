@@ -68,6 +68,7 @@ private def isActiveMultiline (kind : SyntaxNodeKind) : Bool :=
     || kind == ``Lean.Parser.Term.app
     || kind == ``Lean.Parser.Term.anonymousCtor
     || kind.toString == "«term[_]»"
+    || kind == ``Lean.Parser.Term.let
 
 /-- `:= value` — actively format the value when it lays out flat (single line);
     for a ported active kind, compose `:=` + a width-aware group so the value sits
@@ -86,18 +87,16 @@ private def valDoc (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM D
     | some v =>
       if hasSuffix || hasWhere then return .space ++ (← verbatim declVal)
       let vdoc ← walk v
+      -- Active layout is safe (idempotent) exactly when the value contains no
+      -- multi-line verbatim block: active rendering then only emits
+      -- text/line/nest/hardline, never re-anchors an opaque block. Ported active
+      -- kinds (no line comment) lay out width-aware; anything with an embedded
+      -- multi-line opaque block falls back to the proven-safe whole-span.
+      if isActiveMultiline v.getKind && !Lean4Fmt.Syntax.subtreeHasLineComment v
+          && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
+        return .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
       match Lean4Fmt.Doc.flatWidth vdoc with
-      | some _ =>
-        -- The value flattens: it contains NO multi-line verbatim block, so active
-        -- width-aware layout only ever emits text/line/nest — no verbatim
-        -- re-anchoring, hence idempotent. Ported active kinds (no line comment)
-        -- lay out width-aware (value stays on the `:=` line if it fits, else drops
-        -- to an indented line and the construct breaks internally); everything
-        -- else stays dense-flat.
-        if isActiveMultiline v.getKind && !Lean4Fmt.Syntax.subtreeHasLineComment v then
-          return .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
-        else
-          return .text " := " ++ .flatten vdoc
+      | some _ => return .text " := " ++ .flatten vdoc          -- dense flat, no suffix
       | none => return .space ++ (← verbatim declVal)           -- multi-line: safe span
     | none => return .space ++ (← verbatim declVal)
   else

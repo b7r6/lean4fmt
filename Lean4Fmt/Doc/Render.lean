@@ -39,8 +39,21 @@ partial def flatWidth : Doc → Option Nat
   | .blank _ => none
   | .alignTable _ _ => none
 
-private def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')
-private def newlines (n : Nat) : String := String.ofList (List.replicate n '\n')
+/-- Whether a doc contains a multi-line opaque block (`verbatim`/`textRaw` with a
+    newline). Such blocks re-anchor by column, which is only idempotent at their
+    natural top-level position — so a subtree containing one must NOT be laid out
+    actively (it stays on the safe whole-span path). Hardlines are fine: they are
+    clean structural breaks, not re-anchored, so a hardline-bearing doc (let / do /
+    match) is still safe to render actively. -/
+partial def hasMultilineVerbatim : Doc → Bool
+  | .verbatim s _ => s.any (· == '\n')
+  | .textRaw s => s.any (· == '\n')
+  | .cat a b => hasMultilineVerbatim a || hasMultilineVerbatim b
+  | .group d | .nest _ d | .align d | .flatten d => hasMultilineVerbatim d
+  | .alignTable _ rows => rows.any (·.any hasMultilineVerbatim)
+  | _ => false
+
+private def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')private def newlines (n : Nat) : String := String.ofList (List.replicate n '\n')
 
 private structure RSt where
   out  : String := ""
