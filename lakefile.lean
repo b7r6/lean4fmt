@@ -18,7 +18,7 @@ package «lean4fmt» where
   leanOptions := #[⟨`autoImplicit, false⟩]
 
 lean_lib «Lean4Fmt» where
-  roots := #[`Lean4Fmt.Emitter]
+  roots := #[`Lean4Fmt.Emitter, `Lean4Fmt.Frontend]
 
 @[default_target]
 lean_exe «lean4fmt» where

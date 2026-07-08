@@ -3,26 +3,31 @@
                                                                      // LEAN4FMT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    A source-code formatter for Lean 4, on the real frontend:
+    A source-code formatter for Lean 4.
 
-        Source → Parser → Syntax → PrettyPrinter → Format → String
+        source → Frontend.parse → Syntax → Emitter → String
+                                            └─ wrapped in the runtime SAFETY GATE
+                                               (token-preserving, idempotent, or
+                                                degrade to identity)
 
-    Uses `enableInitializersExecution` to load syntax extensions from imports,
-    so it handles all standard Lean syntax including notation, macros, etc.
+    The gate (Frontend.formatSafe) guarantees the output is never worse than the
+    input: a file whose formatting would change meaning — or that we cannot parse
+    — is emitted unchanged. So `lean4fmt` is safe to run across a whole tree.
 
-    Requires `supportInterpreter := true` in lakefile to run module initializers.
+    Requires `supportInterpreter := true` in the lakefile to run module
+    initializers when loading syntax extensions from imports.
 
-    LIMITATION: Due to Lean's module initialization semantics (initializers run
-    once per process), formatting multiple files in one invocation may fail.
-    Use `xargs -n1` or call once per file.
+    LIMITATION: Lean's module initialization runs once per process, so formatting
+    multiple files in one invocation can fail on the second. Use `xargs -n1` or
+    call once per file.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
 import Lean
+import Lean4Fmt.Emitter
+import Lean4Fmt.Frontend
 
 open Lean
-open Lean.Elab
-open Lean.PrettyPrinter
 
 inductive Mode where
   | format  -- print to stdout (default)
@@ -44,39 +49,20 @@ def parseArgs (args : List String) : IO (Mode × Nat × List String) := do
     | [] => break
   return (mode, width, files)
 
-/-- Format a single file. Returns the formatted source as a string. -/
-unsafe def formatFileImpl (path : String) (width : Nat) : IO String := do
-  let contents ← IO.FS.readFile path
-  let inputCtx := Parser.mkInputContext contents path
-
-  -- Parse header to find imports
-  let (header, _, msgs) ← Parser.parseHeader inputCtx
-
-  -- Process header — loads .olean files, builds Environment with syntax extensions
-  let (env, _) ← processHeader header {} msgs inputCtx (trustLevel := 1024)
-
-  -- Re-parse full file with enriched environment
-  let stx ← Parser.testParseModule env path contents
-
-  -- Propagate leading whitespace to syntax nodes (preserves comments)
-  let stx := stx.updateLeading
-
-  -- Pretty-print: Syntax → Format → String
-  let ctx : Core.Context := { fileName := path, fileMap := FileMap.ofString contents }
-  let state : Core.State := { env }
-  let (fmt, _) ← (ppModule ⟨stx⟩).toIO ctx state
-  return fmt.pretty width
-
-@[implemented_by formatFileImpl]
-opaque formatFile (path : String) (width : Nat) : IO String
-
 unsafe def initEnvImpl : IO Unit := do
   initSearchPath (← findSysroot)
-  -- Required before importing modules with syntax extensions
+  -- required before importing modules with syntax extensions
   enableInitializersExecution
 
 @[implemented_by initEnvImpl]
 opaque initEnv : IO Unit
+
+unsafe def formatFileImpl (path : String) (width : Nat) : IO String := do
+  let contents ← IO.FS.readFile path
+  Lean4Fmt.Frontend.formatFile path contents { lineWidth := width }
+
+@[implemented_by formatFileImpl]
+opaque formatFile (path : String) (width : Nat) : IO String
 
 def main (args : List String) : IO Unit := do
   let (mode, width, files) ← parseArgs args
@@ -97,14 +83,18 @@ def main (args : List String) : IO Unit := do
       | .format => IO.print output
       | .check =>
         let original ← IO.FS.readFile file
-        if output.trimAsciiEnd.toString != original.trimAsciiEnd.toString then
+        if output != original then
           (← IO.getStderr).putStrLn s!"Would reformat: {file}"
           failed := true
         else
           (← IO.getStderr).putStrLn s!"OK: {file}"
       | .write =>
-        IO.FS.writeFile file output
-        (← IO.getStderr).putStrLn s!"Formatted: {file}"
+        let original ← IO.FS.readFile file
+        if output != original then
+          IO.FS.writeFile file output
+          (← IO.getStderr).putStrLn s!"Formatted: {file}"
+        else
+          (← IO.getStderr).putStrLn s!"Unchanged: {file}"
     catch e =>
       (← IO.getStderr).putStrLn s!"Error: {file}: {toString e}"
       failed := true
