@@ -16,21 +16,22 @@ namespace Lean4Fmt.Emit.Module
 
 open Lean Lean4Fmt.Doc
 
-/-- Emit a whole module: header verbatim, then each command via `walk` (which
-    dispatches per-command — handled kinds format, the rest pass through). -/
+/-- Emit a whole module: each form (header + commands) as
+    `leading ++ walk(bare) ++ trailing`. Since leading[next] and trailing[prev]
+    partition the inter-form gap exactly, forms tile byte-exactly — handled kinds
+    are actively formatted, the rest reproduced verbatim. Per-form granularity. -/
 def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
   let args := stx.getArgs
-  let headerDoc ← match args[0]? with
-    | some h => Lean4Fmt.Emit.passthrough h
-    | none => pure .nil
+  let unit (c : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
+    pure (Lean4Fmt.Emit.leadingRaw c ++ (← walk c) ++ Lean4Fmt.Emit.trailingRaw c)
+  let mut acc : Doc := .nil
+  match args[0]? with
+  | some h => acc := (← unit h)
+  | none => pure ()
   let cmds := (args[1]?.map (·.getArgs)).getD #[]
-  let mut acc := headerDoc
   for c in cmds do
     if c.getKind == ``Lean.Parser.Command.eoi then continue
-    -- leading trivia (comments/blanks) placed literally by the module; `walk`
-    -- returns the bare form — so unhandled forms tile byte-exactly and handled
-    -- forms are actively formatted. Per-top-level-form granularity.
-    acc := acc ++ Lean4Fmt.Emit.leadingRaw c ++ (← walk c)
+    acc := acc ++ (← unit c)
   return acc
 
 end Lean4Fmt.Emit.Module

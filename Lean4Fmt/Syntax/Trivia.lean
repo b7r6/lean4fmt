@@ -21,6 +21,13 @@ def leading? (stx : Lean.Syntax) : Option String :=
   | .original leading .. => some (Substring.Raw.toString leading)
   | _ => none
 
+/-- Trailing trivia string of a syntax's tail token, if original. Together with
+    the next form's leading this partitions the inter-form gap exactly. -/
+def trailing? (stx : Lean.Syntax) : Option String :=
+  match stx.getTailInfo with
+  | .original _ _ trailing _ => some (Substring.Raw.toString trailing)
+  | _ => none
+
 /-- Does a trivia string contain a line comment `-- …`? (block comments `/- -/`
     are safe; only line comments eat the rest of the line — §0.4). -/
 def hasLineComment (s : String) : Bool := (s.splitOn "--").length > 1

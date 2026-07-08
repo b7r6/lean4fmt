@@ -54,4 +54,9 @@ def passthrough (stx : Lean.Syntax) : EmitM Doc :=
 def leadingRaw (stx : Lean.Syntax) : Doc :=
   .textRaw (Lean4Fmt.Syntax.leading? stx |>.getD "")
 
+/-- The trailing trivia after a form, as literal text. `leadingRaw next` +
+    `trailingRaw prev` partition the inter-form gap exactly. -/
+def trailingRaw (stx : Lean.Syntax) : Doc :=
+  .textRaw (Lean4Fmt.Syntax.trailing? stx |>.getD "")
+
 end Lean4Fmt.Emit
