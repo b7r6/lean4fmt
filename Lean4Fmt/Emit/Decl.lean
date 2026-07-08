@@ -65,10 +65,12 @@ private def sigDoc (sig : Lean.Syntax) : EmitM Doc := do
     conservative verbatim-span path. Grows as constructs are ported. -/
 private def isActiveMultiline (kind : SyntaxNodeKind) : Bool :=
   kind.toString == "termIfThenElse"
+    || kind.toString == "termDepIfThenElse"
     || kind == ``Lean.Parser.Term.app
     || kind == ``Lean.Parser.Term.anonymousCtor
     || kind.toString == "«term[_]»"
     || kind == ``Lean.Parser.Term.let
+    || kind == ``Lean.Parser.Term.match
 
 /-- `:= value` — actively format the value when it lays out flat (single line);
     for a ported active kind, compose `:=` + a width-aware group so the value sits

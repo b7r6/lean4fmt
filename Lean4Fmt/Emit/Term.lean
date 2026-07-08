@@ -91,6 +91,43 @@ partial def emit (walk : Walk) (stx : Lean.Syntax) : EmitM Doc := do
       let bodyDoc ← walk (args[args.size-1]?.getD .missing)
       let cfgDoc : Doc := if cfgT.isEmpty then .nil else .text cfgT ++ .space
       return .text "let " ++ cfgDoc ++ declDoc ++ .text sepT ++ .hardline ++ bodyDoc
+    else if kind == ``Lean.Parser.Term.match then
+      -- [match, motive?, motive?, discrs, "with", matchAlts]. Reproduce the head
+      -- `match <discrs> with` token-for-token; lay each arm `| pat => body` on its
+      -- own line at the match's indent, the body width-aware after `=>`. Patterns
+      -- are walked (opaque, so a multi-line pattern trips the valDoc gate to the
+      -- safe span). Guarded: any structural surprise falls back to verbatim.
+      let midParts := (#[args[1]?, args[2]?, args[3]?].filterMap id).toList.filterMap
+        (fun s => let t := (bareSrc s).trimAscii.toString; if t.isEmpty then none else some t)
+      let head := "match " ++ String.intercalate " " midParts ++ " with"
+      let some altsNode := args[5]? | return (← verbatim stx)
+      let mut alts : Array Lean.Syntax := #[]
+      for g in altsNode.getArgs do
+        for c in g.getArgs do
+          if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+      if alts.isEmpty || head.any (· == '\n') then return (← verbatim stx)
+      let mut armsDoc : Doc := .nil
+      let mut first := true
+      for alt in alts do
+        let aa := alt.getArgs
+        let patDoc ← walk (aa[1]?.getD .missing)
+        let bodyDoc ← walk (aa[aa.size-1]?.getD .missing)
+        let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ .group (.nest 2 (.line ++ bodyDoc))
+        armsDoc := armsDoc ++ (if first then .nil else .hardline) ++ armDoc
+        first := false
+      return .text head ++ .hardline ++ armsDoc
+    else if kind.toString == "termDepIfThenElse" then
+      -- [if, binderIdent, :, cond, then, thenBranch, else, elseBranch] — the
+      -- dependent `if h : c then … else …`; same layout as termIfThenElse.
+      let binder ← walk (args[1]?.getD .missing)
+      let cond ← walk (args[3]?.getD .missing)
+      let thenB ← walk (args[5]?.getD .missing)
+      let elseB ← walk (args[args.size-1]?.getD .missing)
+      return .group (
+        .text "if " ++ binder ++ .text " : " ++ cond ++ .text " then"
+          ++ .nest 2 (.line ++ thenB)
+          ++ .line ++ .text "else"
+          ++ .nest 2 (.line ++ elseB))
     else if kind == ``Lean.Parser.Term.hole then
       return .text "_"
     else if kind == `str || kind == `num || kind == `scientific || kind == `char then
