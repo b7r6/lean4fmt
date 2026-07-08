@@ -22,6 +22,7 @@ import Lean4Fmt.Emit.Command
 import Lean4Fmt.Emit.Term
 import Lean4Fmt.Emit.DoNotation
 import Lean4Fmt.Emit.Tactic
+import Lean4Fmt.Syntax.Kinds
 
 namespace Lean4Fmt.Emit
 
@@ -41,7 +42,15 @@ partial def walk (stx : Lean.Syntax) : EmitM Doc := do
       Command.emit walk stx
     else if kind == ``Lean.Parser.Term.do then DoNotation.emit walk stx
     else if kind == ``Lean.Parser.Term.byTactic then Tactic.emit walk stx
-    else if kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.let then
+    -- expression constructs → Term (flat, comment-guarded; else verbatim)
+    else if Lean4Fmt.Syntax.isBinOp kind
+         || kind == ``Lean.Parser.Term.app
+         || kind == ``Lean.Parser.Term.paren
+         || kind == ``Lean.Parser.Term.proj
+         || kind == ``Lean.Parser.Term.dotIdent
+         || kind == ``Lean.Parser.Term.anonymousCtor
+         || kind == ``Lean.Parser.Term.hole
+         || kind.toString == "«term[_]»" then
       Term.emit walk stx
     -- default: reproduce verbatim (safe; §4.1)
     else verbatim stx

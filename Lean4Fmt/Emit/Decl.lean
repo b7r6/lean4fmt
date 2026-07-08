@@ -43,20 +43,34 @@ private def sigDoc (sig : Lean.Syntax) : EmitM Doc := do
   | none => pure ()
   return d
 
-/-- `:= value` — reproduce the whole `declValSimple` span (`:=` … value …
-    termination/where) as one re-anchored block with `:=` as the anchor line.
-    This keeps the `:=`↔value separator (which may hide in `:=`'s trailing
-    trivia) and the value's multi-line indentation correct, idempotently. -/
-private def valDoc (declVal : Lean.Syntax) : EmitM Doc := do
-  return .space ++ (← verbatim declVal)
+/-- `:= value` — actively format the value when it lays out flat (single line);
+    otherwise reproduce the whole `declValSimple` span (`:=` as anchor line),
+    which keeps the separator and multi-line indentation correct. -/
+private def valDoc (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM Doc := do
+  if declVal.getKind == ``Lean.Parser.Command.declValSimple then
+    let a := declVal.getArgs
+    -- a[2] = termination suffix, a[3] = where clause — if either is present we must
+    -- reproduce the whole span (walking only the value would drop them).
+    let hasSuffix := (a[2]?.map (fun s => !(bareSrc s).trimAscii.toString.isEmpty)).getD false
+    let hasWhere := (a[3]?.map (fun s => !s.getArgs.isEmpty)).getD false
+    match a[1]? with
+    | some v =>
+      if hasSuffix || hasWhere then return .space ++ (← verbatim declVal)
+      let vdoc ← walk v
+      match Lean4Fmt.Doc.flatWidth vdoc with
+      | some _ => return .text " := " ++ .flatten vdoc          -- flat value, no suffix
+      | none => return .space ++ (← verbatim declVal)           -- multi-line: safe span
+    | none => return .space ++ (← verbatim declVal)
+  else
+    return .space ++ (← verbatim declVal)   -- declValEqns / where-struct: literal span
 
 /-- Format the inner definition node `[kw, declId, sig, declVal, …]`. -/
-private def defnDoc (defn : Lean.Syntax) : EmitM Doc := do
+private def defnDoc (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : EmitM Doc := do
   let a := defn.getArgs
   let kw := match a[0]? with | some (.atom _ v) => v | _ => "def"
-  let declId := (a[1]?.map bareSrc).getD ""       -- name (+ univ params), bare
+  let declId := (a[1]?.map bareSrc).getD ""
   let sig ← match a[2]? with | some s => sigDoc s | none => pure .nil
-  let val ← match a[3]? with | some v => valDoc v | none => pure .nil
+  let val ← match a[3]? with | some v => valDoc walk v | none => pure .nil
   return .text kw ++ .space ++ .text declId ++ sig ++ val
 
 /-- Emit a declaration (bare — `Module` places its leading trivia), recursing
@@ -64,17 +78,15 @@ private def defnDoc (defn : Lean.Syntax) : EmitM Doc := do
     `where`-instance / equation / other value forms reproduce whole-verbatim
     (their sig↔value boundary trivia is subtle — deferred to later depth). -/
 def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
-  let _ := walk
   let a := stx.getArgs
   let some defn := a[1]? | return (← verbatim stx)
   let dargs := defn.getArgs
   let isSimpleVal := (dargs[3]?.map (·.getKind)) == some ``Lean.Parser.Command.declValSimple
   if !isDefShape defn.getKind || !isSimpleVal then
     return (← verbatim stx)     -- structure/inductive/instance/where/eqns: reproduce
-  -- modifiers (doc comment / attrs / visibility) — reproduce bare, then a space
   let modsDoc : Doc := match a[0]? with
     | some m => let s := bareSrc m; if s.trimAscii.toString.isEmpty then .nil else .text s ++ .space
     | none => .nil
-  return modsDoc ++ (← defnDoc defn)
+  return modsDoc ++ (← defnDoc walk defn)
 
 end Lean4Fmt.Emit.Decl
