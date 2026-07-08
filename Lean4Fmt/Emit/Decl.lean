@@ -45,20 +45,34 @@ private def isDefShape (kind : SyntaxNodeKind) : Bool :=
     || kind == ``Lean.Parser.Command.opaque
     || kind == ``Lean.Parser.Command.example
 
-/-- Reflow an `optDeclSig`/`declSig` = [binders, typeSpec?] with normalized
-    single spaces on one line (Straylight is horizontally dense; a width-aware
-    signature-breaking policy is §Breaking depth work). -/
+/-- Reflow an `optDeclSig`/`declSig` = [binders, typeSpec?]. Binders stay inline
+    (space-joined); the return type is laid out with a break-AFTER-colon policy
+    (Style.breaking.colon = .breakAfter): `name binders : τ` on one line if it
+    fits, else the colon ends the line and `τ` drops to a continuationIndent-
+    indented line — the house style for long signatures. Only single-line types
+    break this way; a multi-line (verbatim) type stays inline (re-anchoring it
+    inside a nest could drift). Binder-fill wrapping is deferred. -/
 private def sigDoc (sig : Lean.Syntax) : EmitM Doc := do
   let a := sig.getArgs
   let binders := (a[0]?.map (·.getArgs)).getD #[]
-  let mut d : Doc := .nil
+  let mut bdoc : Doc := .nil
   for b in binders do
-    d := d ++ .space ++ (← verbatim b)
-  -- typeSpec (": τ") — space before the colon
-  match a[1]? with
-  | some ts => if !ts.getArgs.isEmpty then d := d ++ .space ++ (← verbatim ts)
-  | none => pure ()
-  return d
+    bdoc := bdoc ++ .space ++ (← verbatim b)
+  -- locate the typeSpec node (declSig: direct; optDeclSig: wrapped in a null)
+  let tsNode : Option Lean.Syntax := a[1]?.bind (fun x =>
+    if x.getKind == ``Lean.Parser.Term.typeSpec then some x else x.getArgs[0]?)
+  match tsNode with
+  | some ts =>
+    if ts.getKind == ``Lean.Parser.Term.typeSpec then
+      let tdoc ← verbatim (ts.getArgs[1]?.getD .missing)
+      let cont := (← read).layout.continuationIndent
+      if Lean4Fmt.Doc.hasMultilineVerbatim tdoc then
+        return bdoc ++ .space ++ (← verbatim ts)          -- multi-line type: inline
+      else
+        return bdoc ++ .group (.text " :" ++ .nest cont (.line ++ tdoc))
+    else
+      return bdoc ++ .space ++ (← verbatim ts)            -- unexpected shape: inline
+  | none => return bdoc
 
 /-- Value kinds we actively lay out even when they span multiple lines (their own
     `walk` produces a width-aware breaking `group`). Everything else keeps the
