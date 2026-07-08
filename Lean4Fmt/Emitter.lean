@@ -10,6 +10,9 @@ namespace Lean4Fmt
 
 open Lean
 
+-- the emitNode dispatch is a very long if/else chain; give the elaborator room
+set_option maxRecDepth 100000
+
 structure StyleConfig where
   lineWidth : Nat := 100
   indent : Nat := 2
