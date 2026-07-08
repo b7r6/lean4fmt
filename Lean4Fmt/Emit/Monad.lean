@@ -33,12 +33,25 @@ def emitDiag (d : Rules.Diagnostic) : EmitM Unit := modify (·.push d)
     recurse into children without cross-module mutual recursion. -/
 abbrev Walk := Lean.Syntax → EmitM Doc
 
+/-- Bare source of a form (no leading/trailing trivia). -/
+def bareSrc (stx : Lean.Syntax) : String :=
+  (stx.getSubstring? false false).map (·.toString) |>.getD ""
+
 /-- Opaque reproduction (§4.1): the safe default for any construct not yet
-    actively formatted. Reproduces the original source as a re-anchorable
-    `verbatim` doc. -/
+    actively formatted. Reproduces the BARE original source as a re-anchorable
+    `verbatim` doc (leading trivia is placed by the caller / `Module`). -/
 def verbatim (stx : Lean.Syntax) : EmitM Doc :=
-  match Lean4Fmt.Syntax.verbatimSrc? stx with
-  | some s => pure (.verbatim s 0)
-  | none => pure .nil
+  let s := bareSrc stx
+  if s.isEmpty then
+    match stx.reprint with | some r => pure (.verbatim r 0) | none => pure .nil
+  else pure (.verbatim s 0)
+
+/-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
+def passthrough (stx : Lean.Syntax) : EmitM Doc :=
+  pure (.textRaw ((stx.getSubstring? true false).map (·.toString) |>.getD ""))
+
+/-- The leading trivia (comments + blank lines) before a form, as literal text. -/
+def leadingRaw (stx : Lean.Syntax) : Doc :=
+  .textRaw (Lean4Fmt.Syntax.leading? stx |>.getD "")
 
 end Lean4Fmt.Emit

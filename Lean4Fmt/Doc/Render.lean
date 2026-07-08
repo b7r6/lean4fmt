@@ -83,7 +83,12 @@ partial def render (style : Style) (doc : Doc) : String :=
     match d with
     | .nil => st
     | .text s => wr st indent s
-    | .textRaw s => wrBlock st indent s
+    | .textRaw s =>
+      -- literal, byte-exact emission (used for passthrough of whole forms and
+      -- inter-form trivia): flush pending, append verbatim, track last-line col.
+      let st := if st.pend > 0
+        then { out := st.out ++ newlines st.pend ++ spaces indent, col := indent, pend := 0 } else st
+      { st with out := st.out ++ s, col := ((s.splitOn "\n").getLast!).length }
     | .verbatim s _ => wrBlock st indent s
     | .cat a b => go b indent flat (go a indent flat st)
     | .line => if flat then wr st indent " " else { st with pend := Nat.min (st.pend + 1) maxPend }
