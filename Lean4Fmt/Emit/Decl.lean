@@ -20,6 +20,23 @@ namespace Lean4Fmt.Emit.Decl
 
 open Lean Lean4Fmt.Doc Lean4Fmt.Emit
 
+/-- Emit a declaration's `declModifiers` = [docComment?, attributes?, visibility?,
+    …]. The doc comment (always first) goes on its own line (literal `textRaw` —
+    it may be multi-line — then a `hardline`); the remaining modifiers
+    (attributes/visibility/…) sit on the declaration's own line, space-joined,
+    followed by a single space before the keyword. This fixes the v1-era gluing of
+    `/-- … -/` onto the `def` line while staying token-preserving and idempotent
+    (decls sit at column 0, so the literal doc comment re-emits byte-exactly). -/
+private def modifiersDoc (m : Lean.Syntax) : Doc := Id.run do
+  let margs := m.getArgs
+  let docText := (margs[0]?.map bareSrc).getD "" |>.trimAscii.toString
+  let restParts := (margs.toList.drop 1).filterMap (fun c =>
+    let s := (bareSrc c).trimAscii.toString; if s.isEmpty then none else some s)
+  let docDoc : Doc := if docText.isEmpty then .nil else .textRaw docText ++ .hardline
+  let restDoc : Doc :=
+    if restParts.isEmpty then .nil else .text (String.intercalate " " restParts) ++ .space
+  return docDoc ++ restDoc
+
 /-- Keyword-led definition shapes we actively format. -/
 private def isDefShape (kind : SyntaxNodeKind) : Bool :=
   kind == ``Lean.Parser.Command.definition
@@ -104,7 +121,7 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
   if !isDefShape defn.getKind || !isSimpleVal then
     return (← verbatim stx)     -- structure/inductive/instance/where/eqns: reproduce
   let modsDoc : Doc := match a[0]? with
-    | some m => let s := bareSrc m; if s.trimAscii.toString.isEmpty then .nil else .text s ++ .space
+    | some m => modifiersDoc m
     | none => .nil
   return modsDoc ++ (← defnDoc walk defn)
 
