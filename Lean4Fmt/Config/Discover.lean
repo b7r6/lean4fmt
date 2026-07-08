@@ -1,14 +1,23 @@
 /-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                          // LEAN4FMT // FRONTEND
+                                                  // LEAN4FMT // CONFIG // DISCOVER
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Barrel for the impure boundary (DESIGN_V2 §11): quiet parsing (Parse), the
-    runtime safety gate (Gate), and the interleaved-elaboration research surface
-    (Session). Public entry point: `Lean4Fmt.Frontend.formatFile`.
+    Walk up the directory tree for `.lean4fmt.lean` (like `.clang-format`).
+    DESIGN_V2 §5/§11.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
-import Lean4Fmt.Frontend.Parse
-import Lean4Fmt.Frontend.Gate
-import Lean4Fmt.Frontend.Session
+import Lean
+
+namespace Lean4Fmt.Config
+
+/-- Find the nearest `.lean4fmt.lean` at or above `start`. -/
+partial def discover (start : System.FilePath) : IO (Option System.FilePath) := do
+  let cand := start / ".lean4fmt.lean"
+  if ← cand.pathExists then return some cand
+  match start.parent with
+  | some p => if p == start then return none else discover p
+  | none => return none
+
+end Lean4Fmt.Config

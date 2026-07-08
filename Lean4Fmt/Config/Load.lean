@@ -1,14 +1,20 @@
 /-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                          // LEAN4FMT // FRONTEND
+                                                      // LEAN4FMT // CONFIG // LOAD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Barrel for the impure boundary (DESIGN_V2 §11): quiet parsing (Parse), the
-    runtime safety gate (Gate), and the interleaved-elaboration research surface
-    (Session). Public entry point: `Lean4Fmt.Frontend.formatFile`.
+    Elaborate a `.lean4fmt.lean` config to a `StylePatch` (DESIGN_V2 §5). Config
+    is Lean source that evaluates to a `StylePatch`, so there is no config parser.
+    SCAFFOLD: returns the empty patch until the config elaboration path lands.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
-import Lean4Fmt.Frontend.Parse
-import Lean4Fmt.Frontend.Gate
-import Lean4Fmt.Frontend.Session
+import Lean
+import Lean4Fmt.Style
+
+namespace Lean4Fmt.Config
+
+/-- Load a config file to a `StylePatch`. SCAFFOLD (no-op patch). -/
+def load (_path : System.FilePath) : IO Lean4Fmt.Style.StylePatch := pure {}
+
+end Lean4Fmt.Config

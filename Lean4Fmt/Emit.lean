@@ -1,0 +1,58 @@
+/-
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                                             // LEAN4FMT // EMIT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    The walker: `Syntax → Doc` (DESIGN_V2 §2/§11). `walk` is the single recursive
+    function; it dispatches on syntax kind to the per-category open-recursion
+    emitters (`Emit/Module`, `Emit/Term`, …), passing itself so they can recurse.
+
+    SCAFFOLD: every kind currently routes to verbatim reproduction (§4.1) — a
+    safe, meaning-preserving no-op. Active formatting is filled in category by
+    category; the safety gate (Frontend) guarantees correctness throughout.
+
+    Pure. Depends on Doc, Style, Syntax, Rules.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-/
+
+import Lean4Fmt.Emit.Monad
+import Lean4Fmt.Emit.Module
+import Lean4Fmt.Emit.Decl
+import Lean4Fmt.Emit.Command
+import Lean4Fmt.Emit.Term
+import Lean4Fmt.Emit.DoNotation
+import Lean4Fmt.Emit.Tactic
+
+namespace Lean4Fmt.Emit
+
+open Lean Lean4Fmt.Doc Lean4Fmt.Style
+
+/-- The single recursive walker. Dispatches to category emitters; falls back to
+    verbatim reproduction for anything not yet actively formatted. -/
+partial def walk (stx : Lean.Syntax) : EmitM Doc := do
+  match stx with
+  | .missing => pure .nil
+  | .atom _ v => pure (.text v)
+  | .ident _ _ n _ => pure (.text n.toString)
+  | .node _ kind _ =>
+    if kind == ``Lean.Parser.Module.module then Module.emit walk stx
+    else if kind == ``Lean.Parser.Command.declaration then Decl.emit walk stx
+    else if kind == ``Lean.Parser.Command.structure || kind == ``Lean.Parser.Command.inductive then
+      Command.emit walk stx
+    else if kind == ``Lean.Parser.Term.do then DoNotation.emit walk stx
+    else if kind == ``Lean.Parser.Term.byTactic then Tactic.emit walk stx
+    else if kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.let then
+      Term.emit walk stx
+    -- default: reproduce verbatim (safe; §4.1)
+    else verbatim stx
+
+/-- Format a whole module to a `Doc` plus collected diagnostics, under `style`. -/
+def run (style : Style) (stx : Lean.Syntax) : Doc × Array Rules.Diagnostic :=
+  (walk stx |>.run style).run #[]
+
+/-- Convenience: format a module directly to a string. -/
+def format (style : Style) (stx : Lean.Syntax) : String × Array Rules.Diagnostic :=
+  let (doc, diags) := run style stx
+  (Lean4Fmt.Doc.render style doc, diags)
+
+end Lean4Fmt.Emit

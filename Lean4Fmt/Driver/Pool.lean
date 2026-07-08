@@ -1,14 +1,14 @@
 /-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                          // LEAN4FMT // FRONTEND
+                                                       // LEAN4FMT // DRIVER // Pool
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Barrel for the impure boundary (DESIGN_V2 §11): quiet parsing (Parse), the
-    runtime safety gate (Gate), and the interleaved-elaboration research surface
-    (Session). Public entry point: `Lean4Fmt.Frontend.formatFile`.
+    Shared-nothing core-pinned workers via StdlibEx.IOUring.Mesh + Fifo (§11.1 stage 4; incubator §11.2). SCAFFOLD.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
-import Lean4Fmt.Frontend.Parse
-import Lean4Fmt.Frontend.Gate
-import Lean4Fmt.Frontend.Session
+import Lean
+
+namespace Lean4Fmt.Driver.Pool
+-- SCAFFOLD: see the StdlibEx adoption staging in DESIGN_V2 §11.1.
+end Lean4Fmt.Driver.Pool

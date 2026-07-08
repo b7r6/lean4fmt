@@ -1,14 +1,29 @@
 /-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                          // LEAN4FMT // FRONTEND
+                                                  // LEAN4FMT // RULES // DIAGNOSTIC
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Barrel for the impure boundary (DESIGN_V2 §11): quiet parsing (Parse), the
-    runtime safety gate (Gate), and the interleaved-elaboration research surface
-    (Session). Public entry point: `Lean4Fmt.Frontend.formatFile`.
+    Diagnostics collected by the lint pass (`Rules`), kept separate from the
+    emitter. Pure.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
-import Lean4Fmt.Frontend.Parse
-import Lean4Fmt.Frontend.Gate
-import Lean4Fmt.Frontend.Session
+namespace Lean4Fmt.Rules
+
+inductive Severity where
+  | info | warning | error
+  deriving Repr, Inhabited, BEq
+
+structure Diagnostic where
+  severity : Severity
+  pos      : Nat := 0
+  rule     : String := ""
+  message  : String
+  deriving Repr, Inhabited
+
+def Diagnostic.render (d : Diagnostic) : String :=
+  let sev := match d.severity with | .info => "info" | .warning => "warning" | .error => "error"
+  let tag := if d.rule.isEmpty then "" else s!" [{d.rule}]"
+  s!"{d.pos}: {sev}{tag}: {d.message}"
+
+end Lean4Fmt.Rules

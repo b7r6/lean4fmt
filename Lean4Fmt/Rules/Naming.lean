@@ -1,14 +1,18 @@
 /-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                          // LEAN4FMT // FRONTEND
+                                                     // LEAN4FMT // RULES // NAMING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Barrel for the impure boundary (DESIGN_V2 §11): quiet parsing (Parse), the
-    runtime safety gate (Gate), and the interleaved-elaboration research surface
-    (Session). Public entry point: `Lean4Fmt.Frontend.formatFile`.
+    Naming-convention and import-ordering lints. SCAFFOLD (later — §11).
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
-import Lean4Fmt.Frontend.Parse
-import Lean4Fmt.Frontend.Gate
-import Lean4Fmt.Frontend.Session
+import Lean
+import Lean4Fmt.Rules.Diagnostic
+
+namespace Lean4Fmt.Rules.Naming
+
+/-- Lint naming conventions over a module. SCAFFOLD (no rules yet). -/
+def lint (_stx : Lean.Syntax) : Array Lean4Fmt.Rules.Diagnostic := #[]
+
+end Lean4Fmt.Rules.Naming

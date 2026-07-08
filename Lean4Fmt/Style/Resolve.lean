@@ -1,14 +1,22 @@
 /-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                          // LEAN4FMT // FRONTEND
+                                                    // LEAN4FMT // STYLE // RESOLVE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Barrel for the impure boundary (DESIGN_V2 §11): quiet parsing (Parse), the
-    runtime safety gate (Gate), and the interleaved-elaboration research surface
-    (Session). Public entry point: `Lean4Fmt.Frontend.formatFile`.
+    resolve : Preset → List StylePatch → Style  (DESIGN_V2 §5). Patches merged
+    left-to-right (later wins).
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
-import Lean4Fmt.Frontend.Parse
-import Lean4Fmt.Frontend.Gate
-import Lean4Fmt.Frontend.Session
+import Lean4Fmt.Style.Options
+import Lean4Fmt.Style.Patch
+import Lean4Fmt.Style.Preset
+
+namespace Lean4Fmt.Style
+
+/-- Resolve a base preset plus a precedence-ordered list of patches into the
+    concrete `Style` the renderer reads. -/
+def resolve (base : Style) (patches : List StylePatch) : Style :=
+  patches.foldl Style.apply base
+
+end Lean4Fmt.Style

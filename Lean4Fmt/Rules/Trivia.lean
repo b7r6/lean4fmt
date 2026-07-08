@@ -1,14 +1,18 @@
 /-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                          // LEAN4FMT // FRONTEND
+                                                      // LEAN4FMT // RULES // TRIVIA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Barrel for the impure boundary (DESIGN_V2 §11): quiet parsing (Parse), the
-    runtime safety gate (Gate), and the interleaved-elaboration research surface
-    (Session). Public entry point: `Lean4Fmt.Frontend.formatFile`.
+    Trivia lints: trailing whitespace, `--foo`→`-- foo`, file-ending. SCAFFOLD.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
-import Lean4Fmt.Frontend.Parse
-import Lean4Fmt.Frontend.Gate
-import Lean4Fmt.Frontend.Session
+import Lean
+import Lean4Fmt.Rules.Diagnostic
+
+namespace Lean4Fmt.Rules.Trivia
+
+/-- Lint a source file's trivia; returns diagnostics. SCAFFOLD (no rules yet). -/
+def lint (_src : String) : Array Lean4Fmt.Rules.Diagnostic := #[]
+
+end Lean4Fmt.Rules.Trivia
