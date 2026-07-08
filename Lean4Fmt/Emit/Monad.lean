@@ -38,13 +38,19 @@ def bareSrc (stx : Lean.Syntax) : String :=
   (stx.getSubstring? false false).map (·.toString) |>.getD ""
 
 /-- Opaque reproduction (§4.1): the safe default for any construct not yet
-    actively formatted. Reproduces the BARE original source as a re-anchorable
-    `verbatim` doc (leading trivia is placed by the caller / `Module`). -/
-def verbatim (stx : Lean.Syntax) : EmitM Doc :=
+    actively formatted. Reproduces the BARE source as a re-anchorable `verbatim`
+    doc whose `baseIndent` is the first token's source column (from leading
+    trivia) — the renderer dedents continuations by that, so the block re-anchors
+    correctly at whatever column it is placed (the composition seam, §0.3). -/
+def verbatim (stx : Lean.Syntax) : EmitM Doc := do
+  let lead := (Lean4Fmt.Syntax.leading? stx).getD ""
+  let base := if lead.any (· == '\n')
+    then (((lead.splitOn "\n").getLastD "").toList.takeWhile (· == ' ')).length
+    else 0
   let s := bareSrc stx
   if s.isEmpty then
-    match stx.reprint with | some r => pure (.verbatim r 0) | none => pure .nil
-  else pure (.verbatim s 0)
+    match stx.reprint with | some r => pure (.verbatim r base) | none => pure .nil
+  else pure (.verbatim s base)
 
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
 def passthrough (stx : Lean.Syntax) : EmitM Doc :=

@@ -57,22 +57,27 @@ private def wr (st : RSt) (indent : Nat) (s : String) : RSt :=
   { st with out := st.out ++ s, col := st.col + s.length }
 
 /-- Emit a possibly-multi-line block (verbatim/comment), re-anchored to `indent`:
-    dedent to the block's own min indentation, re-indent to `indent` (§0.3). -/
-private def wrBlock (st : RSt) (indent : Nat) (raw : String) : RSt := Id.run do
+    dedent every continuation by the block's OWN base column `base` (the source
+    column of its first token, computed at walk time), then re-indent to `indent`
+    (§0.3). Using the explicit base — rather than a `min`-over-lines — is what lets
+    the block re-anchor correctly regardless of the internal indentation of nested
+    lines (e.g. a `do`-block deeper than its head). The first line is emitted as-is
+    (it starts right after `indent` is already established). -/
+private def wrBlock (st : RSt) (indent : Nat) (base : Nat) (raw : String) : RSt := Id.run do
   let nonblank (l : String) : Bool := l.any (· != ' ')
   let mut ls := raw.trimAsciiEnd.toString.splitOn "\n"
   ls := ls.dropWhile (fun l => !nonblank l)
   ls := (ls.reverse.dropWhile (fun l => !nonblank l)).reverse
   if ls.isEmpty then return st
-  let indentOf (l : String) : Nat := (l.toList.takeWhile (· == ' ')).length
-  let base := (ls.filter nonblank).foldl (fun m l => Nat.min m (indentOf l)) 1000000
-  let base := if base == 1000000 then 0 else base
   let mut st := st
   let mut first := true
   for l in ls do
-    let ded := if l.length ≥ base then String.ofList (l.toList.drop base) else l
-    if first then st := wr st indent ded; first := false
-    else st := wr { st with pend := st.pend + 1 } indent ded
+    if first then
+      -- first line already sits at `indent`; emit its bare content verbatim
+      st := wr st indent l; first := false
+    else
+      let ded := if l.length ≥ base then String.ofList (l.toList.drop base) else String.ofList (l.toList.dropWhile (· == ' '))
+      st := wr { st with pend := st.pend + 1 } indent ded
   return st
 
 /-- Render a `Doc` to a string under `style`. -/
@@ -89,7 +94,7 @@ partial def render (style : Style) (doc : Doc) : String :=
       let st := if st.pend > 0
         then { out := st.out ++ newlines st.pend ++ spaces indent, col := indent, pend := 0 } else st
       { st with out := st.out ++ s, col := ((s.splitOn "\n").getLast!).length }
-    | .verbatim s _ => wrBlock st indent s
+    | .verbatim s b => wrBlock st indent b s
     | .cat a b => go b indent flat (go a indent flat st)
     | .line => if flat then wr st indent " " else { st with pend := Nat.min (st.pend + 1) maxPend }
     | .softline => if flat then st else { st with pend := Nat.min (st.pend + 1) maxPend }
