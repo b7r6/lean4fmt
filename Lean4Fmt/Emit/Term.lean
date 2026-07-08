@@ -43,11 +43,16 @@ partial def emit (walk : Walk) (stx : Lean.Syntax) : EmitM Doc := do
     if Lean4Fmt.Syntax.isBinOp kind && args.size == 3 then
       return (← walk args[0]!) ++ .space ++ (← walk args[1]!) ++ .space ++ (← walk args[2]!)
     else if kind == ``Lean.Parser.Term.app then
+      -- `fn a b c` — width-aware: flat if it fits, else `fn` on its line with each
+      -- argument on a continuation line indented by `layout.indent`. All-or-
+      -- nothing (a `group`): the source did not dictate this, the width does.
       let fn := args[0]!
       let argList := (args[1]?.map (·.getArgs)).getD #[]
-      let mut d ← walk fn
-      for a in argList do d := d ++ .space ++ (← walk a)
-      return d
+      let ind := (← read).layout.indent
+      let fnDoc ← walk fn
+      let mut argsDoc : Doc := .nil
+      for a in argList do argsDoc := argsDoc ++ .line ++ (← walk a)
+      return .group (fnDoc ++ .nest ind argsDoc)
     else if kind == ``Lean.Parser.Term.paren then
       -- "(" content ")" — content is args[1] (may be empty for unit)
       match args[1]? with
