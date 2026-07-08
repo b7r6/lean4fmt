@@ -101,7 +101,12 @@ partial def render (style : Style) (doc : Doc) : String :=
     | .hardline => { st with pend := Nat.min (st.pend + 1) maxPend }
     | .blank req => { st with pend := Nat.min (st.pend + 1 + req) maxPend }
     | .group d =>
-      let canFlat := match flatWidth d with | some w => st.col + w ≤ width | none => false
+      -- Fit-check at the EFFECTIVE column: if newlines are pending (unflushed),
+      -- the next content will land at `indent`, not at the stale `st.col` left
+      -- over from before the break. Using `st.col` here would make an inner group
+      -- break spuriously after its enclosing group broke.
+      let effCol := if st.pend > 0 then indent else st.col
+      let canFlat := match flatWidth d with | some w => effCol + w ≤ width | none => false
       go d indent canFlat st
     | .flatten d => go d indent true st
     | .nest n d => go d (Int.toNat ((indent : Int) + n)) flat st

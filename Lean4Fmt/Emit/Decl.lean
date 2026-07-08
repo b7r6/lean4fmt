@@ -43,9 +43,18 @@ private def sigDoc (sig : Lean.Syntax) : EmitM Doc := do
   | none => pure ()
   return d
 
+/-- Value kinds we actively lay out even when they span multiple lines (their own
+    `walk` produces a width-aware breaking `group`). Everything else keeps the
+    conservative verbatim-span path. Grows as constructs are ported. -/
+private def isActiveMultiline (kind : SyntaxNodeKind) : Bool :=
+  kind.toString == "termIfThenElse"
+
 /-- `:= value` — actively format the value when it lays out flat (single line);
-    otherwise reproduce the whole `declValSimple` span (`:=` as anchor line),
-    which keeps the separator and multi-line indentation correct. -/
+    for a ported active kind, compose `:=` + a width-aware group so the value sits
+    on the same line if it fits or drops to an indented next line otherwise (the
+    construct's own group then breaks internally). Any other multi-line value is
+    reproduced as the whole `declValSimple` span (`:=` as anchor line), which
+    keeps the separator and multi-line indentation correct. -/
 private def valDoc (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM Doc := do
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
     let a := declVal.getArgs
@@ -58,7 +67,17 @@ private def valDoc (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM D
       if hasSuffix || hasWhere then return .space ++ (← verbatim declVal)
       let vdoc ← walk v
       match Lean4Fmt.Doc.flatWidth vdoc with
-      | some _ => return .text " := " ++ .flatten vdoc          -- flat value, no suffix
+      | some _ =>
+        -- The value flattens: it contains NO multi-line verbatim block, so active
+        -- width-aware layout only ever emits text/line/nest — no verbatim
+        -- re-anchoring, hence idempotent. Ported active kinds (no line comment)
+        -- lay out width-aware (value stays on the `:=` line if it fits, else drops
+        -- to an indented line and the construct breaks internally); everything
+        -- else stays dense-flat.
+        if isActiveMultiline v.getKind && !Lean4Fmt.Syntax.subtreeHasLineComment v then
+          return .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
+        else
+          return .text " := " ++ .flatten vdoc
       | none => return .space ++ (← verbatim declVal)           -- multi-line: safe span
     | none => return .space ++ (← verbatim declVal)
   else

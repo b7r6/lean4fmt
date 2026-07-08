@@ -50,7 +50,8 @@ partial def walk (stx : Lean.Syntax) : EmitM Doc := do
          || kind == ``Lean.Parser.Term.dotIdent
          || kind == ``Lean.Parser.Term.anonymousCtor
          || kind == ``Lean.Parser.Term.hole
-         || kind.toString == "«term[_]»" then
+         || kind.toString == "«term[_]»"
+         || kind.toString == "termIfThenElse" then
       Term.emit walk stx
     -- default: reproduce verbatim (safe; §4.1)
     else verbatim stx

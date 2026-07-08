@@ -62,6 +62,18 @@ partial def emit (walk : Walk) (stx : Lean.Syntax) : EmitM Doc := do
       return .text "⟨" ++ (← commaSep walk ((args[1]?.map (·.getArgs)).getD #[])) ++ .text "⟩"
     else if kind.toString == "«term[_]»" then
       return .text "[" ++ (← commaSep walk ((args[1]?.map (·.getArgs)).getD #[])) ++ .text "]"
+    else if kind.toString == "termIfThenElse" then
+      -- [if, cond, then, thenBranch, else, elseBranch]; a width-aware group:
+      -- flat `if c then a else b`, or broken with 2-space branches, `else` at
+      -- the if's base column (§ active layout). Branches recurse via `walk`.
+      let cond ← walk (args[1]?.getD .missing)
+      let thenB ← walk (args[3]?.getD .missing)
+      let elseB ← walk (args[5]?.getD .missing)
+      return .group (
+        .text "if " ++ cond ++ .text " then"
+          ++ .nest 2 (.line ++ thenB)
+          ++ .line ++ .text "else"
+          ++ .nest 2 (.line ++ elseB))
     else if kind == ``Lean.Parser.Term.hole then
       return .text "_"
     else if kind == `str || kind == `num || kind == `scientific || kind == `char then
