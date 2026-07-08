@@ -32,8 +32,12 @@ open Lean
     it provably preserves meaning and is a fixed point, else the original. -/
 unsafe def formatSafe (env : Environment) (path contents : String)
     (cfg : StyleConfig := {}) : IO String := do
-  let _ := cfg   -- v2 style knob is a `Style` preset; StyleConfig→Style mapping is TODO
-  let style := Lean4Fmt.Style.straylight
+  -- Map the (v1-era) StyleConfig onto a v2 Style preset. Only lineWidth/indent
+  -- are carried today; a full StyleConfig→Style (and --style preset selection) is
+  -- a follow-up.
+  let base := Lean4Fmt.Style.straylight
+  let style := { base with
+    layout := { base.layout with lineWidth := cfg.lineWidth, indent := cfg.indent } }
   match ← parseModule? env path contents with
   | none => pure contents
   | some stx =>
