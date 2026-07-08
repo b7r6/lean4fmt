@@ -1,5 +1,10 @@
 # lean4fmt Architecture
 
+> **Superseded.** This describes the v1 prototype's monolithic string-walker.
+> The production design is `DESIGN_V2.md`, which splits the walker into a pure
+> `Syntax → Doc` pass and a `Style`-driven renderer. Read `DESIGN_V2.md §0`
+> (prototype postmortem) for what this v1 approach taught us and why it changed.
+
 ## Core Insight
 
 The `Syntax` tree from parsing contains EVERYTHING:

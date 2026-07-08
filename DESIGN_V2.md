@@ -13,8 +13,10 @@
 
 ## Status
 
-Design of record for the v2 rewrite. Subject to the open questions at the end
-and to preset-detail work tracked in §11. Supersedes the v1 architecture.
+Design of record for the v2 rewrite. The **v1 prototype is locked in** — it did
+its job as a spike and taught us the invariants, hazards, and the one hard
+external blocker. This document now folds those findings back into the
+production design (§0). Supersedes the v1 architecture.
 
 ### Relationship to existing docs
 
@@ -23,19 +25,147 @@ and to preset-detail work tracked in §11. Supersedes the v1 architecture.
   pure `Syntax → Doc` pass and a `Style`-driven `Doc → String` renderer.
 - **`DESIGN.md`** — is a style guide plus v1 phasing. Its style guide content
   is *not* discarded: it becomes the specification for the **Straylight preset**
-  (§6). The phasing is replaced by §12 here.
-- **`Lean4Fmt/Emitter.lean`** — the working v1 emitter (~1160 lines). It is the
-  correctness reference for the port: its output on `Bytes.lean` and `CLI.lean`
-  is what the new `Emit/*` + `Doc/Render` spine must reproduce under the
-  Straylight preset before we add any new capability.
+  (§6). The phasing is replaced by §13 here.
+- **`Lean4Fmt/Emitter.lean`** — the working v1 prototype (~1.3k lines). It is the
+  correctness reference for the port. Its final measured behaviour on the
+  continuity corpus (via a test harness, not the shipped exe): **0 mangled, 0
+  non-idempotent, 0 fallbacks** across all 193 *harness-parseable* files (178
+  actively reformatted, 15 already-in-form), every output validated by full
+  `lean`. Builds under both `v4.31.0` and `v4.32.0-rc1`. The 10 files it can't
+  touch fail at the *parser*, not the emitter (§0.4).
 
-### Step 0 (a correctness note, not a feature)
+### Step 0 (still true, still the first deliverable)
 
-The shipped executable does **not** currently use our emitter. `Lean4Fmt.lean`
-still calls Lean's `ppModule` and does not even import `Lean4Fmt.Emitter`. The
-"immaculate output" validated to date ran through a separate test harness. The
-first concrete deliverable of v2 is to stand up the pure spine and wire it into
-the executable, replacing the `ppModule` call.
+The shipped executable does **not** use the emitter. `Lean4Fmt.lean` still calls
+Lean's `ppModule` and does not import `Lean4Fmt.Emitter`. All prototype results
+above ran through a throwaway harness. The first concrete v2 deliverable is to
+stand up the pure spine and wire it into the executable, replacing `ppModule`.
+
+---
+
+## 0. Prototype postmortem — what the spike proved
+
+The v1 spike was pushed hard: from "mangles most real files" to clean, idempotent,
+meaning-preserving output across the whole continuity tree. The lessons below are
+not incidental — they are load-bearing constraints the v2 design must honour.
+
+### 0.1 The correctness spine is two runtime invariants, not just CI gates
+
+Two properties turned out to be the entire game, and both must be *checkable at
+runtime*, not merely asserted:
+
+1. **Token-stream preservation.** A formatter may only move whitespace/trivia;
+   it must never add, drop, reorder, or merge a token. Reducing "did we mangle?"
+   to `tokens(parse(s)) == tokens(parse(format(s)))` caught every structural bug
+   we introduced (doubled commas, dropped `mut`, `class`→`structure`, merged
+   `let`s) — things that still *parsed* and so slipped past eyeballing.
+2. **Idempotency as a fixed point.** `format(format(s)) == format(s)`, byte for
+   byte. This is a far sharper tool than it sounds: almost every layout bug we
+   had was *invisible in a single pass* and only showed up as drift on the
+   second. Idempotency testing is the cheapest, highest-yield bug detector we
+   found.
+
+**Production consequence.** These are promoted from "verification obligations"
+(§10) to a **runtime safety gate** the driver runs by default (§4.2). Because the
+v2 core is meaning-preserving *by construction* via the Doc IR, the gate should
+never fire — but it is the seatbelt that guarantees we never emit worse-than-input,
+on any corpus, including mathlib, without having to prove the emitter total first.
+
+### 0.2 Almost every idempotency bug was context-dependent indentation
+
+The ad-hoc string emitter had to *guess* the indentation of a continuation from
+local state (pending newlines, an ad-hoc `indentLevel`). Nearly every non-idempotency
+traced to a wrong guess:
+
+- verbatim blocks re-anchored to the wrong base (first line's indent stripped),
+  so nested blocks grew 2 spaces per pass;
+- a `+1` indent that is correct after `:= by` but wrong for a `let`-chain tail,
+  which must stay column-aligned with its `let`s;
+- newlines that lived in a token's *trailing* trivia, so a skipped explicit
+  newline silently merged two `let`s.
+
+This is the empirical case **for the Doc IR**: indentation must be *compositional*
+(`nest`/`align` around subtrees), computed by the renderer from structure — never
+guessed from mutable state mid-walk. Everything in §0.2 evaporates when nesting is
+structural. (§4.)
+
+### 0.3 Verbatim reproduction is mandatory — and must itself be idempotent
+
+Whole-language coverage is impossible by active formatting alone: tactic blocks,
+`where`/`let rec`, `calc`, custom-syntax DSLs (`[cxx|]`, `[cxxfn|]`), and exotic
+match/equation patterns are too many to restyle and too column-sensitive to risk.
+The prototype's breakthrough was an **opaque reproduction** path: reproduce any
+subtree we don't actively restyle from its original source, re-anchored to the
+current indent. This is now a first-class designed component (§4.1), with rules
+that were paid for in blood:
+
+- **Strip trailing whitespace only; keep the first line's leading indent** — the
+  base-indent must be computed over *all* lines including the first, or
+  re-anchoring is not a fixed point.
+- **Re-anchor** = dedent to the block's own min indent, re-indent to the current
+  level. Emit at the *current* level; never add a context-guessed `+1`.
+- **Never introduce a blank** where a newline is already pending (splits bodies
+  from heads).
+- Prefer `Syntax.reprint`; fall back to the exact source slice
+  (`getSubstring?`) when reprint is unavailable (it is, for some nodes, after
+  `updateLeading`).
+
+### 0.4 Line comments are a first-class layout hazard
+
+A `--` line comment eats the rest of its physical line. Therefore **nothing that
+contains a line comment may ever be flattened/inlined**: doing so lets the comment
+swallow an `else`, a `}`, a match arm, or the next list element. In v1 this became
+a predicate (`hasLineComment`) gating inlining and routing comment-bearing
+`if`/app/list/ctor/struct/match to verbatim. **In v2 this is a renderer law:** a
+`group` whose content carries a line comment is *un-flattenable* — it always
+renders in break mode. (Doc/Render, §4.)
+
+### 0.5 The parser is the real external blocker — `testParseModule` is a dead end
+
+The harness used `Lean.Parser.testParseModule`. It is a *test helper* and unfit
+for production, provably:
+
+- it **cannot parse `Type*` / `Sort*`** (mathlib's ubiquitous auto-universe
+  binder) — fails on a one-line minimal case, on both toolchains;
+- it does **not track `namespace`/`open` scope** across commands, so notation
+  scoped inside a namespace fails and truncates the parse;
+- it **prints diagnostics to stdout** (corrupting output) and does lenient error
+  recovery (so it silently "succeeds" on malformed input).
+
+This is exactly why the 10 unreachable continuity files and ~all of mathlib were
+untestable — not a formatter limitation. **`Frontend/Session` must drive the real
+command-loop parser** (`parseHeader` + iterated `parseCommand` with a
+`ParserModuleContext` whose `currNamespace`/`openDecls` are advanced as commands
+are seen, i.e. what `Lean.Elab.Frontend` does), *quietly* (no stdout), reporting
+errors via the message log / `.hasMissing`. This is now a hard requirement on
+`Frontend`, backed by evidence, not a nicety. (§11, §12.)
+
+### 0.6 Toolchain-version sensitivity is real
+
+The emitter built under `v4.31.0` but not `v4.32.0-rc1` until `maxRecDepth` was
+raised (the long `emitNode` `if`-chain overflows the elaborator's default in
+4.32). The trivia APIs also drift across versions (`Substring.Raw.toString`,
+`trimAscii`/`trimAsciiStart` vs `trim`, `getSubstring?`, dependent `String.Pos`).
+**v2 must pin the toolchain** and keep trivia access behind `Syntax/Trivia.lean`
+so a version bump touches one module, not the whole walker.
+
+### 0.7 The regression corpus (bugs that must never come back)
+
+Each of these was a real, meaning-changing mangle the prototype hit and fixed.
+They become golden round-trip + idempotency tests in v2:
+
+| # | Bug | Root cause | v2 guard |
+|---|---|---|---|
+| 1 | `class C` → `structure C` | hardcoded keyword in structure emitter | emit the actual `structureTk` token |
+| 2 | `let mut x` → `let x` | dropped optional `mut` modifier | preserve all binder/decl modifiers |
+| 3 | dropped `where` / `termination_by` | value emitter ignored trailing decls | emit full `declVal` incl. suffixes |
+| 4 | `⟨a,b⟩` → `⟨a, ,b⟩` | re-emitted comma atoms + own separators | separators come from one source only |
+| 5 | `∀ a extra` → `∀ aextra` | binder group emitted without spacing | space-join binders |
+| 6 | `fun _ =>` dropped `_` | fun emitter only kept `.ident` binders | emit all binder syntaxes |
+| 7 | `importFoo` / `openFoo` | keyword+path with no separator | header/open handlers |
+| 8 | comment eats `else`/`}`/arm | inlining a line-comment-bearing node | §0.4 renderer law |
+| 9 | equation-def arm dropped | match-alt path lost `⟨…⟩`/`{…}` patterns | opaque reproduction (§0.3) |
+| 10 | multi-line `by` flattened in arm | tactic block treated as "simple" | tactic/proof blocks never inline |
 
 ---
 
@@ -151,6 +281,7 @@ inductive Doc where
   | blank      (req : BlankReq)          -- a *request* for vertical space (§8)
   | flatten    (d : Doc)                 -- force flat rendering of `d`
   | textRaw    (s : String)              -- verbatim (comments): may contain '\n'
+  | verbatim   (src : String) (baseIndent : Nat)  -- opaque reproduction (§4.1)
 ```
 
 `cat` with `nil` is a monoid; `flatten` distributes over `cat`; these laws are
@@ -178,6 +309,59 @@ Two extensions need local, non-standard handling:
 Rendering is pure and total; it never inspects `Syntax`. It is the natural place
 to later hang **format-range** (§ open questions) via a position map, but we do
 not build that now.
+
+**Renderer law (from §0.4).** A `group` whose content carries a line comment
+(`--`) is *un-flattenable*: it must render in break mode. The walker marks such
+groups; the renderer honours it unconditionally. This is not a heuristic — it is
+required for meaning preservation, since flattening would let the comment swallow
+following tokens.
+
+### 4.1 Opaque reproduction (the verbatim node)
+
+Whole-language coverage requires an escape hatch for constructs we do not (yet)
+actively restyle — tactic blocks, `where`/`let rec`, `calc`, custom-syntax DSLs,
+exotic patterns (§0.3). This is a Doc node:
+
+```lean
+  | verbatim (src : String) (baseIndent : Nat)   -- reproduce source, re-anchored
+```
+
+The walker produces `verbatim` for any subtree without an active formatter,
+capturing the exact original text (`Syntax.reprint`, or the source slice via
+`getSubstring?` when reprint is unavailable). The renderer re-anchors it:
+
+- compute the block's own minimum indent over **all** non-blank lines
+  (`baseIndent`), including the first;
+- dedent every line by `baseIndent`, re-indent to the renderer's *current*
+  indent level — never a context-guessed offset;
+- strip trailing whitespace only; do not add a blank when a newline is already
+  pending.
+
+Because indent is compositional in the Doc IR (`nest`/`align`), a `verbatim`
+node nested inside an actively-formatted context re-anchors correctly and
+idempotently by construction — the class of bugs in §0.2 cannot recur. As active
+formatters are added over time, they simply replace `verbatim` for those kinds;
+coverage grows monotonically and the safety gate (§4.2) guarantees every
+intermediate state is still correct.
+
+### 4.2 The runtime safety gate (from §0.1)
+
+The driver wraps single-file formatting in a self-checking gate:
+
+```
+format s  ⇒  s'
+  require  tokens(parse s) == tokens(parse s')      -- meaning preserved
+  require  format s' == s'                           -- idempotent (fixed point)
+  require  header(s') imports == header(s) imports   -- imports stay at the top
+  otherwise: emit s unchanged (identity is always safe) and flag the file
+```
+
+With the v2 Doc core these checks are expected to always pass; the gate exists so
+that on *any* input — a mathlib file using a construct we haven't taught the
+walker, a future Lean syntax — we degrade to identity rather than to a mangle. It
+is the mechanism that lets us honestly claim "never worse than input" on corpora
+we have not yet exhaustively covered. (The gate reparses via `Frontend`, §0.5, so
+it is only as strong as the parser — another reason `Frontend` must be real.)
 
 ---
 
@@ -382,12 +566,16 @@ our own tree under **Straylight**.
 ## 10. Verification obligations
 
 The Doc split makes these *statable*, which the v1 string-append emitter did
-not.
+not. The prototype (§0.1) proved the two runtime invariants below are the
+correctness spine; here they are also the CI gates.
 
 - **Doc algebra laws.** `cat`/`nil` monoid; `flatten` distributes over `cat`;
   `group (flatten d) = flatten d`. Provable; pins the renderer.
-- **Idempotence.** `format (format s) = format s` over a corpus
-  (`differential`-style gate).
+- **Idempotence.** `format (format s) = format s`, byte-identical, over a corpus.
+  The prototype's highest-yield bug detector (§0.1); also the runtime gate (§4.2).
+- **Token-stream preservation.** `tokens (parse (format s)) = tokens (parse s)`.
+  Strictly stronger than "still parses"; catches drop/merge/reorder that keep the
+  file parseable (§0.7). Runtime gate (§4.2) + CI.
 - **Round-trip safety.** `parse (format s) ≈ parse s` (structural equality
   modulo trivia). The load-bearing CI gate — a formatter must never change
   meaning.
@@ -450,7 +638,8 @@ Lean4Fmt/
 │
 ├── Frontend.lean                L3  IMPURE quarantine — the global-init reality
 ├── Frontend/
-│   ├── Parse.lean               --   source → Environment → Syntax (replaces ppModule path)
+│   ├── Parse.lean               --   real command-loop parser (§0.5): parseHeader +
+│   │                            --   iterated parseCommand with scope tracking, quiet
 │   └── Session.lean             --   superset-env / process-per-file strategy
 │
 ├── Driver.lean                  L4  IMPURE orchestration — StdlibEx.{IOUring,Fanotify,Logging,Fifo}
@@ -529,15 +718,21 @@ Lean's module init is process-global and not re-entrant** (`interpretedModInits`
 
 ## 13. Roadmap
 
-- **P0 — Spine.** `Doc/Core` + `Doc/Render` + `Style/*` (Straylight only). Port
-  v1 `Emitter.lean` into `Emit/*` as a `Syntax → Doc` walker. **Wire into
-  `Main.lean`, replacing `ppModule`.** Reproduce v1 output on `Bytes.lean` and
-  `CLI.lean` byte-for-byte. Round-trip + idempotence gates green.
+- **P-1 — Prototype (done, locked in).** v1 `Emitter.lean` string-walker with an
+  opaque verbatim fallback. Reached 0-mangle / 0-non-idempotent / 0-fallback on
+  the continuity corpus; builds under 4.31 and 4.32. Its role is over: it is the
+  behavioural reference and the source of §0. Not shipped.
+- **P0 — Spine.** `Doc/Core` (incl. `verbatim` §4.1 + un-flattenable-comment law
+  §0.4) + `Doc/Render` + `Style/*` (Straylight only) + `Frontend/Parse` (real
+  command-loop parser, §0.5) + the runtime safety gate (§4.2). Port v1 `Emit/*`
+  as a `Syntax → Doc` walker. **Wire into `Main.lean`, replacing `ppModule`.**
+  Reproduce v1 output on `Bytes.lean`/`CLI.lean`; import the §0.7 regression
+  corpus as tests. Round-trip + idempotence + token-preservation gates green.
 - **P1 — Alignment & blank lines.** `alignTable` + `Alignment` record;
   `Doc.blank` + `BlankLines` policy. Prove determinism.
 - **P2 — Ontology & presets.** `StylePatch` merge; `.lean4fmt.lean` discovery +
   load; `Mathlib` and `Aniva` presets seeded; mathlib4 conformance harness
-  online.
+  online (now unblocked by the real parser).
 - **P3 — Driver I/O.** `StdlibEx.CLI` arg surface; `Bytes.memmem` diffs;
   `Fanotify.scanTree` discovery; `Logging`.
 - **P4 — Parallelism.** `IOUring.Loop` batched I/O; `IOUring.Mesh` worker pool
@@ -561,4 +756,16 @@ Lean's module init is process-global and not re-entrant** (`interpretedModInits`
    (clarification #5): not worth trouble on its own. Kept in mind only insofar
    as it might tip an otherwise-marginal design choice in `Doc/Render`'s
    position handling; we do not build the position map preemptively.
+6. **Real parser** — no longer open, **decided** by §0.5: `Frontend/Parse` uses
+   the command-loop parser with scope tracking, quietly. This is the gate that
+   unblocks mathlib; until it exists, mathlib is untestable (`testParseModule`
+   cannot parse `Type*`).
+
+### Deferred: mathlib validation
+
+mathlib's olean cache is fetched (`~/src/vendor/mathlib4`, `v4.32.0-rc1`) and the
+emitter compiles under that toolchain, but mathlib is **intentionally deferred**
+until we return with a real project tree: it is blocked purely on `Frontend/Parse`
+(§0.5), which is P0 work anyway. When P0 lands, the mathlib conformance harness
+(§9) comes online with no formatter changes. mathlib will still be there.
 ```

@@ -2,6 +2,11 @@
 
 A source-code formatter for Lean 4, targeting systems programming style.
 
+> **Role now.** The production design is `DESIGN_V2.md`. This document's
+> **style guide** (below) is not superseded — it is the seed for the
+> **Straylight preset** (`DESIGN_V2.md §6`). Its status/phasing notes are v1
+> history; the real roadmap is `DESIGN_V2.md §13`.
+
 ## Status
 
 Working! The parser pipeline now handles all standard Lean 4 syntax including
