@@ -120,25 +120,63 @@ a predicate (`hasLineComment`) gating inlining and routing comment-bearing
 `group` whose content carries a line comment is *un-flattenable* — it always
 renders in break mode. (Doc/Render, §4.)
 
-### 0.5 The parser is the real external blocker — `testParseModule` is a dead end
+### 0.5 You cannot format Lean without (partially) elaborating it
 
-The harness used `Lean.Parser.testParseModule`. It is a *test helper* and unfit
-for production, provably:
+The deepest finding of the whole spike, and the one that reshapes the design:
+**there is no pure "parse then format" path for real Lean.** A file's own syntax
+is not fixed by its imports — it is *extended as the file elaborates*. `notation`,
+`macro`, `syntax`, `scoped` declarations, `open`, and `set_option` all mutate the
+parser tables, and much surface syntax (mathlib's `Type*`/`Sort*` auto-universe
+binder is the canonical example) is only available *after* elaborating the
+commands or imports that register it. Parsing and elaboration are interleaved by
+construction in Lean — that is what `Lean.Elab.Frontend` does, one command at a
+time: parse a command against the current tables, elaborate it (which may extend
+the tables), then parse the next.
 
-- it **cannot parse `Type*` / `Sort*`** (mathlib's ubiquitous auto-universe
-  binder) — fails on a one-line minimal case, on both toolchains;
-- it does **not track `namespace`/`open` scope** across commands, so notation
-  scoped inside a namespace fails and truncates the parse;
-- it **prints diagnostics to stdout** (corrupting output) and does lenient error
-  recovery (so it silently "succeeds" on malformed input).
+We proved this the hard way, in two steps:
 
-This is exactly why the 10 unreachable continuity files and ~all of mathlib were
-untestable — not a formatter limitation. **`Frontend/Session` must drive the real
-command-loop parser** (`parseHeader` + iterated `parseCommand` with a
-`ParserModuleContext` whose `currNamespace`/`openDecls` are advanced as commands
-are seen, i.e. what `Lean.Elab.Frontend` does), *quietly* (no stdout), reporting
-errors via the message log / `.hasMissing`. This is now a hard requirement on
-`Frontend`, backed by evidence, not a nicety. (§11, §12.)
+1. `Lean.Parser.testParseModule` (the harness) is a *test helper*, unfit for
+   production: it cannot parse `Type*`/`Sort*` even minimally, does not track
+   `namespace`/`open` scope across commands, prints diagnostics to stdout
+   (corrupting output), and recovers leniently (silently "succeeding" on
+   malformed input).
+2. Replacing it with the real **command-loop parser** — `parseHeader` + iterated
+   `parseCommand` with a `ParserModuleContext` whose `currNamespace`/`openDecls`
+   we advanced by hand — *still* failed: `Mathlib/Logic/Basic.lean` came back
+   with 251 of 319 commands carrying missing nodes. The missing tables were the
+   ones that only exist after *elaborating* the preceding commands. Hand-tracking
+   scope is not enough; the elaborator has to run.
+
+**Consequence — a first-class design constraint.** To format a file, the
+`Frontend` must load and run the elaborator over **some prefix/portion of the
+full artifact** — at minimum the imports, and in general enough of the file's own
+commands to keep the parser tables current. The *exact amount* is
+**as-yet-undetermined** and is now an explicit research question (§14.7):
+
+- The **floor** is: process the header (load imports' oleans) — already required,
+  already the multi-file-init bottleneck (§12).
+- The realistic requirement is the **interleaved frontend**: elaborate each
+  command far enough to register any tables it introduces, collecting the parsed
+  command `Syntax` as we go, then format the collected syntax. This is heavier
+  than a parse and can surface elaboration errors (`sorry`, missing instances)
+  that are *not* our concern — the Frontend must collect syntax regardless of
+  elaboration success.
+- Open optimizations (unmeasured): can we elaborate *lazily* — only far enough to
+  keep parsing correct, skipping proof bodies / tactic elaboration? Can a
+  per-file **elaboration budget** or a "parse-tables-only" fast path cover the
+  common case, falling back to full elaboration on demand?
+
+This does not touch the pure core (`Syntax → Doc → String`) — it makes the
+`Frontend` boundary bigger and more expensive, and it sharpens §12: the *parse*
+phase is not just contended (global init), it is genuinely *compute-heavy*
+(elaboration), which strengthens the case for process-per-file workers over a
+shared read-only environment.
+
+Practical fallback in the meantime: the safety gate (§4.2) degrades any file the
+current parser can't handle to identity, so shipping without the interleaved
+frontend is safe — such files simply pass through unformatted (this is why
+mathlib is a safe no-op today, and why the interleaved frontend is deferred with
+mathlib).
 
 ### 0.6 Toolchain-version sensitivity is real
 
@@ -638,9 +676,13 @@ Lean4Fmt/
 │
 ├── Frontend.lean                L3  IMPURE quarantine — the global-init reality
 ├── Frontend/
-│   ├── Parse.lean               --   real command-loop parser (§0.5): parseHeader +
-│   │                            --   iterated parseCommand with scope tracking, quiet
-│   └── Session.lean             --   superset-env / process-per-file strategy
+│   ├── Parse.lean               --   interleaved parse+elaborate (§0.5): run the
+│   │                            --   frontend far enough to keep parser tables
+│   │                            --   current, collect command Syntax, quietly
+│   ├── Gate.lean                --   runtime safety gate (§4.2): token-preserve +
+│   │                            --   idempotent + header + degrade-to-identity
+│   └── Session.lean             --   how much to elaborate (§0.5/§14.7); superset-env
+│                                --   vs process-per-file (§12)
 │
 ├── Driver.lean                  L4  IMPURE orchestration — StdlibEx.{IOUring,Fanotify,Logging,Fifo}
 ├── Driver/
@@ -699,20 +741,25 @@ Lean's module init is process-global and not re-entrant** (`interpretedModInits`
   no shared state; distribute work units across core-pinned `IOUring.Mesh`
   workers via `MSG_RING`. This is where the speed actually comes from once
   files are parsed.
-- **Parse → the contended phase.** Two viable strategies, decided in
-  `Frontend/Session`:
+- **Parse → the contended *and* compute-heavy phase.** §0.5 sharpened this:
+  parsing requires running the elaborator (to keep parser tables current), so
+  this phase is not merely gated by global init — it is genuinely expensive.
+  Two strategies, decided in `Frontend/Session`:
   1. **Superset environment** — build one `Environment` for the union of imports
-     across the tree, once, reuse it read-only per file. Fast, single-process;
-     assumes a coherent closure and that read-only reuse is safe across files
-     (needs validation).
+     across the tree, once, reuse it read-only per file. Amortizes import load;
+     but each file still needs its *own* commands elaborated far enough to parse
+     (§0.5), so this helps the header floor, not the per-file elaboration cost.
+     Also assumes a coherent closure and that read-only reuse is safe.
   2. **Process-per-file worker pool** — each worker is its own process (fresh
      global state), fed paths over the mesh. Robust against the init trap; costs
-     spawn + per-worker env build, amortized over many files per worker.
+     spawn + per-worker env build + per-file elaboration, amortized over many
+     files per worker.
 
   **Lean:** ship (2) first for correctness (it sidesteps the global-init trap
-  and parallelizes the *expensive* parse too), then pursue (1) as a measured
-  optimization. The pure core is unaffected either way — only `Frontend/Session`
-  and `Driver/Pool` change.
+  and parallelizes the *expensive* parse+elaborate too), then pursue (1) as a
+  measured optimization. The pure core is unaffected either way — only
+  `Frontend/Session` and `Driver/Pool` change. How *little* elaboration we can
+  get away with per file (§14.7) directly sets this phase's cost.
 
 ---
 
@@ -723,11 +770,13 @@ Lean's module init is process-global and not re-entrant** (`interpretedModInits`
   the continuity corpus; builds under 4.31 and 4.32. Its role is over: it is the
   behavioural reference and the source of §0. Not shipped.
 - **P0 — Spine.** `Doc/Core` (incl. `verbatim` §4.1 + un-flattenable-comment law
-  §0.4) + `Doc/Render` + `Style/*` (Straylight only) + `Frontend/Parse` (real
-  command-loop parser, §0.5) + the runtime safety gate (§4.2). Port v1 `Emit/*`
-  as a `Syntax → Doc` walker. **Wire into `Main.lean`, replacing `ppModule`.**
-  Reproduce v1 output on `Bytes.lean`/`CLI.lean`; import the §0.7 regression
-  corpus as tests. Round-trip + idempotence + token-preservation gates green.
+  §0.4) + `Doc/Render` + `Style/*` (Straylight only) + `Frontend/Parse`
+  (interleaved parse+elaborate, §0.5) + the runtime safety gate (§4.2). Port v1
+  `Emit/*` as a `Syntax → Doc` walker. **Wire into `Main.lean`, replacing
+  `ppModule`** (done in prototype form: exe now runs the emitter behind the gate;
+  the parser is still the `testParseModule` floor pending §0.5/§14.7). Reproduce
+  v1 output on `Bytes.lean`/`CLI.lean`; import the §0.7 regression corpus as
+  tests. Round-trip + idempotence + token-preservation gates green.
 - **P1 — Alignment & blank lines.** `alignTable` + `Alignment` record;
   `Doc.blank` + `BlankLines` policy. Prove determinism.
 - **P2 — Ontology & presets.** `StylePatch` merge; `.lean4fmt.lean` discovery +
@@ -756,10 +805,16 @@ Lean's module init is process-global and not re-entrant** (`interpretedModInits`
    (clarification #5): not worth trouble on its own. Kept in mind only insofar
    as it might tip an otherwise-marginal design choice in `Doc/Render`'s
    position handling; we do not build the position map preemptively.
-6. **Real parser** — no longer open, **decided** by §0.5: `Frontend/Parse` uses
-   the command-loop parser with scope tracking, quietly. This is the gate that
-   unblocks mathlib; until it exists, mathlib is untestable (`testParseModule`
-   cannot parse `Type*`).
+6. **Real parser** — no longer "just a parser," **decided** by §0.5: formatting
+   requires *interleaved parse+elaboration* (`Frontend/Parse`), not a standalone
+   parser. Hand-tracking `namespace`/`open` scope is insufficient; the elaborator
+   must run to register notation. This is the gate that unblocks mathlib.
+7. **How much of the artifact must we elaborate?** (§0.5) — open research
+   question with real cost consequences (§12). The floor is "load imports"; the
+   ceiling is "fully elaborate the file." Candidates to measure: elaborate every
+   command but skip proof/tactic bodies; a "extend-parser-tables-only" fast path
+   with fallback to full elaboration; a per-file elaboration budget. The answer
+   sets the per-file cost of the whole tool and the shape of `Frontend/Session`.
 
 ### Deferred: mathlib validation
 
