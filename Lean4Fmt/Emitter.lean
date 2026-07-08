@@ -635,7 +635,10 @@ where
     -- args[0] = structureTk, args[1] = declId, args[2] = optDeclSig,
     -- args[3] = extends?, args[4] = whereBody?, args[5] = optDeriving
     processLeading args[0]!
-    emit "structure"
+    -- emit the actual keyword (`structure` OR `class` — never hardcode)
+    let kw := (args[0]!.getArgs.findSome? fun c =>
+      match c with | .atom _ v => some v | _ => none).getD "structure"
+    emit kw
     space
     if h : 1 < args.size then emitSyntax args[1]!  -- name
     if h : 2 < args.size then emitSyntax args[2]!  -- optDeclSig
@@ -1111,9 +1114,13 @@ where
       emitSyntax args[4]!
 
   emitDoLet (args : Array Syntax) : EmitterM Unit := do
-    -- args[0] = "let", args[1] = opt, args[2] = config, args[3] = letDecl
+    -- args[0] = "let", args[1] = opt "mut", args[2] = config, args[3] = letDecl
     emit "let"
     space
+    -- optional `mut` modifier — must not be dropped (mutation depends on it)
+    if h : 1 < args.size then
+      let opt := args[1]!
+      if !opt.isNone then emitSyntax opt; space
     if h : 3 < args.size then emitSyntax args[3]!
 
   emitLetDecl (args : Array Syntax) : EmitterM Unit := do
