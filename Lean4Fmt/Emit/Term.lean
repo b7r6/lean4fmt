@@ -19,15 +19,15 @@ namespace Lean4Fmt.Emit.Term
 
 open Lean Lean4Fmt.Doc Lean4Fmt.Emit
 
-/-- Comma-separated children (skipping the parser's comma atoms), each walked. -/
-private def commaSep (walk : Walk) (children : Array Lean.Syntax) : EmitM Doc := do
-  let mut d : Doc := .nil
-  let mut first := true
+/-- Width-aware bracketed comma list `l e₁, e₂, … r`: flat if it fits, else one
+    element per line indented by 2 with `l`/`r` on their own lines (the standard
+    all-or-nothing `commaList` group). Skips the parser's comma atoms. -/
+private def commaGroup (walk : Walk) (l r : String) (children : Array Lean.Syntax) : EmitM Doc := do
+  let mut ds : Array Doc := #[]
   for c in children do
-    if c.isAtom then continue      -- skip existing "," separators
-    d := d ++ (if first then .nil else .text ", ") ++ (← walk c)
-    first := false
-  return d
+    if c.isAtom then continue
+    ds := ds.push (← walk c)
+  return Lean4Fmt.Doc.commaList l r ds
 
 /-- Emit an expression construct, recursing via `walk`. Produces flat Doc for the
     handled kinds; everything else (and anything with a line comment) reproduces
@@ -64,9 +64,9 @@ partial def emit (walk : Walk) (stx : Lean.Syntax) : EmitM Doc := do
     else if kind == ``Lean.Parser.Term.dotIdent then
       return .text "." ++ (← walk (args[1]?.getD .missing))
     else if kind == ``Lean.Parser.Term.anonymousCtor then
-      return .text "⟨" ++ (← commaSep walk ((args[1]?.map (·.getArgs)).getD #[])) ++ .text "⟩"
+      return (← commaGroup walk "⟨" "⟩" ((args[1]?.map (·.getArgs)).getD #[]))
     else if kind.toString == "«term[_]»" then
-      return .text "[" ++ (← commaSep walk ((args[1]?.map (·.getArgs)).getD #[])) ++ .text "]"
+      return (← commaGroup walk "[" "]" ((args[1]?.map (·.getArgs)).getD #[]))
     else if kind.toString == "termIfThenElse" then
       -- [if, cond, then, thenBranch, else, elseBranch]; a width-aware group:
       -- flat `if c then a else b`, or broken with 2-space branches, `else` at

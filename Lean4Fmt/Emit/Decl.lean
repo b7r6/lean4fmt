@@ -66,6 +66,8 @@ private def sigDoc (sig : Lean.Syntax) : EmitM Doc := do
 private def isActiveMultiline (kind : SyntaxNodeKind) : Bool :=
   kind.toString == "termIfThenElse"
     || kind == ``Lean.Parser.Term.app
+    || kind == ``Lean.Parser.Term.anonymousCtor
+    || kind.toString == "«term[_]»"
 
 /-- `:= value` — actively format the value when it lays out flat (single line);
     for a ported active kind, compose `:=` + a width-aware group so the value sits
