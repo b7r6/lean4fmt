@@ -89,13 +89,18 @@ private def valDoc (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM D
     | some v =>
       if hasSuffix || hasWhere then return .space ++ (← verbatim declVal)
       let vdoc ← walk v
+      let clean := !Lean4Fmt.Syntax.subtreeHasLineComment v
+        && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc
+      -- `do` is glued to `:=` (compact style, Style.breaking.compactDo): its own
+      -- nest indents statements by 2 from the declaration, not from a dropped line.
+      if v.getKind == ``Lean.Parser.Term.do && clean then
+        return .text " := " ++ vdoc
       -- Active layout is safe (idempotent) exactly when the value contains no
       -- multi-line verbatim block: active rendering then only emits
       -- text/line/nest/hardline, never re-anchors an opaque block. Ported active
       -- kinds (no line comment) lay out width-aware; anything with an embedded
       -- multi-line opaque block falls back to the proven-safe whole-span.
-      if isActiveMultiline v.getKind && !Lean4Fmt.Syntax.subtreeHasLineComment v
-          && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
+      if isActiveMultiline v.getKind && clean then
         return .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
       match Lean4Fmt.Doc.flatWidth vdoc with
       | some _ => return .text " := " ++ .flatten vdoc          -- dense flat, no suffix
