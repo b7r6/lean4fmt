@@ -53,6 +53,28 @@ partial def hasMultilineVerbatim : Doc → Bool
   | .alignTable _ rows => rows.any (·.any hasMultilineVerbatim)
   | _ => false
 
+/-- Width a doc contributes to the CURRENT line, up to its first possible break
+    point (line/softline/hardline/blank, or a newline inside a verbatim/textRaw),
+    plus whether such a break was reached. Used to couple a signature's
+    break-after-colon decision to what the value adds to the same line (e.g.
+    `:= by` before a tactic block) without the circularity of asking the value to
+    lay itself out first. A `flatten` never breaks, so it contributes its full
+    flat width. -/
+partial def firstLineWidth : Doc → Nat × Bool
+  | .nil => (0, false)
+  | .text s => (s.length, false)
+  | .textRaw s =>
+    let ls := s.splitOn "\n"; ((ls.headD "").length, ls.length > 1)
+  | .verbatim s _ =>
+    let ls := s.splitOn "\n"; ((ls.headD "").length, ls.length > 1)
+  | .line | .softline | .hardline | .blank _ => (0, true)
+  | .cat a b =>
+    let (wa, ba) := firstLineWidth a
+    if ba then (wa, true) else let (wb, bb) := firstLineWidth b; (wa + wb, bb)
+  | .group d | .nest _ d | .align d => firstLineWidth d
+  | .flatten d => match flatWidth d with | some w => (w, false) | none => firstLineWidth d
+  | .alignTable _ _ => (0, true)
+
 private def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')private def newlines (n : Nat) : String := String.ofList (List.replicate n '\n')
 
 private structure RSt where

@@ -26,16 +26,20 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
     (attributes/visibility/…) sit on the declaration's own line, space-joined,
     followed by a single space before the keyword. This fixes the v1-era gluing of
     `/-- … -/` onto the `def` line while staying token-preserving and idempotent
-    (decls sit at column 0, so the literal doc comment re-emits byte-exactly). -/
-private def modifiersDoc (m : Lean.Syntax) : Doc := Id.run do
+    (decls sit at column 0, so the literal doc comment re-emits byte-exactly).
+    Returns the doc and the width of the INLINE prefix it contributes to the
+    keyword's line (attributes/visibility + trailing space; the doc comment is on
+    its own line so contributes 0) — used for signature width coupling. -/
+private def modifiersDoc (m : Lean.Syntax) : Doc × Nat := Id.run do
   let margs := m.getArgs
   let docText := (margs[0]?.map bareSrc).getD "" |>.trimAscii.toString
   let restParts := (margs.toList.drop 1).filterMap (fun c =>
     let s := (bareSrc c).trimAscii.toString; if s.isEmpty then none else some s)
   let docDoc : Doc := if docText.isEmpty then .nil else .textRaw docText ++ .hardline
-  let restDoc : Doc :=
-    if restParts.isEmpty then .nil else .text (String.intercalate " " restParts) ++ .space
-  return docDoc ++ restDoc
+  let restStr := String.intercalate " " restParts
+  let restDoc : Doc := if restParts.isEmpty then .nil else .text restStr ++ .space
+  let inlineWidth := if restParts.isEmpty then 0 else restStr.length + 1
+  return (docDoc ++ restDoc, inlineWidth)
 
 /-- Keyword-led definition shapes we actively format. -/
 private def isDefShape (kind : SyntaxNodeKind) : Bool :=
@@ -47,29 +51,38 @@ private def isDefShape (kind : SyntaxNodeKind) : Bool :=
 
 /-- Reflow an `optDeclSig`/`declSig` = [binders, typeSpec?]. Binders stay inline
     (space-joined); the return type is laid out with a break-AFTER-colon policy
-    (Style.breaking.colon = .breakAfter): `name binders : τ` on one line if it
-    fits, else the colon ends the line and `τ` drops to a continuationIndent-
-    indented line — the house style for long signatures. Only single-line types
-    break this way; a multi-line (verbatim) type stays inline (re-anchoring it
-    inside a nest could drift). Binder-fill wrapping is deferred. -/
-private def sigDoc (sig : Lean.Syntax) : EmitM Doc := do
+    (Style.breaking.colon = .breakAfter). Because a top-level declaration sits at
+    column 0 and everything before the type (`prefixWidth`: modifiers + keyword +
+    declId + binders) is flat, the break is decided deterministically: keep the
+    type inline iff `prefixWidth + " : " + typeWidth + reserve ≤ lineWidth`, where
+    `reserve` is what the value adds to that same line before its own first break
+    (e.g. `:= by` ahead of a tactic block). Else the colon ends the line and the
+    type drops to a continuationIndent-indented line — the house style. Only
+    single-line types break this way; a multi-line (verbatim) type stays inline. -/
+private def sigDoc (prefixWidth reserve : Nat) (sig : Lean.Syntax) : EmitM Doc := do
   let a := sig.getArgs
   let binders := (a[0]?.map (·.getArgs)).getD #[]
   let mut bdoc : Doc := .nil
+  let mut bwidth := 0
   for b in binders do
-    bdoc := bdoc ++ .space ++ (← verbatim b)
-  -- locate the typeSpec node (declSig: direct; optDeclSig: wrapped in a null)
+    let bd ← verbatim b
+    bdoc := bdoc ++ .space ++ bd
+    bwidth := bwidth + 1 + (Lean4Fmt.Doc.flatWidth bd).getD 0
   let tsNode : Option Lean.Syntax := a[1]?.bind (fun x =>
     if x.getKind == ``Lean.Parser.Term.typeSpec then some x else x.getArgs[0]?)
   match tsNode with
   | some ts =>
     if ts.getKind == ``Lean.Parser.Term.typeSpec then
       let tdoc ← verbatim (ts.getArgs[1]?.getD .missing)
-      let cont := (← read).layout.continuationIndent
       if Lean4Fmt.Doc.hasMultilineVerbatim tdoc then
         return bdoc ++ .space ++ (← verbatim ts)          -- multi-line type: inline
+      let cont := (← read).layout.continuationIndent
+      let w := (← read).layout.lineWidth
+      let typeWidth := (Lean4Fmt.Doc.flatWidth tdoc).getD 0
+      if prefixWidth + bwidth + 3 + typeWidth + reserve ≤ w then
+        return bdoc ++ .text " : " ++ tdoc                -- inline
       else
-        return bdoc ++ .group (.text " :" ++ .nest cont (.line ++ tdoc))
+        return bdoc ++ .text " :" ++ .nest cont (.hardline ++ tdoc)   -- break after colon
     else
       return bdoc ++ .space ++ (← verbatim ts)            -- unexpected shape: inline
   | none => return bdoc
@@ -123,13 +136,19 @@ private def valDoc (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM D
   else
     return .space ++ (← verbatim declVal)   -- declValEqns / where-struct: literal span
 
-/-- Format the inner definition node `[kw, declId, sig, declVal, …]`. -/
-private def defnDoc (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : EmitM Doc := do
+/-- Format the inner definition node `[kw, declId, sig, declVal, …]`. `modsWidth`
+    is the inline width the modifiers add to the keyword's line (for signature
+    width coupling). -/
+private def defnDoc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.Syntax) : EmitM Doc := do
   let a := defn.getArgs
   let kw := match a[0]? with | some (.atom _ v) => v | _ => "def"
   let declId := (a[1]?.map bareSrc).getD ""
-  let sig ← match a[2]? with | some s => sigDoc s | none => pure .nil
+  -- Value first: its first-line width (up to its own first break, e.g. `:= by`)
+  -- is reserved when deciding whether the signature's type breaks after the colon.
   let val ← match a[3]? with | some v => valDoc walk v | none => pure .nil
+  let reserve := (Lean4Fmt.Doc.firstLineWidth val).1
+  let prefixWidth := modsWidth + kw.length + 1 + declId.length
+  let sig ← match a[2]? with | some s => sigDoc prefixWidth reserve s | none => pure .nil
   return .text kw ++ .space ++ .text declId ++ sig ++ val
 
 /-- Emit a declaration (bare — `Module` places its leading trivia), recursing
@@ -143,9 +162,9 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
   let isSimpleVal := (dargs[3]?.map (·.getKind)) == some ``Lean.Parser.Command.declValSimple
   if !isDefShape defn.getKind || !isSimpleVal then
     return (← verbatim stx)     -- structure/inductive/instance/where/eqns: reproduce
-  let modsDoc : Doc := match a[0]? with
+  let (modsDoc, modsWidth) := match a[0]? with
     | some m => modifiersDoc m
-    | none => .nil
-  return modsDoc ++ (← defnDoc walk defn)
+    | none => (.nil, 0)
+  return modsDoc ++ (← defnDoc walk modsWidth defn)
 
 end Lean4Fmt.Emit.Decl
