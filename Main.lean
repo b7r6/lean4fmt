@@ -25,11 +25,11 @@ unsafe def initEnvImpl : IO Unit := do
 @[implemented_by initEnvImpl]
 opaque initEnv : IO Unit
 
-unsafe def formatFileImpl (path : String) (width : Nat) : IO String :=
-  Lean4Fmt.Driver.formatFile path width
+unsafe def formatFileImpl (path : String) (width : Nat) (preset : String) : IO String :=
+  Lean4Fmt.Driver.formatFile path width preset
 
 @[implemented_by formatFileImpl]
-opaque formatFile (path : String) (width : Nat) : IO String
+opaque formatFile (path : String) (width : Nat) (preset : String) : IO String
 
 def main (argv : List String) : IO Unit := do
   let o := Cli.parse argv
@@ -42,7 +42,7 @@ def main (argv : List String) : IO Unit := do
   let mut failed := false
   for file in o.files do
     try
-      let output ← formatFile file o.width
+      let output ← formatFile file o.width o.preset
       match o.mode with
       | .format => IO.print output
       | .check =>

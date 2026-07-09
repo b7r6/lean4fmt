@@ -18,7 +18,6 @@
 -/
 
 import Lean
-import Lean4Fmt.Emitter
 import Lean4Fmt.Emit
 import Lean4Fmt.Style
 import Lean4Fmt.Frontend.Parse
@@ -31,13 +30,7 @@ open Lean
 /-- The safety gate: return the text to emit — the actively-formatted output when
     it provably preserves meaning and is a fixed point, else the original. -/
 unsafe def formatSafe (env : Environment) (path contents : String)
-    (cfg : StyleConfig := {}) : IO String := do
-  -- Map the (v1-era) StyleConfig onto a v2 Style preset. Only lineWidth/indent
-  -- are carried today; a full StyleConfig→Style (and --style preset selection) is
-  -- a follow-up.
-  let base := Lean4Fmt.Style.straylight
-  let style := { base with
-    layout := { base.layout with lineWidth := cfg.lineWidth, indent := cfg.indent } }
+    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default) : IO String := do
   match ← parseModule? env path contents with
   | none => pure contents
   | some stx =>
@@ -53,10 +46,11 @@ unsafe def formatSafe (env : Environment) (path contents : String)
       pure (if ok then active else contents)
 
 /-- Build the environment for a file (loads its imports) and format it. -/
-unsafe def formatFile (path contents : String) (cfg : StyleConfig := {}) : IO String := do
+unsafe def formatFile (path contents : String)
+    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default) : IO String := do
   let ictx := Parser.mkInputContext contents path
   let (hdr, _, msgs) ← Parser.parseHeader ictx
   let (env, _) ← Elab.processHeader hdr {} msgs ictx (trustLevel := 1024)
-  formatSafe env path contents cfg
+  formatSafe env path contents style
 
 end Lean4Fmt.Frontend
