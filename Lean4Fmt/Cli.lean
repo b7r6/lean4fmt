@@ -41,7 +41,8 @@ def parse (args : List String) : Options := Id.run do
 
 def usage : String :=
   "Usage: lean4fmt [--check | --write] [--width N] [--style NAME] <file...>\n\n" ++
-  "Note: Lean module initialization runs once per process, so formatting\n" ++
-  "multiple files in one call may fail. Use: find . -name '*.lean' | xargs -n1 lean4fmt"
+  "Multiple files in one invocation are supported (each is parsed against its own\n" ++
+  "imports). If a file's syntax-extension initializers ever conflict in-process,\n" ++
+  "fall back to one file per process: find . -name '*.lean' | xargs -n1 lean4fmt"
 
 end Lean4Fmt.Cli
