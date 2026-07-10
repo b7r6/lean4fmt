@@ -64,6 +64,28 @@ private def isDefShape
       || kind == ``Lean.Parser.Command.opaque
       || kind == ``Lean.Parser.Command.example
 
+/-- Whether a `declValEqns` can be actively laid out as `| pat => body` arms. Only
+    when there is no line comment anywhere inside it (arm comments must be
+    preserved byte-exact), no `where`/`termination_by` suffix on the
+    `matchAltsWhereDecls`, and at least one arm. When this is false the WHOLE
+    declaration falls back to verbatim (a `.span` of just the eqns would mangle:
+    the signature would still be reformatted while the arms re-anchor wrongly, as
+    there is no `:=` seam to anchor them). -/
+private def eqnsFormattable
+            (declVal : Lean.Syntax)
+            : Bool := Id.run do
+  if Lean4Fmt.Syntax.subtreeHasLineComment declVal then return false
+  let mawd := (declVal.getArgs[0]?).getD .missing
+  let margs := mawd.getArgs
+  if (margs.toList.drop 1).any (fun s => !(bareSrc s).trimAscii.toString.isEmpty) then
+    return false
+  let altsNode := (margs[0]?).getD .missing
+  let mut n := 0
+  for g in altsNode.getArgs do
+    for c in g.getArgs do
+      if c.getKind == ``Lean.Parser.Term.matchAlt then n := n + 1
+  return n != 0
+
 /-- The comment block (if any) inside a trivia string: the non-whitespace-only
     lines, dedented to column 0 (so a caller can re-anchor them with
     `.verbatim … 0`). `none` when the trivia is pure whitespace. Lets onePerLine
@@ -196,12 +218,15 @@ private def isActiveMultiline
       || Lean4Fmt.Syntax.isBinOp kind
 
 /-- How a definition value is to be placed. `span` is a whole `:= …` reproduced
-    verbatim (where/termination/equation/multi-line-opaque cases — the `:=` is
-    inside it). `body` is the value BODY alone (no `:=`), which the caller joins
-    to `:=`; `glue` means keep it on the `:=` line (a `do` block, compactDo). -/
+    verbatim (where/termination/multi-line-opaque cases — the `:=` is inside it).
+    `body` is the value BODY alone (no `:=`), which the caller joins to `:=`;
+    `glue` means keep it on the `:=` line (a `do` block, compactDo). `eqns` is an
+    equation-style value (`| pat => body` arms, no `:=`) already laid out one arm
+    per line; the caller places it under the signature at indent 2. -/
 private inductive ValForm
   | span (doc : Doc)
   | body (doc : Doc) (glue : Bool)
+  | eqns (arms : Doc)
 
 /-- Classify a `declVal` into a `ValForm` (see above). Splitting the `:=` from the
     body lets the caller choose the separator: inline ` := `, or (bodyOwnLine)
@@ -226,14 +251,44 @@ private def valForm
       | some _ => return .body (.flatten vdoc) false                                 -- dense flat body
       | none => return .span (← verbatim declVal)                                    -- multi-line: safe span
     | none => return .span (← verbatim declVal)
+  else if declVal.getKind == ``Lean.Parser.Command.declValEqns then
+    -- `| pat => body` equation arms. Structure:
+    --   declValEqns[ matchAltsWhereDecls[ matchAlts[ null[matchAlt…] ], term?, where? ] ]
+    -- Lay each arm on its own line (`| pat =>` + width-aware body after `=>`),
+    -- mirroring the `match` arm layout. Guarded: a line comment anywhere, a
+    -- `where`/`termination_by` suffix, or a structural surprise falls back to the
+    -- safe verbatim span (the gate would otherwise trip on it).
+    if Lean4Fmt.Syntax.subtreeHasLineComment declVal then return .span (← verbatim declVal)
+    let mawd := (declVal.getArgs[0]?).getD .missing
+    let margs := mawd.getArgs
+    let hasSuffix := (margs.toList.drop 1).any (fun s =>
+      !(bareSrc s).trimAscii.toString.isEmpty)
+    if hasSuffix then return .span (← verbatim declVal)
+    let altsNode := (margs[0]?).getD .missing
+    let mut alts : Array Lean.Syntax := #[]
+    for g in altsNode.getArgs do
+      for c in g.getArgs do
+        if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+    if alts.isEmpty then return .span (← verbatim declVal)
+    let mut armsDoc : Doc := .nil
+    let mut first := true
+    for alt in alts do
+      let aa := alt.getArgs
+      let patDoc ← walk (aa[1]?.getD .missing)
+      let bodyDoc ← walk (aa[aa.size-1]?.getD .missing)
+      let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ .group (.nest 2 (.line ++ bodyDoc))
+      armsDoc := armsDoc ++ (if first then .nil else .hardline) ++ armDoc
+      first := false
+    return .eqns armsDoc
   else
-    return .span (← verbatim declVal)   -- declValEqns / where-struct: literal span
+    return .span (← verbatim declVal)   -- where-struct: literal span
 
 /-- Flat width the value contributes to the `:= …` line (`none` if it can't be one
     line). span includes `:=` (+1 for the leading space); body adds ` := ` (4). -/
 private def ValForm.flatWidth : ValForm → Option Nat
   | .span d => (Lean4Fmt.Doc.flatWidth d).map (· + 1)
   | .body d _ => (Lean4Fmt.Doc.flatWidth d).map (· + 4)
+  | .eqns _ => none
 
 /-- Format the inner definition node `[kw, declId, sig, declVal, …]`. `modsWidth`
     is the inline width the modifiers add to the keyword's line.
@@ -269,6 +324,23 @@ private def defnDoc
   let ti ← match sigStx with | some s => typeInfo s | none => pure none
   let typeOK := match ti with | some (_, _, _, multi) => !multi | none => true
   let typeW := match ti with | some (_, _, tw, false) => 3 + tw | _ => 0
+  -- Equation-style value: the signature stays inline when it fits (matching the
+  -- source shape), else breaks per the binder knob; the arms then hang on their
+  -- own lines at indent 2. There is never a one-liner form for eqns.
+  match vf with
+  | .eqns arms =>
+    -- An arm body reproduced as a multi-line opaque block (e.g. a not-yet-ported
+    -- `structInst`) re-anchors by column, which drifts under active layout and is
+    -- non-idempotent. Fall back to whole-`defn` verbatim (modifiers still active).
+    if Lean4Fmt.Doc.hasMultilineVerbatim arms then return (← verbatim defn)
+    let sigDocFinal ←
+      if typeOK && prefixWidth + bW + typeW ≤ w then
+        let typeInline : Doc := match ti with | some (term, _, _, false) => .text " : " ++ term | _ => .nil
+        pure (bInline ++ typeInline)
+      else
+        match sigStx with | some s => sigDoc nameCol prefixWidth 0 s | none => pure .nil
+    return .text kw ++ .space ++ .text declId ++ sigDocFinal ++ .nest 2 (.hardline ++ arms)
+  | _ => pure ()
   let vFlat := vf.flatWidth
   let noComment := !Lean4Fmt.Syntax.subtreeHasLineComment defn
   let total := prefixWidth + bW + typeW + (vFlat.getD 1000000)
@@ -276,6 +348,7 @@ private def defnDoc
   let valInline : Doc := match vf with
     | .span d => .space ++ .flatten d
     | .body d _ => .text " := " ++ .flatten d
+    | .eqns _ => .nil     -- unreachable: eqns returned above
   if noComment && vFlat.isSome && typeOK && total ≤ w then
     let typeInline : Doc := match ti with | some (term, _, _, false) => .text " : " ++ term | _ => .nil
     return .text kw ++ .space ++ .text declId ++ bInline ++ typeInline ++ valInline
@@ -288,14 +361,15 @@ private def defnDoc
         if glue then .text " := " ++ d
         else if bodyOwnLine then .text " :=" ++ .nest 2 (.blank 1 ++ d)
         else .text " :=" ++ .group (.nest 2 (.line ++ d))
+      | .eqns _ => .nil     -- unreachable: eqns returned above
     let reserve := (Lean4Fmt.Doc.firstLineWidth valBroken).1
     let sig ← match sigStx with | some s => sigDoc nameCol prefixWidth reserve s | none => pure .nil
     return .text kw ++ .space ++ .text declId ++ sig ++ valBroken
 
 /-- Emit a declaration (bare — `Module` places its leading trivia), recursing
-    via `walk` where needed. Only plain `:= term` defs are actively formatted;
-    `where`-instance / equation / other value forms reproduce whole-verbatim
-    (their sig↔value boundary trivia is subtle — deferred to later depth). -/
+    via `walk` where needed. Plain `:= term` defs and `| pat => body` equation
+    defs are actively formatted; `where`-instance / other value forms reproduce
+    whole-verbatim (their sig↔value boundary trivia is subtle — deferred). -/
 def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
@@ -303,9 +377,13 @@ def emit
   let a := stx.getArgs
   let some defn := a[1]? | return (← verbatim stx)
   let dargs := defn.getArgs
-  let isSimpleVal := (dargs[3]?.map (·.getKind)) == some ``Lean.Parser.Command.declValSimple
-  if !isDefShape defn.getKind || !isSimpleVal then
-    return (← verbatim stx)     -- structure/inductive/instance/where/eqns: reproduce
+  let valKind := dargs[3]?.map (·.getKind)
+  let isEqns := valKind == some ``Lean.Parser.Command.declValEqns
+  let isActiveVal := valKind == some ``Lean.Parser.Command.declValSimple || isEqns
+  if !isDefShape defn.getKind || !isActiveVal then
+    return (← verbatim stx)     -- structure/inductive/instance/where: reproduce
+  if isEqns && !eqnsFormattable (dargs[3]?.getD .missing) then
+    return (← verbatim stx)     -- comment/where/termination-bearing eqns: whole-decl verbatim
   let attrsOwnLine := (← read).breaking.attributesOwnLine
   let (modsDoc, modsWidth) := match a[0]? with
     | some m => modifiersDoc attrsOwnLine m
