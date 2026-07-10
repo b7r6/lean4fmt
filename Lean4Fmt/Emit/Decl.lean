@@ -49,43 +49,88 @@ private def isDefShape (kind : SyntaxNodeKind) : Bool :=
     || kind == ``Lean.Parser.Command.opaque
     || kind == ``Lean.Parser.Command.example
 
-/-- Reflow an `optDeclSig`/`declSig` = [binders, typeSpec?]. Binders stay inline
-    (space-joined); the return type is laid out with a break-AFTER-colon policy
-    (Style.breaking.colon = .breakAfter). Because a top-level declaration sits at
-    column 0 and everything before the type (`prefixWidth`: modifiers + keyword +
-    declId + binders) is flat, the break is decided deterministically: keep the
-    type inline iff `prefixWidth + " : " + typeWidth + reserve ≤ lineWidth`, where
-    `reserve` is what the value adds to that same line before its own first break
-    (e.g. `:= by` ahead of a tactic block). Else the colon ends the line and the
-    type drops to a continuationIndent-indented line — the house style. Only
-    single-line types break this way; a multi-line (verbatim) type stays inline. -/
-private def sigDoc (prefixWidth reserve : Nat) (sig : Lean.Syntax) : EmitM Doc := do
+/-- Signature return-type info: `none` if there is no type spec, else
+    `(termDoc, colonTypeDoc, flatWidth, multiline?)` where `termDoc` is the type
+    term alone (no colon) and `colonTypeDoc` is the whole `: τ` byte-exact (with
+    the colon). Callers use `termDoc` (adding their own `: `) when it is single
+    line, and `colonTypeDoc` when it is multi-line or an unexpected shape (so the
+    colon is never lost). -/
+private def typeInfo (sig : Lean.Syntax) : EmitM (Option (Doc × Doc × Nat × Bool)) := do
   let a := sig.getArgs
-  let binders := (a[0]?.map (·.getArgs)).getD #[]
-  let mut bdoc : Doc := .nil
-  let mut bwidth := 0
-  for b in binders do
-    let bd ← verbatim b
-    bdoc := bdoc ++ .space ++ bd
-    bwidth := bwidth + 1 + (Lean4Fmt.Doc.flatWidth bd).getD 0
   let tsNode : Option Lean.Syntax := a[1]?.bind (fun x =>
     if x.getKind == ``Lean.Parser.Term.typeSpec then some x else x.getArgs[0]?)
   match tsNode with
   | some ts =>
     if ts.getKind == ``Lean.Parser.Term.typeSpec then
-      let tdoc ← verbatim (ts.getArgs[1]?.getD .missing)
-      if Lean4Fmt.Doc.hasMultilineVerbatim tdoc then
-        return bdoc ++ .space ++ (← verbatim ts)          -- multi-line type: inline
-      let cont := (← read).layout.continuationIndent
-      let w := (← read).layout.lineWidth
-      let typeWidth := (Lean4Fmt.Doc.flatWidth tdoc).getD 0
-      if prefixWidth + bwidth + 3 + typeWidth + reserve ≤ w then
-        return bdoc ++ .text " : " ++ tdoc                -- inline
-      else
-        return bdoc ++ .text " :" ++ .nest cont (.hardline ++ tdoc)   -- break after colon
+      let term ← verbatim (ts.getArgs[1]?.getD .missing)
+      let colonType ← verbatim ts
+      return some (term, colonType, (Lean4Fmt.Doc.flatWidth term).getD 0,
+                   Lean4Fmt.Doc.hasMultilineVerbatim term)
     else
-      return bdoc ++ .space ++ (← verbatim ts)            -- unexpected shape: inline
-  | none => return bdoc
+      let ct ← verbatim ts
+      return some (ct, ct, (Lean4Fmt.Doc.flatWidth ct).getD 0, true)  -- unexpected: use whole span
+  | none => return none
+
+/-- Reflow an `optDeclSig`/`declSig` = [binders, typeSpec?] under the binder-layout
+    knob (Style.breaking.binders):
+
+    • `oneLine` — binders space-joined on the keyword line; the return type stays
+      inline, or breaks AFTER the colon to a continuationIndent line when
+      `prefixWidth + " : " + typeWidth + reserve` overflows (`reserve` = what the
+      value adds to that line, e.g. `:= by`). The dense default.
+    • `fill` — binders packed on the line and wrapped to continuation lines as the
+      width fills (mathlib-ish); the type trails as a final fill element.
+    • `onePerLine` — each binder on its own line, and the return type on its own
+      line (colon leads it — breakBefore), all aligned under the declaration NAME
+      (column `nameCol`). The straylight house style.
+
+    A multi-line (verbatim) type is never itself broken (re-anchoring a multi-line
+    opaque block in a nest could drift); it is reproduced byte-exact with its
+    colon. -/
+private def sigDoc (nameCol prefixWidth reserve : Nat) (sig : Lean.Syntax) : EmitM Doc := do
+  let a := sig.getArgs
+  let binders := (a[0]?.map (·.getArgs)).getD #[]
+  let ti ← typeInfo sig
+  let mode := (← read).breaking.binders
+  let cont := (← read).layout.continuationIndent
+  let w := (← read).layout.lineWidth
+  match mode with
+  | .onePerLine =>
+    let mut d : Doc := .nil
+    for b in binders do d := d ++ .hardline ++ (← verbatim b)
+    match ti with
+    | some (term, colonType, _, multi) =>
+      if multi then d := d ++ .hardline ++ colonType         -- multi-line type: own line, byte-exact
+      else d := d ++ .hardline ++ .text ": " ++ term          -- breakBefore colon, own line
+    | none => pure ()
+    return .nest nameCol d
+  | .fill =>
+    let mut d : Doc := .nil
+    let mut first := true
+    for b in binders do
+      let bd ← verbatim b
+      d := d ++ (if first then .space else .group (.line)) ++ bd
+      first := false
+    match ti with
+    | some (term, colonType, _, multi) =>
+      if multi then return .nest cont (d ++ .space ++ colonType)
+      else return .nest cont (d ++ .group (.line ++ .text ": " ++ term))
+    | none => return .nest cont d
+  | .oneLine =>
+    let mut bdoc : Doc := .nil
+    let mut bwidth := 0
+    for b in binders do
+      let bd ← verbatim b
+      bdoc := bdoc ++ .space ++ bd
+      bwidth := bwidth + 1 + (Lean4Fmt.Doc.flatWidth bd).getD 0
+    match ti with
+    | some (term, colonType, typeWidth, multi) =>
+      if multi then return bdoc ++ .space ++ colonType
+      if prefixWidth + bwidth + 3 + typeWidth + reserve ≤ w then
+        return bdoc ++ .text " : " ++ term                             -- inline
+      else
+        return bdoc ++ .text " :" ++ .nest cont (.hardline ++ term)    -- break after colon
+    | none => return bdoc
 
 /-- Value kinds we actively lay out even when they span multiple lines (their own
     `walk` produces a width-aware breaking `group`). Everything else keeps the
@@ -147,8 +192,9 @@ private def defnDoc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.S
   -- is reserved when deciding whether the signature's type breaks after the colon.
   let val ← match a[3]? with | some v => valDoc walk v | none => pure .nil
   let reserve := (Lean4Fmt.Doc.firstLineWidth val).1
-  let prefixWidth := modsWidth + kw.length + 1 + declId.length
-  let sig ← match a[2]? with | some s => sigDoc prefixWidth reserve s | none => pure .nil
+  let nameCol := modsWidth + kw.length + 1              -- column where the declId starts
+  let prefixWidth := nameCol + declId.length            -- column where binders start
+  let sig ← match a[2]? with | some s => sigDoc nameCol prefixWidth reserve s | none => pure .nil
   return .text kw ++ .space ++ .text declId ++ sig ++ val
 
 /-- Emit a declaration (bare — `Module` places its leading trivia), recursing

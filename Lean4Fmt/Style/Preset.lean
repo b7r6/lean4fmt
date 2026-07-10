@@ -20,13 +20,15 @@ namespace Lean4Fmt.Style
 /-- Straylight house style (§6). -/
 def straylight : Style := {
   layout     := { lineWidth := 100, indent := 2, continuationIndent := 4 }
-  breaking   := { colon := .breakAfter, binders := .oneLine, compactDo := true }
+  breaking   := { colon := .breakBefore, binders := .onePerLine, compactDo := true }
   alignment  := { structFields := .whenShort, matchArms := .whenShort, maxDelta := 8 }
   blankLines := { policy := .normalize, betweenTopLevelDecls := 1, maxConsecutive := 1 }
 }
 
-/-- Placeholder — tuned to minimize mathlib4 churn (§9). Currently = Straylight. -/
+/-- Placeholder — tuned to minimize mathlib4 churn (§9). Currently = Straylight
+    with the mathlib-ish binder fill (pack + wrap) and blank preservation. -/
 def mathlib : Style := { straylight with
+  breaking   := { straylight.breaking with binders := .fill, colon := .breakAfter }
   blankLines := { straylight.blankLines with policy := .preserve }
 }
 
