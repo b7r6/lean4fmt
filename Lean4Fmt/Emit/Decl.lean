@@ -153,42 +153,42 @@ private def isActiveMultiline (kind : SyntaxNodeKind) : Bool :=
     || kind == ``Lean.Parser.Term.let
     || kind == ``Lean.Parser.Term.match
 
-/-- `:= value` — actively format the value when it lays out flat (single line);
-    for a ported active kind, compose `:=` + a width-aware group so the value sits
-    on the same line if it fits or drops to an indented next line otherwise (the
-    construct's own group then breaks internally). Any other multi-line value is
-    reproduced as the whole `declValSimple` span (`:=` as anchor line), which
-    keeps the separator and multi-line indentation correct. -/
-private def valDoc (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM Doc := do
+/-- How a definition value is to be placed. `span` is a whole `:= …` reproduced
+    verbatim (where/termination/equation/multi-line-opaque cases — the `:=` is
+    inside it). `body` is the value BODY alone (no `:=`), which the caller joins
+    to `:=`; `glue` means keep it on the `:=` line (a `do` block, compactDo). -/
+private inductive ValForm
+  | span (doc : Doc)
+  | body (doc : Doc) (glue : Bool)
+
+/-- Classify a `declVal` into a `ValForm` (see above). Splitting the `:=` from the
+    body lets the caller choose the separator: inline ` := `, or (bodyOwnLine)
+    `:=` then a blank then the body on its own indented line. -/
+private def valForm (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM ValForm := do
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
     let a := declVal.getArgs
-    -- a[2] = termination suffix, a[3] = where clause — if either is present we must
-    -- reproduce the whole span (walking only the value would drop them).
     let hasSuffix := (a[2]?.map (fun s => !(bareSrc s).trimAscii.toString.isEmpty)).getD false
     let hasWhere := (a[3]?.map (fun s => !s.getArgs.isEmpty)).getD false
     match a[1]? with
     | some v =>
-      if hasSuffix || hasWhere then return .space ++ (← verbatim declVal)
+      if hasSuffix || hasWhere then return .span (← verbatim declVal)
       let vdoc ← walk v
       let clean := !Lean4Fmt.Syntax.subtreeHasLineComment v
         && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc
-      -- `do` is glued to `:=` (compact style, Style.breaking.compactDo): its own
-      -- nest indents statements by 2 from the declaration, not from a dropped line.
-      if v.getKind == ``Lean.Parser.Term.do && clean then
-        return .text " := " ++ vdoc
-      -- Active layout is safe (idempotent) exactly when the value contains no
-      -- multi-line verbatim block: active rendering then only emits
-      -- text/line/nest/hardline, never re-anchors an opaque block. Ported active
-      -- kinds (no line comment) lay out width-aware; anything with an embedded
-      -- multi-line opaque block falls back to the proven-safe whole-span.
-      if isActiveMultiline v.getKind && clean then
-        return .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
+      if v.getKind == ``Lean.Parser.Term.do && clean then return .body vdoc true    -- glue `:= do`
+      if isActiveMultiline v.getKind && clean then return .body vdoc false
       match Lean4Fmt.Doc.flatWidth vdoc with
-      | some _ => return .text " := " ++ .flatten vdoc          -- dense flat, no suffix
-      | none => return .space ++ (← verbatim declVal)           -- multi-line: safe span
-    | none => return .space ++ (← verbatim declVal)
+      | some _ => return .body (.flatten vdoc) false                                 -- dense flat body
+      | none => return .span (← verbatim declVal)                                    -- multi-line: safe span
+    | none => return .span (← verbatim declVal)
   else
-    return .space ++ (← verbatim declVal)   -- declValEqns / where-struct: literal span
+    return .span (← verbatim declVal)   -- declValEqns / where-struct: literal span
+
+/-- Flat width the value contributes to the `:= …` line (`none` if it can't be one
+    line). span includes `:=` (+1 for the leading space); body adds ` := ` (4). -/
+private def ValForm.flatWidth : ValForm → Option Nat
+  | .span d => (Lean4Fmt.Doc.flatWidth d).map (· + 1)
+  | .body d _ => (Lean4Fmt.Doc.flatWidth d).map (· + 4)
 
 /-- Format the inner definition node `[kw, declId, sig, declVal, …]`. `modsWidth`
     is the inline width the modifiers add to the keyword's line.
@@ -204,8 +204,7 @@ private def defnDoc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.S
   let a := defn.getArgs
   let kw := match a[0]? with | some (.atom _ v) => v | _ => "def"
   let declId := (a[1]?.map bareSrc).getD ""
-  let val ← match a[3]? with | some v => valDoc walk v | none => pure .nil
-  let reserve := (Lean4Fmt.Doc.firstLineWidth val).1
+  let vf ← match a[3]? with | some v => valForm walk v | none => pure (.body .nil false)
   let nameCol := modsWidth + kw.length + 1              -- column where the declId starts
   let prefixWidth := nameCol + declId.length            -- column where binders start
   let w := (← read).layout.lineWidth
@@ -221,15 +220,28 @@ private def defnDoc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.S
   let ti ← match sigStx with | some s => typeInfo s | none => pure none
   let typeOK := match ti with | some (_, _, _, multi) => !multi | none => true
   let typeW := match ti with | some (_, _, tw, false) => 3 + tw | _ => 0
-  let vFlat := Lean4Fmt.Doc.flatWidth val
+  let vFlat := vf.flatWidth
   let noComment := !Lean4Fmt.Syntax.subtreeHasLineComment defn
   let total := prefixWidth + bW + typeW + (vFlat.getD 1000000)
+  -- inline form of the value (` := body`, or the span reproduced flat)
+  let valInline : Doc := match vf with
+    | .span d => .space ++ .flatten d
+    | .body d _ => .text " := " ++ .flatten d
   if noComment && vFlat.isSome && typeOK && total ≤ w then
     let typeInline : Doc := match ti with | some (term, _, _, false) => .text " : " ++ term | _ => .nil
-    return .text kw ++ .space ++ .text declId ++ bInline ++ typeInline ++ .flatten val
+    return .text kw ++ .space ++ .text declId ++ bInline ++ typeInline ++ valInline
   else
+    -- broken value placement per the bodyOwnLine knob (skipped for span / glued do)
+    let bodyOwnLine := (← read).breaking.bodyOwnLine
+    let valBroken : Doc := match vf with
+      | .span d => .space ++ d
+      | .body d glue =>
+        if glue then .text " := " ++ d
+        else if bodyOwnLine then .text " :=" ++ .nest 2 (.blank 1 ++ d)
+        else .text " :=" ++ .group (.nest 2 (.line ++ d))
+    let reserve := (Lean4Fmt.Doc.firstLineWidth valBroken).1
     let sig ← match sigStx with | some s => sigDoc nameCol prefixWidth reserve s | none => pure .nil
-    return .text kw ++ .space ++ .text declId ++ sig ++ val
+    return .text kw ++ .space ++ .text declId ++ sig ++ valBroken
 
 /-- Emit a declaration (bare — `Module` places its leading trivia), recursing
     via `walk` where needed. Only plain `:= term` defs are actively formatted;

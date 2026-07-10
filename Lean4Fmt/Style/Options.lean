@@ -47,6 +47,7 @@ structure Breaking where
   colon            : ColonPlacement := .breakAfter
   binders          : BinderLayout := .oneLine
   attributesOwnLine : Bool := false   -- `@[…]` on its own line above the keyword
+  bodyOwnLine      : Bool := false   -- broken decls: `:=` ends the sig, blank, body at indent
   compactDo        : Bool := true
   elseIfChain      : Bool := true
   deriving Repr, Inhabited
