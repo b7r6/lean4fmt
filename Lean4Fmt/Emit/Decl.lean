@@ -191,20 +191,45 @@ private def valDoc (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM D
     return .space ++ (← verbatim declVal)   -- declValEqns / where-struct: literal span
 
 /-- Format the inner definition node `[kw, declId, sig, declVal, …]`. `modsWidth`
-    is the inline width the modifiers add to the keyword's line (for signature
-    width coupling). -/
+    is the inline width the modifiers add to the keyword's line.
+
+    One-liner exemption (chosen policy): if the WHOLE declaration
+    `[vis] kw name binders : type := value` fits on one line — the value is single
+    line, the type is single line, and there is no line comment — it is emitted
+    inline regardless of the binder-layout knob (so a short def does not explode
+    into onePerLine). Otherwise the signature breaks per the knob and the value is
+    laid out by `valDoc`. (Any doc-comment/attribute lines sit above and do not
+    count toward the one-line budget.) -/
 private def defnDoc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.Syntax) : EmitM Doc := do
   let a := defn.getArgs
   let kw := match a[0]? with | some (.atom _ v) => v | _ => "def"
   let declId := (a[1]?.map bareSrc).getD ""
-  -- Value first: its first-line width (up to its own first break, e.g. `:= by`)
-  -- is reserved when deciding whether the signature's type breaks after the colon.
   let val ← match a[3]? with | some v => valDoc walk v | none => pure .nil
   let reserve := (Lean4Fmt.Doc.firstLineWidth val).1
   let nameCol := modsWidth + kw.length + 1              -- column where the declId starts
   let prefixWidth := nameCol + declId.length            -- column where binders start
-  let sig ← match a[2]? with | some s => sigDoc nameCol prefixWidth reserve s | none => pure .nil
-  return .text kw ++ .space ++ .text declId ++ sig ++ val
+  let w := (← read).layout.lineWidth
+  let sigStx := a[2]?
+  -- inline binder docs + flat width (for the one-line-fit check)
+  let binders := ((sigStx.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
+  let mut bInline : Doc := .nil
+  let mut bW := 0
+  for b in binders do
+    let bd ← verbatim b
+    bInline := bInline ++ .space ++ bd
+    bW := bW + 1 + (Lean4Fmt.Doc.flatWidth bd).getD 0
+  let ti ← match sigStx with | some s => typeInfo s | none => pure none
+  let typeOK := match ti with | some (_, _, _, multi) => !multi | none => true
+  let typeW := match ti with | some (_, _, tw, false) => 3 + tw | _ => 0
+  let vFlat := Lean4Fmt.Doc.flatWidth val
+  let noComment := !Lean4Fmt.Syntax.subtreeHasLineComment defn
+  let total := prefixWidth + bW + typeW + (vFlat.getD 1000000)
+  if noComment && vFlat.isSome && typeOK && total ≤ w then
+    let typeInline : Doc := match ti with | some (term, _, _, false) => .text " : " ++ term | _ => .nil
+    return .text kw ++ .space ++ .text declId ++ bInline ++ typeInline ++ .flatten val
+  else
+    let sig ← match sigStx with | some s => sigDoc nameCol prefixWidth reserve s | none => pure .nil
+    return .text kw ++ .space ++ .text declId ++ sig ++ val
 
 /-- Emit a declaration (bare — `Module` places its leading trivia), recursing
     via `walk` where needed. Only plain `:= term` defs are actively formatted;
