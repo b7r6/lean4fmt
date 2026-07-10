@@ -44,10 +44,11 @@ structure Layout where
   deriving Repr, Inhabited
 
 structure Breaking where
-  colon        : ColonPlacement := .breakAfter
-  binders      : BinderLayout := .oneLine
-  compactDo    : Bool := true
-  elseIfChain  : Bool := true
+  colon            : ColonPlacement := .breakAfter
+  binders          : BinderLayout := .oneLine
+  attributesOwnLine : Bool := false   -- `@[…]` on its own line above the keyword
+  compactDo        : Bool := true
+  elseIfChain      : Bool := true
   deriving Repr, Inhabited
 
 structure Alignment where

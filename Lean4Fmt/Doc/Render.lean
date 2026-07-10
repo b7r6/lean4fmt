@@ -163,6 +163,10 @@ partial def render (style : Style) (doc : Doc) : String :=
         let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
         (wr st indent (renderRow r), false)) (st, true)).1
   let st := go doc 0 false {}
+  -- NOTE: no blanket trailing-whitespace strip — active layout never emits trailing
+  -- whitespace, and a final-pass strip would damage the interior lines of multi-line
+  -- string literals (their trailing spaces are part of the token). A comment/string-
+  -- aware hygiene pass is deferred (same class as blank-line normalization, §8).
   if st.out.endsWith "\n" then st.out else st.out ++ "\n"
 
 end Lean4Fmt.Doc

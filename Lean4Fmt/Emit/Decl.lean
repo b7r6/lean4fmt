@@ -22,24 +22,33 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
 
 /-- Emit a declaration's `declModifiers` = [docComment?, attributes?, visibility?,
     …]. The doc comment (always first) goes on its own line (literal `textRaw` —
-    it may be multi-line — then a `hardline`); the remaining modifiers
-    (attributes/visibility/…) sit on the declaration's own line, space-joined,
-    followed by a single space before the keyword. This fixes the v1-era gluing of
-    `/-- … -/` onto the `def` line while staying token-preserving and idempotent
-    (decls sit at column 0, so the literal doc comment re-emits byte-exactly).
-    Returns the doc and the width of the INLINE prefix it contributes to the
-    keyword's line (attributes/visibility + trailing space; the doc comment is on
-    its own line so contributes 0) — used for signature width coupling. -/
-private def modifiersDoc (m : Lean.Syntax) : Doc × Nat := Id.run do
+    it may be multi-line — then a `hardline`). If `attrsOwnLine` (straylight),
+    the attributes `@[…]` also get their own line above the keyword; otherwise
+    they sit inline with the visibility modifiers on the keyword's line. Returns
+    the doc and the width of the INLINE prefix it contributes to the keyword's
+    line (used for signature width coupling and binder alignment: with
+    attrsOwnLine only the visibility modifiers count, so binders align under the
+    name at a shallower column). -/
+private def modifiersDoc (attrsOwnLine : Bool) (m : Lean.Syntax) : Doc × Nat := Id.run do
   let margs := m.getArgs
   let docText := (margs[0]?.map bareSrc).getD "" |>.trimAscii.toString
-  let restParts := (margs.toList.drop 1).filterMap (fun c =>
+  let attrText := (margs[1]?.map bareSrc).getD "" |>.trimAscii.toString
+  let restParts := (margs.toList.drop 2).filterMap (fun c =>
     let s := (bareSrc c).trimAscii.toString; if s.isEmpty then none else some s)
   let docDoc : Doc := if docText.isEmpty then .nil else .textRaw docText ++ .hardline
   let restStr := String.intercalate " " restParts
   let restDoc : Doc := if restParts.isEmpty then .nil else .text restStr ++ .space
-  let inlineWidth := if restParts.isEmpty then 0 else restStr.length + 1
-  return (docDoc ++ restDoc, inlineWidth)
+  let restW := if restParts.isEmpty then 0 else restStr.length + 1
+  if attrsOwnLine then
+    -- doc (own line) · attributes (own line) · visibility (inline)
+    let attrDoc : Doc := if attrText.isEmpty then .nil else .text attrText ++ .hardline
+    return (docDoc ++ attrDoc ++ restDoc, restW)
+  else
+    -- doc (own line) · attributes+visibility (inline)
+    let allStr := String.intercalate " " ((if attrText.isEmpty then [] else [attrText]) ++ restParts)
+    let inlineDoc : Doc := if allStr.isEmpty then .nil else .text allStr ++ .space
+    let inlineW := if allStr.isEmpty then 0 else allStr.length + 1
+    return (docDoc ++ inlineDoc, inlineW)
 
 /-- Keyword-led definition shapes we actively format. -/
 private def isDefShape (kind : SyntaxNodeKind) : Bool :=
@@ -208,8 +217,9 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
   let isSimpleVal := (dargs[3]?.map (·.getKind)) == some ``Lean.Parser.Command.declValSimple
   if !isDefShape defn.getKind || !isSimpleVal then
     return (← verbatim stx)     -- structure/inductive/instance/where/eqns: reproduce
+  let attrsOwnLine := (← read).breaking.attributesOwnLine
   let (modsDoc, modsWidth) := match a[0]? with
-    | some m => modifiersDoc m
+    | some m => modifiersDoc attrsOwnLine m
     | none => (.nil, 0)
   return modsDoc ++ (← defnDoc walk modsWidth defn)
 
