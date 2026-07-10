@@ -22,6 +22,25 @@ partial def leafToks : Lean.Syntax → Array String
   | .missing => #[]
   | .node _ _ args => args.foldl (fun acc x => acc ++ leafToks x) #[]
 
+/-- The trivia (leading+trailing) of a leaf's `SourceInfo`, as raw text. -/
+private def triviaOfInfo : Lean.SourceInfo → String
+  | .original leading _ trailing _ => leading.toString ++ trailing.toString
+  | _ => ""
+
+/-- All trivia text across the tree (leaves carry the trivia). -/
+partial def triviaText : Lean.Syntax → String
+  | .atom info _ => triviaOfInfo info
+  | .ident info _ _ _ => triviaOfInfo info
+  | .node _ _ args => args.foldl (fun acc x => acc ++ triviaText x) ""
+  | .missing => ""
+
+/-- Non-whitespace content of ALL trivia — i.e. the comment characters (trivia is
+    only whitespace + comments). Comments are not tokens, so `leafToks` alone does
+    not catch a DROPPED comment; the gate compares this too. Whitespace is stripped
+    so that reflowed/re-indented (but content-identical) comments still match. -/
+def commentContent (stx : Lean.Syntax) : String :=
+  String.ofList ((triviaText stx).toList.filter (fun c => !c.isWhitespace))
+
 /-- First identifier appearing in a subtree (the target of `namespace`/`open`). -/
 partial def firstIdent : Lean.Syntax → Name
   | .ident _ _ n _ => n
