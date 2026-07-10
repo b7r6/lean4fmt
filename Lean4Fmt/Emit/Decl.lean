@@ -69,17 +69,22 @@ private def isDefShape
     `.verbatim … 0`). `none` when the trivia is pure whitespace. Lets onePerLine
     preserve inter-binder comments instead of dropping them (which would otherwise
     force the gate's identity fallback). -/
-private def commentBlock? (trivia : String) : Option String := Id.run do
-  let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
-  let mut ls := trivia.splitOn "\n"
-  ls := ls.dropWhile isWs
-  ls := (ls.reverse.dropWhile isWs).reverse
-  if ls.isEmpty then return none
-  let indentOf (l : String) : Nat := (l.toList.takeWhile (· == ' ')).length
-  let base := (ls.filter (fun l => !isWs l)).foldl (fun m l => Nat.min m (indentOf l)) 1000000
-  let base := if base == 1000000 then 0 else base
-  let dedented := ls.map (fun l => if l.length ≥ base then String.ofList (l.toList.drop base) else l)
-  return some (String.intercalate "\n" dedented)
+private def commentBlock?
+            (trivia : String)
+            : Option String :=
+
+  Id.run
+    do
+      let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
+      let mut ls := trivia.splitOn "\n"
+      ls := ls.dropWhile isWs
+      ls := (ls.reverse.dropWhile isWs).reverse
+      if ls.isEmpty then return none
+      let indentOf (l : String) : Nat := (l.toList.takeWhile (· == ' ')).length
+      let base := (ls.filter (fun l => !isWs l)).foldl (fun m l => Nat.min m (indentOf l)) 1000000
+      let base := if base == 1000000 then 0 else base
+      let dedented := ls.map (fun l => if l.length ≥ base then String.ofList (l.toList.drop base) else l)
+      return some (String.intercalate "\n" dedented)
 
 /-- Signature return-type info: `none` if there is no type spec, else
     `(termDoc, colonTypeDoc, flatWidth, multiline?)` where `termDoc` is the type
