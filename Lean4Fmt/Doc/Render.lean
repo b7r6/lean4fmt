@@ -85,7 +85,11 @@ private structure RSt where
 
 /-- Emit single-line visible text at break-indent `indent`, flushing pending
     newlines (with indentation) first. -/
-private def wr (st : RSt) (indent : Nat) (s : String) : RSt :=
+private def wr
+            (st : RSt)
+            (indent : Nat)
+            (s : String)
+            : RSt :=
   let st := if st.pend > 0
     then { out := st.out ++ newlines st.pend ++ spaces indent, col := indent, pend := 0 }
     else st
@@ -98,7 +102,12 @@ private def wr (st : RSt) (indent : Nat) (s : String) : RSt :=
     the block re-anchor correctly regardless of the internal indentation of nested
     lines (e.g. a `do`-block deeper than its head). The first line is emitted as-is
     (it starts right after `indent` is already established). -/
-private def wrBlock (st : RSt) (indent : Nat) (base : Nat) (raw : String) : RSt := Id.run do
+private def wrBlock
+            (st : RSt)
+            (indent : Nat)
+            (base : Nat)
+            (raw : String)
+            : RSt := Id.run do
   let nonblank (l : String) : Bool := l.any (· != ' ')
   let mut ls := raw.trimAsciiEnd.toString.splitOn "\n"
   ls := ls.dropWhile (fun l => !nonblank l)
@@ -116,7 +125,10 @@ private def wrBlock (st : RSt) (indent : Nat) (base : Nat) (raw : String) : RSt 
   return st
 
 /-- Render a `Doc` to a string under `style`. -/
-partial def render (style : Style) (doc : Doc) : String :=
+partial def render
+            (style : Style)
+            (doc : Doc)
+            : String :=
   let width := style.layout.lineWidth
   let maxPend := style.blankLines.maxConsecutive + 1
   let rec go (d : Doc) (indent : Nat) (flat : Bool) (st : RSt) : RSt :=

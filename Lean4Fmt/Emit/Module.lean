@@ -32,7 +32,10 @@ open Lean Lean4Fmt.Doc
     the policy safely requires clamping only whitespace-region blanks (comment-
     aware) and is deferred until that can be done without risking comment/banner
     content. -/
-def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
+def emit
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.EmitM Doc := do
   let args := stx.getArgs
   let unit (c : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
     pure (Lean4Fmt.Emit.leadingRaw c ++ (← walk c) ++ Lean4Fmt.Emit.trailingRaw c)

@@ -17,7 +17,11 @@ namespace Lean4Fmt.Emit.Command
 open Lean Lean4Fmt.Doc
 
 /-- Emit the Command construct rooted at `stx`, recursing via `walk`. -/
-def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc :=
+def emit
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.EmitM Doc :=
+
   let _ := walk
   Lean4Fmt.Emit.verbatim stx
 

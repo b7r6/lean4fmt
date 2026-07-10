@@ -48,7 +48,10 @@ def Result.changed (r : Result) : Bool := r.output != r.original
     it returns a value. Catches its own errors (falling back to identity output +
     an error diagnostic) so a batch never aborts — this is what a worker pool
     dispatches. -/
-unsafe def runJob (style : Style.Style) (path : System.FilePath) : IO Result := do
+unsafe def runJob
+           (style : Style.Style)
+           (path : System.FilePath)
+           : IO Result := do
   let original ← IO.FS.readFile path
   try
     let (output, diagnostics) ← Frontend.formatFile path.toString original style
@@ -60,13 +63,19 @@ unsafe def runJob (style : Style.Style) (path : System.FilePath) : IO Result := 
 /-- The scheduler seam. SEQUENTIAL today — the single place a core-pinned worker
     pool (Driver.Pool) or batched uring loop (Driver.Io) will slot in, leaving the
     pure core and `runJob` untouched. -/
-unsafe def runAll (style : Style.Style) (paths : Array System.FilePath) : IO (Array Result) :=
+unsafe def runAll
+           (style : Style.Style)
+           (paths : Array System.FilePath)
+           : IO (Array Result) :=
+
   paths.mapM (runJob style)
 
 /-- Expand file/dir inputs into the `.lean` file set to process (directories are
     walked, `.lake` build trees skipped), deduplicated and in a deterministic
     (sorted) order so runs are reproducible. -/
-def expand (inputs : Array System.FilePath) : IO (Array System.FilePath) := do
+def expand
+    (inputs : Array System.FilePath)
+    : IO (Array System.FilePath) := do
   let mut acc : Array System.FilePath := #[]
   for p in inputs do
     if ← p.isDir then acc := acc ++ (← findLean p)

@@ -22,7 +22,11 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
 /-- Width-aware bracketed comma list `l e₁, e₂, … r`: flat if it fits, else one
     element per line indented by 2 with `l`/`r` on their own lines (the standard
     all-or-nothing `commaList` group). Skips the parser's comma atoms. -/
-private def commaGroup (walk : Walk) (l r : String) (children : Array Lean.Syntax) : EmitM Doc := do
+private def commaGroup
+            (walk : Walk)
+            (l r : String)
+            (children : Array Lean.Syntax)
+            : EmitM Doc := do
   let mut ds : Array Doc := #[]
   for c in children do
     if c.isAtom then continue
@@ -32,7 +36,10 @@ private def commaGroup (walk : Walk) (l r : String) (children : Array Lean.Synta
 /-- Emit an expression construct, recursing via `walk`. Produces flat Doc for the
     handled kinds; everything else (and anything with a line comment) reproduces
     verbatim. -/
-partial def emit (walk : Walk) (stx : Lean.Syntax) : EmitM Doc := do
+partial def emit
+            (walk : Walk)
+            (stx : Lean.Syntax)
+            : EmitM Doc := do
   -- comment hazard (§0.4): never restructure a subtree carrying a line comment
   if Lean4Fmt.Syntax.subtreeHasLineComment stx then return (← verbatim stx)
   match stx with

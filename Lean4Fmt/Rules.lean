@@ -22,5 +22,4 @@ namespace Lean4Fmt.Rules
 
 /-- Run every lint rule over a module and collect diagnostics. No-op today (each
     rule returns `#[]`); this is the single composition point for the rule set. -/
-def lint (stx : Lean.Syntax) : Array Diagnostic :=
-  Naming.lint stx
+def lint (stx : Lean.Syntax) : Array Diagnostic := Naming.lint stx

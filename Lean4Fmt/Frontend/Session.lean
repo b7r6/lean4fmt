@@ -50,7 +50,10 @@ inductive ElabDepth
     (skip proofs) is the planned optimization; the thread pool (Driver.Pool) is the
     planned throughput lever (§12). The env must already be built (imports loaded)
     ONCE per process — re-importing per call is what breaks in-process reuse. -/
-unsafe def parseModule? (env : Environment) (path contents : String) : IO (Option Lean.Syntax) := do
+unsafe def parseModule?
+           (env : Environment)
+           (path contents : String)
+           : IO (Option Lean.Syntax) := do
   let ictx := Parser.mkInputContext contents path
   let (hdr, mps, msgs) ← Parser.parseHeader ictx
   quietly do

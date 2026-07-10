@@ -35,7 +35,10 @@ open Lean
     the interleaved elaborating frontend (`Session.parseModule?`, `full` depth).
     `env` is imported once per process by `formatFile`; both the source parse and
     the fixed-point reparse reuse it (re-importing per call is what breaks). -/
-unsafe def parseFull? (env : Environment) (path contents : String) : IO (Option Lean.Syntax) := do
+unsafe def parseFull?
+           (env : Environment)
+           (path contents : String)
+           : IO (Option Lean.Syntax) := do
   match ← parseModule? env path contents with
   | some stx => pure (some stx)
   | none => Session.parseModule? env path contents
@@ -44,9 +47,11 @@ unsafe def parseFull? (env : Environment) (path contents : String) : IO (Option 
     it provably preserves meaning and is a fixed point, else the original — paired
     with the lint diagnostics for the source (the lint pass runs on the parsed
     syntax regardless of whether the reformat is kept). -/
-unsafe def formatSafe (env : Environment) (path contents : String)
-    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default) :
-    IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
+unsafe def formatSafe
+           (env : Environment)
+           (path contents : String)
+           (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
+           : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   match ← parseFull? env path contents with
   | none => pure (contents, #[])
   | some stx =>
@@ -63,9 +68,10 @@ unsafe def formatSafe (env : Environment) (path contents : String)
       pure ((if ok then active else contents), diags)
 
 /-- Build the environment for a file (loads its imports) and format it. -/
-unsafe def formatFile (path contents : String)
-    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default) :
-    IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
+unsafe def formatFile
+           (path contents : String)
+           (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
+           : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   let ictx := Parser.mkInputContext contents path
   let (hdr, _, msgs) ← Parser.parseHeader ictx
   let (env, _) ← Elab.processHeader hdr {} msgs ictx (trustLevel := 1024)

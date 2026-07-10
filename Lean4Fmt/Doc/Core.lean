@@ -53,8 +53,10 @@ namespace Doc
 instance : Append Doc := ⟨Doc.cat⟩
 instance : HAdd Doc Doc Doc := ⟨Doc.cat⟩
 
-@[inline] def empty : Doc := .nil
-@[inline] def space : Doc := .text " "
+@[inline]
+def empty : Doc := .nil
+@[inline]
+def space : Doc := .text " "
 
 /-- Concatenate a list of docs. -/
 def concat (ds : List Doc) : Doc := ds.foldl .cat .nil

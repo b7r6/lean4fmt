@@ -16,14 +16,20 @@ namespace Lean4Fmt.Syntax
 open Lean
 
 /-- Leading trivia string of a syntax's head token, if original. -/
-def leading? (stx : Lean.Syntax) : Option String :=
+def leading?
+    (stx : Lean.Syntax)
+    : Option String :=
+
   match stx.getHeadInfo with
   | .original leading .. => some (Substring.Raw.toString leading)
   | _ => none
 
 /-- Trailing trivia string of a syntax's tail token, if original. Together with
     the next form's leading this partitions the inter-form gap exactly. -/
-def trailing? (stx : Lean.Syntax) : Option String :=
+def trailing?
+    (stx : Lean.Syntax)
+    : Option String :=
+
   match stx.getTailInfo with
   | .original _ _ trailing _ => some (Substring.Raw.toString trailing)
   | _ => none
@@ -34,7 +40,9 @@ def hasLineComment (s : String) : Bool := (s.splitOn "--").length > 1
 
 /-- True if any token in the subtree carries a line comment in its trivia. Such
     a subtree must never be inlined/flattened (§0.4). -/
-partial def subtreeHasLineComment (stx : Lean.Syntax) : Bool :=
+partial def subtreeHasLineComment
+            (stx : Lean.Syntax)
+            : Bool :=
   let inTrivia (info : SourceInfo) : Bool :=
     match info with
     | .original l _ t _ =>
@@ -49,7 +57,10 @@ partial def subtreeHasLineComment (stx : Lean.Syntax) : Bool :=
 /-- Exact original source text for a node (leading trivia in, trailing out):
     reprint, falling back to the source slice when reprint is unavailable
     (§0.3 — reprint can be `none` for some nodes after `updateLeading`). -/
-def verbatimSrc? (stx : Lean.Syntax) : Option String :=
+def verbatimSrc?
+    (stx : Lean.Syntax)
+    : Option String :=
+
   match stx.reprint with
   | some s => some s
   | none => (stx.getSubstring? true false).map (·.toString)

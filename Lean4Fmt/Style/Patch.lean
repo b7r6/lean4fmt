@@ -39,7 +39,10 @@ instance : Append StylePatch := ⟨fun a b => {
 }⟩
 
 /-- Apply a patch to a base style (patch wins where present). -/
-def Style.apply (base : Style) (p : StylePatch) : Style := {
+def Style.apply
+    (base : Style)
+    (p : StylePatch)
+    : Style := {
   layout     := p.layout.getD base.layout
   breaking   := p.breaking.getD base.breaking
   alignment  := p.alignment.getD base.alignment

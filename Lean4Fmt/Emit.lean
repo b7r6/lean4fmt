@@ -30,7 +30,9 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Style
 
 /-- The single recursive walker. Dispatches to category emitters; falls back to
     verbatim reproduction for anything not yet actively formatted. -/
-partial def walk (stx : Lean.Syntax) : EmitM Doc := do
+partial def walk
+            (stx : Lean.Syntax)
+            : EmitM Doc := do
   match stx with
   | .missing => pure .nil
   | .atom _ v => pure (.text v)
@@ -60,11 +62,19 @@ partial def walk (stx : Lean.Syntax) : EmitM Doc := do
     else verbatim stx
 
 /-- Format a whole module to a `Doc` plus collected diagnostics, under `style`. -/
-def run (style : Style) (stx : Lean.Syntax) : Doc × Array Rules.Diagnostic :=
+def run
+    (style : Style)
+    (stx : Lean.Syntax)
+    : Doc × Array Rules.Diagnostic :=
+
   (walk stx |>.run style).run #[]
 
 /-- Convenience: format a module directly to a string. -/
-def format (style : Style) (stx : Lean.Syntax) : String × Array Rules.Diagnostic :=
+def format
+    (style : Style)
+    (stx : Lean.Syntax)
+    : String × Array Rules.Diagnostic :=
+
   let (doc, diags) := run style stx
   (Lean4Fmt.Doc.render style doc, diags)
 

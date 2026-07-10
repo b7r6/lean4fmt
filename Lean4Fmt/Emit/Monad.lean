@@ -34,7 +34,10 @@ def emitDiag (d : Rules.Diagnostic) : EmitM Unit := modify (·.push d)
 abbrev Walk := Lean.Syntax → EmitM Doc
 
 /-- Bare source of a form (no leading/trailing trivia). -/
-def bareSrc (stx : Lean.Syntax) : String :=
+def bareSrc
+    (stx : Lean.Syntax)
+    : String :=
+
   (stx.getSubstring? false false).map (·.toString) |>.getD ""
 
 /-- Opaque reproduction (§4.1): the safe default for any construct not yet
@@ -42,7 +45,9 @@ def bareSrc (stx : Lean.Syntax) : String :=
     doc whose `baseIndent` is the first token's source column (from leading
     trivia) — the renderer dedents continuations by that, so the block re-anchors
     correctly at whatever column it is placed (the composition seam, §0.3). -/
-def verbatim (stx : Lean.Syntax) : EmitM Doc := do
+def verbatim
+    (stx : Lean.Syntax)
+    : EmitM Doc := do
   let lead := (Lean4Fmt.Syntax.leading? stx).getD ""
   let base := if lead.any (· == '\n')
     then (((lead.splitOn "\n").getLastD "").toList.takeWhile (· == ' ')).length
@@ -53,16 +58,17 @@ def verbatim (stx : Lean.Syntax) : EmitM Doc := do
   else pure (.verbatim s base)
 
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
-def passthrough (stx : Lean.Syntax) : EmitM Doc :=
+def passthrough
+    (stx : Lean.Syntax)
+    : EmitM Doc :=
+
   pure (.textRaw ((stx.getSubstring? true false).map (·.toString) |>.getD ""))
 
 /-- The leading trivia (comments + blank lines) before a form, as literal text. -/
-def leadingRaw (stx : Lean.Syntax) : Doc :=
-  .textRaw (Lean4Fmt.Syntax.leading? stx |>.getD "")
+def leadingRaw (stx : Lean.Syntax) : Doc := .textRaw (Lean4Fmt.Syntax.leading? stx |>.getD "")
 
 /-- The trailing trivia after a form, as literal text. `leadingRaw next` +
     `trailingRaw prev` partition the inter-form gap exactly. -/
-def trailingRaw (stx : Lean.Syntax) : Doc :=
-  .textRaw (Lean4Fmt.Syntax.trailing? stx |>.getD "")
+def trailingRaw (stx : Lean.Syntax) : Doc := .textRaw (Lean4Fmt.Syntax.trailing? stx |>.getD "")
 
 end Lean4Fmt.Emit

@@ -18,7 +18,8 @@ import Lean4Fmt.Driver
 open Lean
 open Lean4Fmt
 
-unsafe def initEnvImpl : IO Unit := do
+unsafe def initEnvImpl
+           : IO Unit := do
   initSearchPath (← findSysroot)
   enableInitializersExecution   -- required before importing modules with syntax extensions
 
@@ -28,8 +29,11 @@ opaque initEnv : IO Unit
 /-- Resolve style, expand inputs (files/dirs) to the file set, and run all jobs
     through the scheduler seam (`Driver.runAll`). Behind an opaque boundary so the
     non-`unsafe` `main` can invoke the unsafe frontend. -/
-unsafe def runJobsImpl (files : List String) (width : Nat) (preset : String) :
-    IO (Array Driver.Result) := do
+unsafe def runJobsImpl
+           (files : List String)
+           (width : Nat)
+           (preset : String)
+           : IO (Array Driver.Result) := do
   let base := (Style.byName? preset).getD Style.straylight
   let style := { base with layout := { base.layout with lineWidth := width } }
   let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
@@ -38,7 +42,9 @@ unsafe def runJobsImpl (files : List String) (width : Nat) (preset : String) :
 @[implemented_by runJobsImpl]
 opaque runJobs (files : List String) (width : Nat) (preset : String) : IO (Array Driver.Result)
 
-def main (argv : List String) : IO Unit := do
+def main
+    (argv : List String)
+    : IO Unit := do
   let o := Cli.parse argv
   if o.files.isEmpty then
     (← IO.getStderr).putStrLn Cli.usage

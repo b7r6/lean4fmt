@@ -43,14 +43,21 @@ abbrev EmitterM := ReaderT StyleConfig (StateM EmitterState)
 
 namespace EmitterM
 
-def run (α : Type) (config : StyleConfig) (m : EmitterM α) : α × EmitterState :=
+def run
+    (α : Type)
+    (config : StyleConfig)
+    (m : EmitterM α)
+    : α × EmitterState :=
+
   StateT.run (ReaderT.run m config) {}
 
 def getConfig : EmitterM StyleConfig := read
 def getState : EmitterM EmitterState := get
 def modifyState (f : EmitterState → EmitterState) : EmitterM Unit := modify f
 
-def emit (s : String) : EmitterM Unit := do
+def emit
+    (s : String)
+    : EmitterM Unit := do
   if s.isEmpty then return
   let config ← getConfig
   let st ← getState
@@ -65,7 +72,8 @@ def emit (s : String) : EmitterM Unit := do
   for c in s.toList do if c == '\n' then col := 0 else col := col + 1
   set { st with output := out, column := col, pendingNewlines := 0, pendingSpace := false }
 
-def newline : EmitterM Unit := do
+def newline
+    : EmitterM Unit := do
   let st ← getState
   if st.inlineMode then return  -- suppress newlines in inline mode
   let config ← getConfig
@@ -77,7 +85,10 @@ def indent : EmitterM Unit := modifyState fun st => { st with indentLevel := st.
 def dedent : EmitterM Unit := modifyState fun st => { st with indentLevel := st.indentLevel - 1 }
 
 /-- Run an action in inline mode (suppresses newlines) -/
-def withInline {α : Type} (m : EmitterM α) : EmitterM α := do
+def withInline
+    {α : Type}
+    (m : EmitterM α)
+    : EmitterM α := do
   let oldInline := (← getState).inlineMode
   modifyState fun st => { st with inlineMode := true }
   let result ← m
@@ -89,7 +100,9 @@ def withInline {α : Type} (m : EmitterM α) : EmitterM α := do
     internal relative indentation is preserved. This is what makes verbatim
     reproduction safe for indentation-sensitive constructs (tactic blocks,
     `let rec`, `where`) even when the surrounding signature has been reflowed. -/
-def emitVerbatimStr (s : String) : EmitterM Unit := do
+def emitVerbatimStr
+    (s : String)
+    : EmitterM Unit := do
   let nonblank (l : String) : Bool := l.any (· != ' ')
   -- split; drop leading/trailing blank lines
   let mut ls := s.splitOn "\n"
@@ -115,7 +128,9 @@ def emitVerbatimStr (s : String) : EmitterM Unit := do
 /-- Reproduce a syntax node's original source text (never mangles unhandled
     constructs). Multi-line blocks start on a fresh, indented line and are
     re-anchored; single-line blocks are emitted inline. -/
-def emitVerbatim (stx : Syntax) : EmitterM Unit := do
+def emitVerbatim
+    (stx : Syntax)
+    : EmitterM Unit := do
   -- Prefer reprint; fall back to the exact original source slice (reliable even
   -- when reprint is unavailable, e.g. some nodes after `updateLeading`).
   let src? : Option String :=
@@ -145,7 +160,10 @@ def emitVerbatim (stx : Syntax) : EmitterM Unit := do
 
 
 
-def getLeading (stx : Syntax) : Option String :=
+def getLeading
+    (stx : Syntax)
+    : Option String :=
+
   match stx.getHeadInfo with
   | .original leading .. => some (Substring.Raw.toString leading)
   | _ => none
@@ -159,7 +177,9 @@ namespace Emitter
 
 open EmitterM
 
-def processLeading (stx : Syntax) : EmitterM Unit := do
+def processLeading
+    (stx : Syntax)
+    : EmitterM Unit := do
   if let some leading := getLeading stx then
     if leading.isEmpty then return
     let st ← getState
@@ -186,14 +206,19 @@ def processLeading (stx : Syntax) : EmitterM Unit := do
         if newlines > 1 then blankLine else if newlines > 0 then newline
 
 /-- Check if a syntax kind is a binary operator (like «term_+_», «term_<_», etc.) -/
-def isBinOp (kind : SyntaxNodeKind) : Bool :=
+def isBinOp
+    (kind : SyntaxNodeKind)
+    : Bool :=
+
   let s := kind.toString
   s.startsWith "«term_" && (s.toList.filter (· == '_')).length >= 2
 
 /-- True if any token in the subtree carries a line comment (`-- …`) in its
     trivia. Such subtrees must never be inlined/flattened: the comment would
     swallow the rest of the line (e.g. an `else` branch or a match-arm body). -/
-partial def hasLineComment (stx : Syntax) : Bool :=
+partial def hasLineComment
+            (stx : Syntax)
+            : Bool :=
   let inTrivia (info : SourceInfo) : Bool :=
     match info with
     | .original l _ t _ =>
@@ -208,7 +233,9 @@ partial def hasLineComment (stx : Syntax) : Bool :=
   | .missing => false
 
 /-- Check if a syntax should be emitted inline (simple expressions without control flow) -/
-partial def isSimpleExpr (stx : Syntax) : Bool :=
+partial def isSimpleExpr
+            (stx : Syntax)
+            : Bool :=
   if hasLineComment stx then false else
   match stx with
   | .missing => true
@@ -239,7 +266,9 @@ partial def isSimpleExpr (stx : Syntax) : Bool :=
     -- Other nodes are simple if all children are simple
     else args.all isSimpleExpr
 
-partial def emitSyntax (stx : Syntax) : EmitterM Unit := do
+partial def emitSyntax
+            (stx : Syntax)
+            : EmitterM Unit := do
   match stx with
   | .missing => pure ()
   | .atom _info val => processLeading stx; emit val
@@ -1306,7 +1335,11 @@ where
 
 end Emitter
 
-def format (stx : Syntax) (config : StyleConfig := {}) : String × Array Diagnostic :=
+def format
+    (stx : Syntax)
+    (config : StyleConfig := {})
+    : String × Array Diagnostic :=
+
   let ((), st) := EmitterM.run Unit config (Emitter.emitSyntax stx)
   let output := if config.trailingNewline && !st.output.endsWith "\n" then st.output ++ "\n" else st.output
   (output, st.lints)

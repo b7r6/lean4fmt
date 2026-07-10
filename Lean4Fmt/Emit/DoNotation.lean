@@ -21,7 +21,10 @@ open Lean Lean4Fmt.Doc
     separator); the bracketed `{ … }` shape and any structural surprise fall back
     to verbatim so no token is dropped. A statement carrying a multi-line opaque
     block trips the valDoc gate to the safe whole-span. -/
-def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
+def emit
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.EmitM Doc := do
   let a := stx.getArgs
   let some seq := a[1]? | return (← Lean4Fmt.Emit.verbatim stx)
   if seq.getKind != ``Lean.Parser.Term.doSeqIndent then

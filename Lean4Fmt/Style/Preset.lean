@@ -18,7 +18,8 @@ import Lean4Fmt.Style.Options
 namespace Lean4Fmt.Style
 
 /-- Straylight house style (§6). -/
-def straylight : Style := {
+def straylight
+    : Style := {
   layout     := { lineWidth := 100, indent := 2, continuationIndent := 4 }
   breaking   := { colon := .breakBefore, binders := .onePerLine, attributesOwnLine := true, bodyOwnLine := true, compactDo := true }
   alignment  := { structFields := .whenShort, matchArms := .whenShort, maxDelta := 8 }
@@ -27,7 +28,8 @@ def straylight : Style := {
 
 /-- Placeholder — tuned to minimize mathlib4 churn (§9). Currently = Straylight
     with the mathlib-ish binder fill (pack + wrap) and blank preservation. -/
-def mathlib : Style := { straylight with
+def mathlib
+    : Style := { straylight with
   breaking   := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := false, bodyOwnLine := false }
   blankLines := { straylight.blankLines with policy := .preserve }
 }

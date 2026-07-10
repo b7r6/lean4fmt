@@ -13,7 +13,9 @@ import Lean
 namespace Lean4Fmt.Config
 
 /-- Find the nearest `.lean4fmt.lean` at or above `start`. -/
-partial def discover (start : System.FilePath) : IO (Option System.FilePath) := do
+partial def discover
+            (start : System.FilePath)
+            : IO (Option System.FilePath) := do
   let cand := start / ".lean4fmt.lean"
   if ← cand.pathExists then return some cand
   match start.parent with

@@ -16,7 +16,6 @@ namespace Lean4Fmt.Style
 
 /-- Resolve a base preset plus a precedence-ordered list of patches into the
     concrete `Style` the renderer reads. -/
-def resolve (base : Style) (patches : List StylePatch) : Style :=
-  patches.foldl Style.apply base
+def resolve (base : Style) (patches : List StylePatch) : Style := patches.foldl Style.apply base
 
 end Lean4Fmt.Style

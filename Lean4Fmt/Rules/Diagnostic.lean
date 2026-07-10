@@ -21,7 +21,10 @@ structure Diagnostic where
   message  : String
   deriving Repr, Inhabited
 
-def Diagnostic.render (d : Diagnostic) : String :=
+def Diagnostic.render
+    (d : Diagnostic)
+    : String :=
+
   let sev := match d.severity with | .info => "info" | .warning => "warning" | .error => "error"
   let tag := if d.rule.isEmpty then "" else s!" [{d.rule}]"
   s!"{d.pos}: {sev}{tag}: {d.message}"

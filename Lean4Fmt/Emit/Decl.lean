@@ -29,7 +29,10 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
     line (used for signature width coupling and binder alignment: with
     attrsOwnLine only the visibility modifiers count, so binders align under the
     name at a shallower column). -/
-private def modifiersDoc (attrsOwnLine : Bool) (m : Lean.Syntax) : Doc × Nat := Id.run do
+private def modifiersDoc
+            (attrsOwnLine : Bool)
+            (m : Lean.Syntax)
+            : Doc × Nat := Id.run do
   let margs := m.getArgs
   let docText := (margs[0]?.map bareSrc).getD "" |>.trimAscii.toString
   let attrText := (margs[1]?.map bareSrc).getD "" |>.trimAscii.toString
@@ -51,12 +54,11 @@ private def modifiersDoc (attrsOwnLine : Bool) (m : Lean.Syntax) : Doc × Nat :=
     return (docDoc ++ inlineDoc, inlineW)
 
 /-- Keyword-led definition shapes we actively format. -/
-private def isDefShape (kind : SyntaxNodeKind) : Bool :=
-  kind == ``Lean.Parser.Command.definition
-    || kind == ``Lean.Parser.Command.theorem
-    || kind == ``Lean.Parser.Command.abbrev
-    || kind == ``Lean.Parser.Command.opaque
-    || kind == ``Lean.Parser.Command.example
+private def isDefShape
+            (kind : SyntaxNodeKind)
+            : Bool :=
+
+  kind == ``Lean.Parser.Command.definition || kind == ``Lean.Parser.Command.theorem || kind == ``Lean.Parser.Command.abbrev || kind == ``Lean.Parser.Command.opaque || kind == ``Lean.Parser.Command.example
 
 /-- Signature return-type info: `none` if there is no type spec, else
     `(termDoc, colonTypeDoc, flatWidth, multiline?)` where `termDoc` is the type
@@ -64,7 +66,9 @@ private def isDefShape (kind : SyntaxNodeKind) : Bool :=
     the colon). Callers use `termDoc` (adding their own `: `) when it is single
     line, and `colonTypeDoc` when it is multi-line or an unexpected shape (so the
     colon is never lost). -/
-private def typeInfo (sig : Lean.Syntax) : EmitM (Option (Doc × Doc × Nat × Bool)) := do
+private def typeInfo
+            (sig : Lean.Syntax)
+            : EmitM (Option (Doc × Doc × Nat × Bool)) := do
   let a := sig.getArgs
   let tsNode : Option Lean.Syntax := a[1]?.bind (fun x =>
     if x.getKind == ``Lean.Parser.Term.typeSpec then some x else x.getArgs[0]?)
@@ -96,7 +100,10 @@ private def typeInfo (sig : Lean.Syntax) : EmitM (Option (Doc × Doc × Nat × B
     A multi-line (verbatim) type is never itself broken (re-anchoring a multi-line
     opaque block in a nest could drift); it is reproduced byte-exact with its
     colon. -/
-private def sigDoc (nameCol prefixWidth reserve : Nat) (sig : Lean.Syntax) : EmitM Doc := do
+private def sigDoc
+            (nameCol prefixWidth reserve : Nat)
+            (sig : Lean.Syntax)
+            : EmitM Doc := do
   let a := sig.getArgs
   let binders := (a[0]?.map (·.getArgs)).getD #[]
   let ti ← typeInfo sig
@@ -144,14 +151,11 @@ private def sigDoc (nameCol prefixWidth reserve : Nat) (sig : Lean.Syntax) : Emi
 /-- Value kinds we actively lay out even when they span multiple lines (their own
     `walk` produces a width-aware breaking `group`). Everything else keeps the
     conservative verbatim-span path. Grows as constructs are ported. -/
-private def isActiveMultiline (kind : SyntaxNodeKind) : Bool :=
-  kind.toString == "termIfThenElse"
-    || kind.toString == "termDepIfThenElse"
-    || kind == ``Lean.Parser.Term.app
-    || kind == ``Lean.Parser.Term.anonymousCtor
-    || kind.toString == "«term[_]»"
-    || kind == ``Lean.Parser.Term.let
-    || kind == ``Lean.Parser.Term.match
+private def isActiveMultiline
+            (kind : SyntaxNodeKind)
+            : Bool :=
+
+  kind.toString == "termIfThenElse" || kind.toString == "termDepIfThenElse" || kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.anonymousCtor || kind.toString == "«term[_]»" || kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.match
 
 /-- How a definition value is to be placed. `span` is a whole `:= …` reproduced
     verbatim (where/termination/equation/multi-line-opaque cases — the `:=` is
@@ -164,7 +168,10 @@ private inductive ValForm
 /-- Classify a `declVal` into a `ValForm` (see above). Splitting the `:=` from the
     body lets the caller choose the separator: inline ` := `, or (bodyOwnLine)
     `:=` then a blank then the body on its own indented line. -/
-private def valForm (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM ValForm := do
+private def valForm
+            (walk : Lean4Fmt.Emit.Walk)
+            (declVal : Lean.Syntax)
+            : EmitM ValForm := do
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
     let a := declVal.getArgs
     let hasSuffix := (a[2]?.map (fun s => !(bareSrc s).trimAscii.toString.isEmpty)).getD false
@@ -200,7 +207,11 @@ private def ValForm.flatWidth : ValForm → Option Nat
     into onePerLine). Otherwise the signature breaks per the knob and the value is
     laid out by `valDoc`. (Any doc-comment/attribute lines sit above and do not
     count toward the one-line budget.) -/
-private def defnDoc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.Syntax) : EmitM Doc := do
+private def defnDoc
+            (walk : Lean4Fmt.Emit.Walk)
+            (modsWidth : Nat)
+            (defn : Lean.Syntax)
+            : EmitM Doc := do
   let a := defn.getArgs
   let kw := match a[0]? with | some (.atom _ v) => v | _ => "def"
   let declId := (a[1]?.map bareSrc).getD ""
@@ -247,7 +258,10 @@ private def defnDoc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.S
     via `walk` where needed. Only plain `:= term` defs are actively formatted;
     `where`-instance / equation / other value forms reproduce whole-verbatim
     (their sig↔value boundary trivia is subtle — deferred to later depth). -/
-def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
+def emit
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.EmitM Doc := do
   let a := stx.getArgs
   let some defn := a[1]? | return (← verbatim stx)
   let dargs := defn.getArgs
