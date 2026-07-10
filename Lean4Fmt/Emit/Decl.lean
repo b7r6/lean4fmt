@@ -59,7 +59,10 @@ private def isDefShape
             (kind : SyntaxNodeKind)
             : Bool :=
 
-  kind == ``Lean.Parser.Command.definition || kind == ``Lean.Parser.Command.theorem || kind == ``Lean.Parser.Command.abbrev || kind == ``Lean.Parser.Command.opaque || kind == ``Lean.Parser.Command.example
+  kind == ``Lean.Parser.Command.definition || kind == ``Lean.Parser.Command.theorem
+      || kind == ``Lean.Parser.Command.abbrev
+      || kind == ``Lean.Parser.Command.opaque
+      || kind == ``Lean.Parser.Command.example
 
 /-- Signature return-type info: `none` if there is no type spec, else
     `(termDoc, colonTypeDoc, flatWidth, multiline?)` where `termDoc` is the type
@@ -156,7 +159,13 @@ private def isActiveMultiline
             (kind : SyntaxNodeKind)
             : Bool :=
 
-  kind.toString == "termIfThenElse" || kind.toString == "termDepIfThenElse" || kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.anonymousCtor || kind.toString == "«term[_]»" || kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.match || Lean4Fmt.Syntax.isBinOp kind
+  kind.toString == "termIfThenElse" || kind.toString == "termDepIfThenElse"
+      || kind == ``Lean.Parser.Term.app
+      || kind == ``Lean.Parser.Term.anonymousCtor
+      || kind.toString == "«term[_]»"
+      || kind == ``Lean.Parser.Term.let
+      || kind == ``Lean.Parser.Term.match
+      || Lean4Fmt.Syntax.isBinOp kind
 
 /-- How a definition value is to be placed. `span` is a whole `:= …` reproduced
     verbatim (where/termination/equation/multi-line-opaque cases — the `:=` is

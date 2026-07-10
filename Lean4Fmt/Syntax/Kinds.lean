@@ -28,13 +28,20 @@ def isInlineProneContainer
     (kind : SyntaxNodeKind)
     : Bool :=
 
-  kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.anonymousCtor || kind == ``Lean.Parser.Term.match || kind == ``Lean.Parser.Term.structInst || kind.toString == "«term[_]»" || kind.toString == "«term{_}»"
+  kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.anonymousCtor
+      || kind == ``Lean.Parser.Term.match
+      || kind == ``Lean.Parser.Term.structInst
+      || kind.toString == "«term[_]»"
+      || kind.toString == "«term{_}»"
 
 /-- Layout-sensitive / proof kinds that must never be inlined (§0.7 #10). -/
 def isNeverInline
     (kind : SyntaxNodeKind)
     : Bool :=
 
-  kind == ``Lean.Parser.Term.byTactic || kind == ``Lean.Parser.Term.have || kind == ``Lean.Parser.Term.show || kind == ``Lean.Parser.Term.suffices || kind == ``Lean.Parser.Term.letrec
+  kind == ``Lean.Parser.Term.byTactic || kind == ``Lean.Parser.Term.have
+      || kind == ``Lean.Parser.Term.show
+      || kind == ``Lean.Parser.Term.suffices
+      || kind == ``Lean.Parser.Term.letrec
 
 end Lean4Fmt.Syntax

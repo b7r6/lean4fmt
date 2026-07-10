@@ -44,6 +44,9 @@ def parse
 def usage
     : String :=
 
-  "Usage: lean4fmt [--check | --write] [--width N] [--style NAME] <file...>\n\n" ++ "Multiple files in one invocation are supported (each is parsed against its own\n" ++ "imports). If a file's syntax-extension initializers ever conflict in-process,\n" ++ "fall back to one file per process: find . -name '*.lean' | xargs -n1 lean4fmt"
+  "Usage: lean4fmt [--check | --write] [--width N] [--style NAME] <file...>\n\n"
+      ++ "Multiple files in one invocation are supported (each is parsed against its own\n"
+      ++ "imports). If a file's syntax-extension initializers ever conflict in-process,\n"
+      ++ "fall back to one file per process: find . -name '*.lean' | xargs -n1 lean4fmt"
 
 end Lean4Fmt.Cli
