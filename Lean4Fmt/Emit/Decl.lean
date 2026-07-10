@@ -64,6 +64,23 @@ private def isDefShape
       || kind == ``Lean.Parser.Command.opaque
       || kind == ``Lean.Parser.Command.example
 
+/-- The comment block (if any) inside a trivia string: the non-whitespace-only
+    lines, dedented to column 0 (so a caller can re-anchor them with
+    `.verbatim … 0`). `none` when the trivia is pure whitespace. Lets onePerLine
+    preserve inter-binder comments instead of dropping them (which would otherwise
+    force the gate's identity fallback). -/
+private def commentBlock? (trivia : String) : Option String := Id.run do
+  let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
+  let mut ls := trivia.splitOn "\n"
+  ls := ls.dropWhile isWs
+  ls := (ls.reverse.dropWhile isWs).reverse
+  if ls.isEmpty then return none
+  let indentOf (l : String) : Nat := (l.toList.takeWhile (· == ' ')).length
+  let base := (ls.filter (fun l => !isWs l)).foldl (fun m l => Nat.min m (indentOf l)) 1000000
+  let base := if base == 1000000 then 0 else base
+  let dedented := ls.map (fun l => if l.length ≥ base then String.ofList (l.toList.drop base) else l)
+  return some (String.intercalate "\n" dedented)
+
 /-- Signature return-type info: `none` if there is no type spec, else
     `(termDoc, colonTypeDoc, flatWidth, multiline?)` where `termDoc` is the type
     term alone (no colon) and `colonTypeDoc` is the whole `: τ` byte-exact (with
@@ -117,7 +134,13 @@ private def sigDoc
   match mode with
   | .onePerLine =>
     let mut d : Doc := .nil
-    for b in binders do d := d ++ .hardline ++ (← verbatim b)
+    for b in binders do
+      -- preserve any comment sitting in this binder's leading trivia (e.g. an
+      -- inter-binder comment) on its own line(s), re-anchored to the name column.
+      match commentBlock? ((Lean4Fmt.Syntax.leading? b).getD "") with
+      | some cmt => d := d ++ .hardline ++ .verbatim cmt 0
+      | none => pure ()
+      d := d ++ .hardline ++ (← verbatim b)
     match ti with
     | some (term, colonType, _, multi) =>
       if multi then d := d ++ .hardline ++ colonType         -- multi-line type: own line, byte-exact
