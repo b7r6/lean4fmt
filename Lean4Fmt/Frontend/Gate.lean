@@ -22,11 +22,23 @@ import Lean4Fmt.Emit
 import Lean4Fmt.Style
 import Lean4Fmt.Rules
 import Lean4Fmt.Frontend.Parse
+import Lean4Fmt.Frontend.Session
 import Lean4Fmt.Syntax.Query
 
 namespace Lean4Fmt.Frontend
 
 open Lean
+
+/-- Parse a module against `env`, cheap path first: the fast `testParseModule`
+    (no elaboration) handles the vast majority; only when it can't (a file whose
+    own/imported notation needs elaboration to parse, e.g. `Type*`) do we pay for
+    the interleaved elaborating frontend (`Session.parseModule?`, `full` depth).
+    `env` is imported once per process by `formatFile`; both the source parse and
+    the fixed-point reparse reuse it (re-importing per call is what breaks). -/
+unsafe def parseFull? (env : Environment) (path contents : String) : IO (Option Lean.Syntax) := do
+  match ← parseModule? env path contents with
+  | some stx => pure (some stx)
+  | none => Session.parseModule? env path contents
 
 /-- The safety gate: return the text to emit — the actively-formatted output when
     it provably preserves meaning and is a fixed point, else the original — paired
@@ -35,13 +47,13 @@ open Lean
 unsafe def formatSafe (env : Environment) (path contents : String)
     (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default) :
     IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
-  match ← parseModule? env path contents with
+  match ← parseFull? env path contents with
   | none => pure (contents, #[])
   | some stx =>
     let diags := Lean4Fmt.Rules.lint stx
     let (active, _) := Lean4Fmt.Emit.format style stx.updateLeading
     if active == contents then pure (contents, diags)
-    else match ← parseModule? env path active with
+    else match ← parseFull? env path active with
     | none => pure (contents, diags)
     | some stx2 =>
       let (active2, _) := Lean4Fmt.Emit.format style stx2.updateLeading
