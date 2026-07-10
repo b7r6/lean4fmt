@@ -38,7 +38,10 @@ partial def triviaText : Lean.Syntax → String
     only whitespace + comments). Comments are not tokens, so `leafToks` alone does
     not catch a DROPPED comment; the gate compares this too. Whitespace is stripped
     so that reflowed/re-indented (but content-identical) comments still match. -/
-def commentContent (stx : Lean.Syntax) : String :=
+def commentContent
+    (stx : Lean.Syntax)
+    : String :=
+
   String.ofList ((triviaText stx).toList.filter (fun c => !c.isWhitespace))
 
 /-- First identifier appearing in a subtree (the target of `namespace`/`open`). -/
