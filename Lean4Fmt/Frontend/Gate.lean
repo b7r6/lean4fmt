@@ -20,6 +20,7 @@
 import Lean
 import Lean4Fmt.Emit
 import Lean4Fmt.Style
+import Lean4Fmt.Rules
 import Lean4Fmt.Frontend.Parse
 import Lean4Fmt.Syntax.Query
 
@@ -28,26 +29,31 @@ namespace Lean4Fmt.Frontend
 open Lean
 
 /-- The safety gate: return the text to emit — the actively-formatted output when
-    it provably preserves meaning and is a fixed point, else the original. -/
+    it provably preserves meaning and is a fixed point, else the original — paired
+    with the lint diagnostics for the source (the lint pass runs on the parsed
+    syntax regardless of whether the reformat is kept). -/
 unsafe def formatSafe (env : Environment) (path contents : String)
-    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default) : IO String := do
+    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default) :
+    IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   match ← parseModule? env path contents with
-  | none => pure contents
+  | none => pure (contents, #[])
   | some stx =>
+    let diags := Lean4Fmt.Rules.lint stx
     let (active, _) := Lean4Fmt.Emit.format style stx.updateLeading
-    if active == contents then pure contents
+    if active == contents then pure (contents, diags)
     else match ← parseModule? env path active with
-    | none => pure contents
+    | none => pure (contents, diags)
     | some stx2 =>
       let (active2, _) := Lean4Fmt.Emit.format style stx2.updateLeading
       let ok := Lean4Fmt.Syntax.leafToks stx == Lean4Fmt.Syntax.leafToks stx2  -- tokens preserved
             && headerToks stx == headerToks stx2                                -- imports in header
             && active2 == active                                                -- fixed point
-      pure (if ok then active else contents)
+      pure ((if ok then active else contents), diags)
 
 /-- Build the environment for a file (loads its imports) and format it. -/
 unsafe def formatFile (path contents : String)
-    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default) : IO String := do
+    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default) :
+    IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   let ictx := Parser.mkInputContext contents path
   let (hdr, _, msgs) ← Parser.parseHeader ictx
   let (env, _) ← Elab.processHeader hdr {} msgs ictx (trustLevel := 1024)

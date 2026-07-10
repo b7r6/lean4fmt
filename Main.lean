@@ -25,11 +25,18 @@ unsafe def initEnvImpl : IO Unit := do
 @[implemented_by initEnvImpl]
 opaque initEnv : IO Unit
 
-unsafe def formatFileImpl (path : String) (width : Nat) (preset : String) : IO String :=
-  Lean4Fmt.Driver.formatFile path width preset
+/-- Resolve style, expand inputs (files/dirs) to the file set, and run all jobs
+    through the scheduler seam (`Driver.runAll`). Behind an opaque boundary so the
+    non-`unsafe` `main` can invoke the unsafe frontend. -/
+unsafe def runJobsImpl (files : List String) (width : Nat) (preset : String) :
+    IO (Array Driver.Result) := do
+  let base := (Style.byName? preset).getD Style.straylight
+  let style := { base with layout := { base.layout with lineWidth := width } }
+  let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
+  Driver.runAll style expanded
 
-@[implemented_by formatFileImpl]
-opaque formatFile (path : String) (width : Nat) (preset : String) : IO String
+@[implemented_by runJobsImpl]
+opaque runJobs (files : List String) (width : Nat) (preset : String) : IO (Array Driver.Result)
 
 def main (argv : List String) : IO Unit := do
   let o := Cli.parse argv
@@ -38,27 +45,26 @@ def main (argv : List String) : IO Unit := do
     IO.Process.exit 1
 
   initEnv
+  let err ← IO.getStderr
+  let results ← runJobs o.files o.width o.preset
 
   let mut failed := false
-  for file in o.files do
-    try
-      let output ← formatFile file o.width o.preset
-      match o.mode with
-      | .format => IO.print output
-      | .check =>
-        let original ← IO.FS.readFile file
-        if output != original then
-          (← IO.getStderr).putStrLn s!"Would reformat: {file}"; failed := true
-        else
-          (← IO.getStderr).putStrLn s!"OK: {file}"
-      | .write =>
-        let original ← IO.FS.readFile file
-        if output != original then
-          IO.FS.writeFile file output
-          (← IO.getStderr).putStrLn s!"Formatted: {file}"
-        else
-          (← IO.getStderr).putStrLn s!"Unchanged: {file}"
-    catch e =>
-      (← IO.getStderr).putStrLn s!"Error: {file}: {toString e}"; failed := true
+  for r in results do
+    for d in r.diagnostics do
+      err.putStrLn s!"{r.path}:{d.render}"
+      if d.severity == .error then failed := true
+    match o.mode with
+    | .format => IO.print r.output
+    | .check =>
+      if r.changed then
+        err.putStrLn s!"Would reformat: {r.path}"; failed := true
+      else
+        err.putStrLn s!"OK: {r.path}"
+    | .write =>
+      if r.changed then
+        IO.FS.writeFile r.path r.output
+        err.putStrLn s!"Formatted: {r.path}"
+      else
+        err.putStrLn s!"Unchanged: {r.path}"
 
   if failed then IO.Process.exit 1
