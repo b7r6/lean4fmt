@@ -212,6 +212,7 @@ private def isActiveMultiline
   kind.toString == "termIfThenElse" || kind.toString == "termDepIfThenElse"
       || kind == ``Lean.Parser.Term.app
       || kind == ``Lean.Parser.Term.anonymousCtor
+      || kind == ``Lean.Parser.Term.structInst
       || kind.toString == "«term[_]»"
       || kind == ``Lean.Parser.Term.let
       || kind == ``Lean.Parser.Term.match

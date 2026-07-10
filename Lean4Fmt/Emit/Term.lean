@@ -33,6 +33,25 @@ private def commaGroup
     ds := ds.push (← walk c)
   return Lean4Fmt.Doc.commaList l r ds
 
+/-- A single `structInstField` = [structInstLVal, «rest»]. The LVal (field name /
+    path) is reproduced verbatim; the value (the term after `:=`, found inside the
+    `structInstFieldDef` in «rest») is walked so it lays out actively. A shorthand
+    field `{ x }` (no `:=`) is just its LVal. -/
+private partial def structFieldDoc
+            (walk : Walk)
+            (field : Lean.Syntax)
+            : EmitM Doc := do
+  let fa := field.getArgs
+  let lval ← verbatim (fa[0]?.getD .missing)
+  let rest := (fa[1]?.getD Lean.Syntax.missing).getArgs
+  let fd? := rest.find? (·.getKind == ``Lean.Parser.Term.structInstFieldDef)
+  match fd? with
+  | some fd =>
+    let da := fd.getArgs
+    let v := da[da.size - 1]?.getD Lean.Syntax.missing        -- [":=", null?, value]
+    return lval ++ .text " := " ++ (← walk v)
+  | none => return lval
+
 /-- Emit an expression construct, recursing via `walk`. Produces flat Doc for the
     handled kinds; everything else (and anything with a line comment) reproduces
     verbatim. -/
@@ -78,6 +97,30 @@ partial def emit
       return .text "." ++ (← walk (args[1]?.getD .missing))
     else if kind == ``Lean.Parser.Term.anonymousCtor then
       return (← commaGroup walk "⟨" "⟩" ((args[1]?.map (·.getArgs)).getD #[]))
+    else if kind == ``Lean.Parser.Term.structInst then
+      -- `{ f₁ := v₁, f₂ := v₂ }` — width-aware: flat if it fits, else one field
+      -- per line, aligned under the first (which sits on the `{ ` line). Guarded:
+      -- a `with`-source (`{ s with … }`), a `..` ellipsis, or an empty/odd body
+      -- reproduces verbatim (their layout is subtler / not worth the risk yet).
+      -- Also: only when the fields are COMMA-separated in source (or a single
+      -- field). Lean also allows newline-separated fields (no comma tokens); since
+      -- our output uses commas, reformatting a newline-separated instance would add
+      -- `,` tokens the source lacked and trip the token gate — so those stay
+      -- verbatim.
+      let srcEmpty := ((args[1]?.map bareSrc).getD "").trimAscii.toString.isEmpty
+      let ellipsisEmpty := ((args[3]?.map bareSrc).getD "").trimAscii.toString.isEmpty
+      if !srcEmpty || !ellipsisEmpty then return (← verbatim stx)
+      let mut fields : Array Lean.Syntax := #[]
+      let mut commas := 0
+      for g in ((args[2]?.map (·.getArgs)).getD #[]) do
+        for c in g.getArgs do
+          if c.getKind == ``Lean.Parser.Term.structInstField then fields := fields.push c
+          else if c.isAtom && bareSrc c == "," then commas := commas + 1
+      if fields.isEmpty then return (← verbatim stx)
+      if fields.size > 1 && commas + 1 != fields.size then return (← verbatim stx)  -- newline-separated
+      let mut ds : Array Doc := #[]
+      for f in fields do ds := ds.push (← structFieldDoc walk f)
+      return .group (.text "{ " ++ .nest 2 (Lean4Fmt.Doc.sepBy (.text "," ++ .line) ds) ++ .text " }")
     else if kind.toString == "«term[_]»" then
       return (← commaGroup walk "[" "]" ((args[1]?.map (·.getArgs)).getD #[]))
     else if kind.toString == "termIfThenElse" then
