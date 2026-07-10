@@ -48,7 +48,13 @@ partial def emit
   | .node _ kind args =>
     -- binary operator: lhs ␣ op ␣ rhs
     if Lean4Fmt.Syntax.isBinOp kind && args.size == 3 then
-      return (← walk args[0]!) ++ .space ++ (← walk args[1]!) ++ .space ++ (← walk args[2]!)
+      -- `lhs op rhs` — width-aware: flat if it fits, else break BEFORE the operator
+      -- (the operator leads the continuation line, indented by continuationIndent).
+      let lhs ← walk args[0]!
+      let op ← walk args[1]!
+      let rhs ← walk args[2]!
+      let cont := (← read).layout.continuationIndent
+      return .group (lhs ++ .nest cont (.line ++ op ++ .space ++ rhs))
     else if kind == ``Lean.Parser.Term.app then
       -- `fn a b c` — width-aware: flat if it fits, else `fn` on its line with each
       -- argument on a continuation line indented by `layout.indent`. All-or-

@@ -15,6 +15,7 @@
 -/
 
 import Lean4Fmt.Emit.Monad
+import Lean4Fmt.Syntax.Kinds
 
 namespace Lean4Fmt.Emit.Decl
 
@@ -155,7 +156,7 @@ private def isActiveMultiline
             (kind : SyntaxNodeKind)
             : Bool :=
 
-  kind.toString == "termIfThenElse" || kind.toString == "termDepIfThenElse" || kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.anonymousCtor || kind.toString == "«term[_]»" || kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.match
+  kind.toString == "termIfThenElse" || kind.toString == "termDepIfThenElse" || kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.anonymousCtor || kind.toString == "«term[_]»" || kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.match || Lean4Fmt.Syntax.isBinOp kind
 
 /-- How a definition value is to be placed. `span` is a whole `:= …` reproduced
     verbatim (where/termination/equation/multi-line-opaque cases — the `:=` is
