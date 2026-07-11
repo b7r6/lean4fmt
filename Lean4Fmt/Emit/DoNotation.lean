@@ -85,6 +85,72 @@ private def leadingSep?
       blanks := 0
   return some (d ++ (if blanks > 0 then .blank blanks else .hardline))
 
+/-- The statements of a plain `doSeqIndent`, provided no item carries an explicit
+    `;` terminator (walking only the statement would lose that token). `none` on
+    the bracketed `{ … }` shape or any structural surprise. -/
+private def stmts?
+            (seq : Lean.Syntax)
+            : Option (Array Lean.Syntax) := Id.run do
+  if seq.getKind != ``Lean.Parser.Term.doSeqIndent then return none
+  let mut items : Array Lean.Syntax := #[]
+  for g in seq.getArgs do
+    for c in g.getArgs do
+      if c.getKind == ``Lean.Parser.Term.doSeqItem then items := items.push c
+  if items.isEmpty then return none
+  for it in items do
+    let ia := it.getArgs
+    if ia.size > 1 && !((Lean4Fmt.Emit.bareSrc (ia[ia.size-1]!)).trimAscii.toString.isEmpty) then
+      return none
+  return some (items.map (fun it => it.getArgs[0]?.getD Lean.Syntax.missing))
+
+/-- The statement LINES of a sequence: each statement preceded by its structural
+    leading (comments/blanks — `leadingSep?`) and followed by its same-line
+    trailing comment. `lastOwned`: when true, the LAST statement's trailing
+    belongs to the enclosing seam and is skipped (a whole `do`, whose do-loop
+    caller re-appends it; a final if-branch, whose statement seam follows); when
+    false there is NO seam for it (a then-branch before `else`) — any content
+    there aborts to `none`. -/
+private def seqLinesDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (ss : Array Lean.Syntax)
+            (lastOwned : Bool)
+            : Lean4Fmt.Emit.EmitM (Option Doc) := do
+  let mut body : Doc := .nil
+  for h : i in [0:ss.size] do
+    let stmt := ss[i]
+    let trailT := ((Lean4Fmt.Syntax.trailing? stmt).getD "").trimAscii.toString
+    let last := i + 1 == ss.size
+    if !last && trailT.any (· == '\n') then return none
+    if last && !lastOwned && !trailT.isEmpty then return none
+    let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
+    let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? stmt).getD "") | return none
+    let sDoc ← walk stmt
+    body := body ++ sep ++ sDoc ++ trailDoc
+  return some body
+
+/-- A nested statement sequence (an if-branch), placed directly after its keyword:
+    a single clean statement (no comment/blank lines above it, no trailing
+    comment, flattenable) becomes a width-aware `group` — inline when it fits
+    (`if c then return 1`), else on its own line at +2; anything else goes one
+    statement per line at +2. `none` when the sequence has no safe layout. -/
+private def branchDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (seq : Lean.Syntax)
+            (lastOwned : Bool)
+            : Lean4Fmt.Emit.EmitM (Option Doc) := do
+  let some ss := stmts? seq | return none
+  if ss.size == 1 then
+    let lead := (Lean4Fmt.Syntax.leading? ss[0]!).getD ""
+    let plainLead := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
+    let trailT := ((Lean4Fmt.Syntax.trailing? ss[0]!).getD "").trimAscii.toString
+    if plainLead && (lastOwned || trailT.isEmpty) then
+      let sDoc ← walk ss[0]!
+      if (Lean4Fmt.Doc.flatWidth sDoc).isSome && !Lean4Fmt.Doc.hasMultilineVerbatim sDoc then
+        return some (.group (.nest 2 (.line ++ sDoc)))
+  match ← seqLinesDoc? walk ss lastOwned with
+  | some body => return some (.nest 2 body)
+  | none => return none
+
 /-- Emit `do <seq>` — one statement per line indented by 2, leading comment/blank
     lines placed structurally, same-line trailing comments re-appended — or one of
     the binding statements (see module header). Only the plain `doSeqIndent` shape
@@ -146,6 +212,42 @@ def emit
     match a[0]? with
     | some t => return (← walk t)
     | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if kind == ``Lean.Parser.Term.doIf then
+    -- [if, cond, then, seq, (else-if group)*, else?]. Conditions (doIfProp /
+    -- if-let, with an optional `h :` binder) are reproduced token-for-token,
+    -- single-line. Every line comment must live INSIDE one of the branch
+    -- sequences (the accounting below) — a comment around a keyword or in a
+    -- condition has no seam here and forces verbatim. Only the FINAL branch may
+    -- end in a trailing comment (the statement seam follows it); a comment
+    -- before an `else` has no seam.
+    if a.size != 6 then return (← Lean4Fmt.Emit.verbatim stx)
+    let condT := (Lean4Fmt.Emit.bareSrc a[1]!).trimAscii.toString
+    if condT.isEmpty || condT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut branches : Array (String × Lean.Syntax) := #[("if " ++ condT ++ " then", a[3]!)]
+    for g in a[4]!.getArgs do
+      let ga := g.getArgs
+      if ga.size != 4 then return (← Lean4Fmt.Emit.verbatim stx)
+      let cT := (Lean4Fmt.Emit.bareSrc ga[1]!).trimAscii.toString
+      if cT.isEmpty || cT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+      branches := branches.push ("else if " ++ cT ++ " then", ga[3]!)
+    let elseArgs := a[5]!.getArgs
+    if !elseArgs.isEmpty then
+      if elseArgs.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
+      branches := branches.push ("else", elseArgs[1]!)
+    -- comments only inside branch seqs (the statement's own leading is the
+    -- do-loop's and exempt; its trailing is inside the final seq's count)
+    let seqCmts := branches.foldl
+      (fun n b => n + Lean4Fmt.Syntax.countSubtreeLineComments b.2) 0
+    let ownLead := Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? stx).getD "")
+    if Lean4Fmt.Syntax.countSubtreeLineComments stx != seqCmts + ownLead then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let mut d : Doc := .nil
+    for h : i in [0:branches.size] do
+      let (kw, seq) := branches[i]
+      let some bD ← branchDoc? walk seq (i + 1 == branches.size)
+        | return (← Lean4Fmt.Emit.verbatim stx)
+      d := d ++ (if i == 0 then Doc.nil else .hardline) ++ .text kw ++ bD
+    return d
   else if kind != ``Lean.Parser.Term.do then
     return (← Lean4Fmt.Emit.verbatim stx)
   else
@@ -153,33 +255,11 @@ def emit
   let doKwTrail := ((Lean4Fmt.Syntax.trailing? (a[0]?.getD .missing)).getD "").trimAscii.toString
   if !doKwTrail.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
   let some seq := a[1]? | return (← Lean4Fmt.Emit.verbatim stx)
-  if seq.getKind != ``Lean.Parser.Term.doSeqIndent then
-    return (← Lean4Fmt.Emit.verbatim stx)
-  let mut items : Array Lean.Syntax := #[]
-  for g in seq.getArgs do
-    for c in g.getArgs do
-      if c.getKind == ``Lean.Parser.Term.doSeqItem then items := items.push c
-  if items.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-  -- Guard: a doSeqItem with a non-empty terminator (explicit `;`) would lose that
-  -- token if we walked only the statement — bail to verbatim for those.
-  for it in items do
-    let ia := it.getArgs
-    if ia.size > 1 && !((Lean4Fmt.Emit.bareSrc (ia[ia.size-1]!)).trimAscii.toString.isEmpty) then
-      return (← Lean4Fmt.Emit.verbatim stx)
-  let mut body : Doc := .nil
-  for h : i in [0:items.size] do
-    let stmt := items[i].getArgs[0]?.getD .missing
-    -- trailing comment (same line, `x := 1 -- note`). The LAST statement's
-    -- trailing is the whole do's trailing — the enclosing seam owns it. A
-    -- multi-line trailing (a block comment spanning lines) has no seam here.
-    let trailT := ((Lean4Fmt.Syntax.trailing? stmt).getD "").trimAscii.toString
-    let last := i + 1 == items.size
-    if !last && trailT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-    let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-    let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? stmt).getD "")
-      | return (← Lean4Fmt.Emit.verbatim stx)
-    let sDoc ← walk stmt
-    body := body ++ sep ++ sDoc ++ trailDoc
-  return .text "do" ++ .nest 2 body
+  let some ss := stmts? seq | return (← Lean4Fmt.Emit.verbatim stx)
+  -- trailing comments per statement placed by the loop; the LAST statement's
+  -- trailing is the whole do's trailing — the enclosing seam owns it
+  match ← seqLinesDoc? walk ss true with
+  | some body => return .text "do" ++ .nest 2 body
+  | none => return (← Lean4Fmt.Emit.verbatim stx)
 
 end Lean4Fmt.Emit.DoNotation
