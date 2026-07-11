@@ -51,10 +51,11 @@ def Result.changed (r : Result) : Bool := r.output != r.original
 unsafe def runJob
            (style : Style.Style)
            (path : System.FilePath)
+           (elabFallback : Bool := true)
            : IO Result := do
   let original ← IO.FS.readFile path
   try
-    let (output, diagnostics) ← Frontend.formatFile path.toString original style
+    let (output, diagnostics) ← Frontend.formatFile path.toString original style elabFallback
     return { path, original, output, diagnostics }
   catch e =>
     return { path, original, output := original,
@@ -66,9 +67,10 @@ unsafe def runJob
 unsafe def runAll
            (style : Style.Style)
            (paths : Array System.FilePath)
+           (elabFallback : Bool := true)
            : IO (Array Result) :=
 
-  paths.mapM (runJob style)
+  paths.mapM (runJob style · elabFallback)
 
 /-- Expand file/dir inputs into the `.lean` file set to process (directories are
     walked, `.lake` build trees skipped), deduplicated and in a deterministic

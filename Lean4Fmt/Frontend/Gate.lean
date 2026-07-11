@@ -38,27 +38,36 @@ open Lean
 unsafe def parseFull?
            (env : Environment)
            (path contents : String)
+           (elabFallback : Bool := true)
            : IO (Option Lean.Syntax) := do
   match ← parseModule? env path contents with
   | some stx => pure (some stx)
-  | none => Session.parseModule? env path contents
+  | none =>
+    if elabFallback then Session.parseModule? env path contents else pure none
 
 /-- The safety gate: return the text to emit — the actively-formatted output when
     it provably preserves meaning and is a fixed point, else the original — paired
     with the lint diagnostics for the source (the lint pass runs on the parsed
-    syntax regardless of whether the reformat is kept). -/
+    syntax regardless of whether the reformat is kept). An unparseable file passes
+    through UNCHANGED but never silently: a warning diagnostic says why (skipped
+    coverage must be visible — a formatter that quietly no-ops looks like it ran). -/
 unsafe def formatSafe
            (env : Environment)
            (path contents : String)
            (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
+           (elabFallback : Bool := true)
            : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
-  match ← parseFull? env path contents with
-  | none => pure (contents, #[])
+  match ← parseFull? env path contents elabFallback with
+  | none =>
+    let msg := if elabFallback
+      then "not formatted: could not parse (unresolved imports or unsupported syntax)"
+      else "not formatted: needs the elaborating frontend (rerun with --elab auto)"
+    pure (contents, #[{ severity := .warning, rule := "parse", message := msg }])
   | some stx =>
     let diags := Lean4Fmt.Rules.lint stx
     let (active, _) := Lean4Fmt.Emit.format style stx.updateLeading
     if active == contents then pure (contents, diags)
-    else match ← parseFull? env path active with
+    else match ← parseFull? env path active elabFallback with
     | none => pure (contents, diags)
     | some stx2 =>
       let (active2, _) := Lean4Fmt.Emit.format style stx2.updateLeading
@@ -72,10 +81,11 @@ unsafe def formatSafe
 unsafe def formatFile
            (path contents : String)
            (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
+           (elabFallback : Bool := true)
            : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   let ictx := Parser.mkInputContext contents path
   let (hdr, _, msgs) ← Parser.parseHeader ictx
   let (env, _) ← Elab.processHeader hdr {} msgs ictx (trustLevel := 1024)
-  formatSafe env path contents style
+  formatSafe env path contents style elabFallback
 
 end Lean4Fmt.Frontend
