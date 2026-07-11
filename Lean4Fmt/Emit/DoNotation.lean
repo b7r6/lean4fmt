@@ -248,6 +248,39 @@ def emit
         | return (← Lean4Fmt.Emit.verbatim stx)
       d := d ++ (if i == 0 then Doc.nil else .hardline) ++ .text kw ++ bD
     return d
+  else if kind == ``Lean.Parser.Term.doMatch then
+    -- [match, generalizing?, motive?, ?, discrs, "with", matchAlts] — the head
+    -- `match <discrs> with` reproduced token-for-token, single-line; each arm
+    -- `| pat =>` with its doSeq body via branchDoc? (inline when a single clean
+    -- statement fits). Seam accounting as for doIf: every line comment must sit
+    -- inside an arm's sequence; only the FINAL arm may end in a trailing
+    -- comment (the statement seam follows it).
+    if a.size != 7 then return (← Lean4Fmt.Emit.verbatim stx)
+    let midParts := ((a.extract 1 5).map
+      (fun s => (Lean4Fmt.Emit.bareSrc s).trimAscii.toString)).filter (fun s => !s.isEmpty)
+    let head := "match " ++ String.intercalate " " midParts.toList ++ " with"
+    if head.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut alts : Array Lean.Syntax := #[]
+    for g in a[6]!.getArgs do
+      for c in g.getArgs do
+        if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+    if alts.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    for alt in alts do
+      if alt.getArgs.size != 4 then return (← Lean4Fmt.Emit.verbatim stx)
+    let seqCmts := alts.foldl
+      (fun n alt => n + Lean4Fmt.Syntax.countSubtreeLineComments (alt.getArgs[3]!)) 0
+    let ownLead := Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? stx).getD "")
+    if Lean4Fmt.Syntax.countSubtreeLineComments stx != seqCmts + ownLead then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let mut d : Doc := .text head
+    for h : i in [0:alts.size] do
+      let aa := alts[i].getArgs
+      let patDoc ← walk aa[1]!
+      if Lean4Fmt.Doc.hasMultilineVerbatim patDoc then return (← Lean4Fmt.Emit.verbatim stx)
+      let some bD ← branchDoc? walk aa[3]! (i + 1 == alts.size)
+        | return (← Lean4Fmt.Emit.verbatim stx)
+      d := d ++ .hardline ++ .text "| " ++ patDoc ++ .text " =>" ++ bD
+    return d
   else if kind != ``Lean.Parser.Term.do then
     return (← Lean4Fmt.Emit.verbatim stx)
   else

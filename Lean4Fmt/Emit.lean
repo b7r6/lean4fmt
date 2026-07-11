@@ -49,7 +49,8 @@ partial def walk
          || kind == ``Lean.Parser.Term.doReassignArrow
          || kind == ``Lean.Parser.Term.doExpr
          || kind == ``Lean.Parser.Term.doReturn
-         || kind == ``Lean.Parser.Term.doIf then
+         || kind == ``Lean.Parser.Term.doIf
+         || kind == ``Lean.Parser.Term.doMatch then
       DoNotation.emit walk stx
     else if kind == ``Lean.Parser.Term.byTactic then Tactic.emit walk stx
     -- expression constructs → Term (flat, comment-guarded; else verbatim)
