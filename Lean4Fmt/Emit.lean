@@ -42,7 +42,12 @@ partial def walk
     else if kind == ``Lean.Parser.Command.declaration then Decl.emit walk stx
     else if kind == ``Lean.Parser.Command.structure || kind == ``Lean.Parser.Command.inductive then
       Command.emit walk stx
-    else if kind == ``Lean.Parser.Term.do then DoNotation.emit walk stx
+    else if kind == ``Lean.Parser.Term.do
+         || kind == ``Lean.Parser.Term.doLet
+         || kind == ``Lean.Parser.Term.doLetArrow
+         || kind == ``Lean.Parser.Term.doReassign
+         || kind == ``Lean.Parser.Term.doReassignArrow then
+      DoNotation.emit walk stx
     else if kind == ``Lean.Parser.Term.byTactic then Tactic.emit walk stx
     -- expression constructs → Term (flat, comment-guarded; else verbatim)
     else if Lean4Fmt.Syntax.isBinOp kind
@@ -57,6 +62,10 @@ partial def walk
          || kind.toString == "termIfThenElse"
          || kind.toString == "termDepIfThenElse"
          || kind == ``Lean.Parser.Term.let
+         || kind == ``Lean.Parser.Term.letDecl
+         || kind == ``Lean.Parser.Term.letIdDecl
+         || kind == ``Lean.Parser.Term.letPatDecl
+         || kind == ``Lean.Parser.Term.letIdDeclNoBinders
          || kind == ``Lean.Parser.Term.match then
       Term.emit walk stx
     -- default: reproduce verbatim (safe; §4.1)

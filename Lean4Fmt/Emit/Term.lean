@@ -147,6 +147,36 @@ partial def emit
       let bodyDoc ← walk (args[args.size-1]?.getD .missing)
       let cfgDoc : Doc := if cfgT.isEmpty then .nil else .text cfgT ++ .space
       return .text "let " ++ cfgDoc ++ declDoc ++ .text sepT ++ .hardline ++ bodyDoc
+    else if kind == ``Lean.Parser.Term.letDecl then
+      -- 1-child wrapper around letIdDecl/letPatDecl/letEqnsDecl — unwrap so the
+      -- inner decl dispatches (letEqnsDecl falls through `walk` to verbatim, the
+      -- same source span this node would have reproduced).
+      match args[0]? with
+      | some inner => return (← walk inner)
+      | none => return (← verbatim stx)
+    else if kind == ``Lean.Parser.Term.letIdDecl || kind == ``Lean.Parser.Term.letPatDecl
+         || kind == ``Lean.Parser.Term.letIdDeclNoBinders then
+      -- The 5-slot binding shape [lhs, binders, type?, ":=", value] shared by
+      -- plain lets (`x (y : Nat) : τ := v`), pattern lets (`⟨a, b⟩ := v`), and
+      -- `do`-reassigns (`x := v`). The head left of `:=` is reproduced
+      -- token-for-token (single-spaced between slots); the VALUE is walked so it
+      -- lays out actively — flat on the `:=` line when it fits, else on the next
+      -- line at +2 (the match-arm shape); a `do` value glues to the `:=` (its
+      -- body brings its own hardline). Guards fall back to verbatim: a structural
+      -- surprise, a multi-line head, or a value carrying a multi-line opaque
+      -- block (re-anchoring one mid-layout drifts).
+      if args.size != 5 then return (← verbatim stx)
+      if (bareSrc args[3]!).trimAscii.toString != ":=" then return (← verbatim stx)
+      let headParts := ((args.extract 0 3).map (fun s => (bareSrc s).trimAscii.toString)).filter
+        (fun s => !s.isEmpty)
+      let head := String.intercalate " " headParts.toList
+      if head.isEmpty || head.any (· == '\n') then return (← verbatim stx)
+      let v := args[4]!
+      let vdoc ← walk v
+      if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return (← verbatim stx)
+      if v.getKind == ``Lean.Parser.Term.do then
+        return .text head ++ .text " := " ++ vdoc
+      return .text head ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
     else if kind == ``Lean.Parser.Term.match then
       -- [match, motive?, motive?, discrs, "with", matchAlts]. Reproduce the head
       -- `match <discrs> with` token-for-token; lay each arm `| pat => body` on its
