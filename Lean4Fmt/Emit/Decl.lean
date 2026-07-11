@@ -243,6 +243,14 @@ private def valForm
     match a[1]? with
     | some v =>
       if hasSuffix || hasWhere then return .span (← verbatim declVal)
+      let vdoc ← walk v
+      -- `:= do` glues even when the do carries comments BETWEEN its statements —
+      -- DoNotation places statement leading/trailing trivia structurally. A do
+      -- with a comment INSIDE a statement still lands here with a multi-line
+      -- opaque block in vdoc (a line comment runs to end-of-line, so its
+      -- statement is multi-line → verbatim), falling through to the safe span.
+      if v.getKind == ``Lean.Parser.Term.do && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
+        return .body vdoc true
       -- Comment hazard: a line comment anywhere in the value except its tail
       -- token's trailing (that one sits in the inter-form gap, placed byte-exact
       -- by Module) has no seam to survive at in an active layout — in particular
@@ -252,10 +260,7 @@ private def valForm
         ((Lean4Fmt.Syntax.trailing? v).getD "")
       if Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts then
         return .span (← verbatim declVal)
-      let vdoc ← walk v
-      let clean := !Lean4Fmt.Syntax.subtreeHasLineComment v
-        && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc
-      if v.getKind == ``Lean.Parser.Term.do && clean then return .body vdoc true    -- glue `:= do`
+      let clean := !Lean4Fmt.Doc.hasMultilineVerbatim vdoc   -- comments handled above
       if isActiveMultiline v.getKind && clean then return .body vdoc false
       match Lean4Fmt.Doc.flatWidth vdoc with
       | some _ => return .body (.flatten vdoc) false                                 -- dense flat body

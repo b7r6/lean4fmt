@@ -59,8 +59,11 @@ partial def emit
             (walk : Walk)
             (stx : Lean.Syntax)
             : EmitM Doc := do
-  -- comment hazard (§0.4): never restructure a subtree carrying a line comment
-  if Lean4Fmt.Syntax.subtreeHasLineComment stx then return (← verbatim stx)
+  -- comment hazard (§0.4): never restructure a subtree carrying a line comment.
+  -- The tail token's TRAILING is exempt: it belongs to the enclosing seam
+  -- (whoever places this form also places its trailing — Module for commands,
+  -- the do-statement loop for statements), so it survives without our help.
+  if Lean4Fmt.Syntax.hasOwnedLineComment stx then return (← verbatim stx)
   match stx with
   | .atom _ v => return .text v
   | .ident _ _ n _ => return .text n.toString

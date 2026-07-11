@@ -78,6 +78,30 @@ partial def countSubtreeLineComments
   | .node info _ args => inInfo info + args.foldl (fun n c => n + countSubtreeLineComments c) 0
   | .missing => 0
 
+/-- Line comment in the trivia this form OWNS: anywhere in the subtree except the
+    tail token's trailing — that zone belongs to the enclosing seam (whoever
+    places the form also places its trailing: `Module` for commands, the do-block
+    statement loop for statements). The counting arithmetic is what makes the
+    exemption sound — a boolean check would let a trailing comment mask an
+    interior one. -/
+def hasOwnedLineComment
+    (stx : Lean.Syntax)
+    : Bool :=
+
+  countSubtreeLineComments stx
+    > countLineComments ((trailing? stx).getD "")
+
+/-- Line comment strictly INTERIOR to a form: between its first and last token.
+    Both the head token's leading and the tail token's trailing are exempt — for
+    a do-statement the loop places both zones itself. -/
+def interiorHasLineComment
+    (stx : Lean.Syntax)
+    : Bool :=
+
+  countSubtreeLineComments stx
+    > countLineComments ((leading? stx).getD "")
+        + countLineComments ((trailing? stx).getD "")
+
 /-- Exact original source text for a node (leading trivia in, trailing out):
     reprint, falling back to the source slice when reprint is unavailable
     (§0.3 — reprint can be `none` for some nodes after `updateLeading`). -/
