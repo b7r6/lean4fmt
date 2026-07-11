@@ -54,6 +54,30 @@ partial def subtreeHasLineComment
   | .node info _ args => inTrivia info || args.any subtreeHasLineComment
   | .missing => false
 
+/-- Number of line comments in a trivia string (the counting form of
+    `hasLineComment`). -/
+def countLineComments (s : String) : Nat := (s.splitOn "--").length - 1
+
+/-- Total line comments in ALL trivia of a subtree (leading and trailing of every
+    token) — the counting form of `subtreeHasLineComment`. Callers exempt a
+    specific zone (e.g. the tail token's trailing, which the enclosing seam
+    places byte-exact) by subtracting its count; a boolean can't express that,
+    since a comment in an exempt zone would mask one in the interior. -/
+partial def countSubtreeLineComments
+            (stx : Lean.Syntax)
+            : Nat :=
+  let inInfo (info : SourceInfo) : Nat :=
+    match info with
+    | .original l _ t _ =>
+      countLineComments (Substring.Raw.toString l)
+        + countLineComments (Substring.Raw.toString t)
+    | _ => 0
+  match stx with
+  | .atom info _ => inInfo info
+  | .ident info _ _ _ => inInfo info
+  | .node info _ args => inInfo info + args.foldl (fun n c => n + countSubtreeLineComments c) 0
+  | .missing => 0
+
 /-- Exact original source text for a node (leading trivia in, trailing out):
     reprint, falling back to the source slice when reprint is unavailable
     (§0.3 — reprint can be `none` for some nodes after `updateLeading`). -/

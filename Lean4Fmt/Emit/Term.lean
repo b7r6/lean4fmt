@@ -197,8 +197,14 @@ partial def emit
       for alt in alts do
         let aa := alt.getArgs
         let patDoc ← walk (aa[1]?.getD .missing)
-        let bodyDoc ← walk (aa[aa.size-1]?.getD .missing)
-        let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ .group (.nest 2 (.line ++ bodyDoc))
+        let body := aa[aa.size-1]?.getD .missing
+        let bodyDoc ← walk body
+        -- a `do` body glues to the `=>` (its statements bring their own hardline);
+        -- anything else is width-aware after the `=>`
+        let bodyPart : Doc := if body.getKind == ``Lean.Parser.Term.do
+          then .text " " ++ bodyDoc
+          else .group (.nest 2 (.line ++ bodyDoc))
+        let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
         armsDoc := armsDoc ++ (if first then .nil else .hardline) ++ armDoc
         first := false
       return .text head ++ .hardline ++ armsDoc

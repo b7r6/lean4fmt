@@ -243,6 +243,15 @@ private def valForm
     match a[1]? with
     | some v =>
       if hasSuffix || hasWhere then return .span (← verbatim declVal)
+      -- Comment hazard: a line comment anywhere in the value except its tail
+      -- token's trailing (that one sits in the inter-form gap, placed byte-exact
+      -- by Module) has no seam to survive at in an active layout — in particular
+      -- the flat-body path would silently drop a comment between `:=` and a
+      -- single-line value. Keep the whole `:= …` span.
+      let tailCmts := Lean4Fmt.Syntax.countLineComments
+        ((Lean4Fmt.Syntax.trailing? v).getD "")
+      if Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts then
+        return .span (← verbatim declVal)
       let vdoc ← walk v
       let clean := !Lean4Fmt.Syntax.subtreeHasLineComment v
         && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc
@@ -276,8 +285,14 @@ private def valForm
     for alt in alts do
       let aa := alt.getArgs
       let patDoc ← walk (aa[1]?.getD .missing)
-      let bodyDoc ← walk (aa[aa.size-1]?.getD .missing)
-      let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ .group (.nest 2 (.line ++ bodyDoc))
+      let body := aa[aa.size-1]?.getD .missing
+      let bodyDoc ← walk body
+      -- a `do` body glues to the `=>` (its statements bring their own hardline);
+      -- anything else is width-aware after the `=>`
+      let bodyPart : Doc := if body.getKind == ``Lean.Parser.Term.do
+        then .text " " ++ bodyDoc
+        else .group (.nest 2 (.line ++ bodyDoc))
+      let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
       armsDoc := armsDoc ++ (if first then .nil else .hardline) ++ armDoc
       first := false
     return .eqns armsDoc
@@ -367,6 +382,37 @@ private def defnDoc
     let sig ← match sigStx with | some s => sigDoc nameCol prefixWidth reserve s | none => pure .nil
     return .text kw ++ .space ++ .text declId ++ sig ++ valBroken
 
+/-- True when a line comment hides in the modifiers REGION: in trivia between the
+    region's tokens (e.g. between the doc comment and a visibility keyword), or in
+    the gap between the last modifier and the declaration keyword. `modifiersDoc`
+    reflows the modifiers from bare token text, which would silently drop such a
+    comment — the caller reproduces the whole declaration verbatim instead. Two
+    exemptions: the first token's LEADING trivia (the declaration's outer leading —
+    comments above the decl — placed byte-exact by `Module`), and docstring TEXT
+    (`--` inside `/-- … -/` is token content, not a trivia comment). -/
+private def modifiersCommentHazard
+            (m defn : Lean.Syntax)
+            : Bool := Id.run do
+  let mut seenTokens := false
+  for c in m.getArgs do
+    if seenTokens then
+      if Lean4Fmt.Syntax.subtreeHasLineComment c then return true
+    else if !(bareSrc c).isEmpty then
+      seenTokens := true
+      -- the docComment slot is a null WRAPPER around the docComment node, and
+      -- docstring text starts with `/--` — which contains `--` — so the bare-text
+      -- check must exempt it (its interior holds no trivia anyway)
+      let isDocWrap := c.getKind == ``Lean.Parser.Command.docComment
+        || (c.getArgs[0]?.map (·.getKind == ``Lean.Parser.Command.docComment)).getD false
+      if !isDocWrap && Lean4Fmt.Syntax.hasLineComment (bareSrc c) then
+        return true
+      if Lean4Fmt.Syntax.hasLineComment ((Lean4Fmt.Syntax.trailing? c).getD "") then
+        return true
+  -- gap between the last modifier and the keyword = the defn head's leading;
+  -- with no modifier tokens at all that gap IS the outer leading (exempt)
+  return seenTokens
+    && Lean4Fmt.Syntax.hasLineComment ((Lean4Fmt.Syntax.leading? defn).getD "")
+
 /-- Emit a declaration (bare — `Module` places its leading trivia), recursing
     via `walk` where needed. Plain `:= term` defs and `| pat => body` equation
     defs are actively formatted; `where`-instance / other value forms reproduce
@@ -385,6 +431,8 @@ def emit
     return (← verbatim stx)     -- structure/inductive/instance/where: reproduce
   if isEqns && !eqnsFormattable (dargs[3]?.getD .missing) then
     return (← verbatim stx)     -- comment/where/termination-bearing eqns: whole-decl verbatim
+  if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
+    return (← verbatim stx)     -- comment hiding in the modifiers region: whole-decl verbatim
   let attrsOwnLine := (← read).breaking.attributesOwnLine
   let (modsDoc, modsWidth) := match a[0]? with
     | some m => modifiersDoc attrsOwnLine m
