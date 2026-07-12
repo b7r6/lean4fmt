@@ -63,7 +63,12 @@ partial def emit
   -- The tail token's TRAILING is exempt: it belongs to the enclosing seam
   -- (whoever places this form also places its trailing — Module for commands,
   -- the do-statement loop for statements), so it survives without our help.
-  if Lean4Fmt.Syntax.hasOwnedLineComment stx then return (← verbatim stx)
+  -- `let` bypasses this guard: the CHAIN arm owns its inter-binding seams
+  -- (comments and blank lines between bindings place structurally, like
+  -- do-statements); a comment INSIDE a binding still verbatims that binding.
+  if stx.getKind != ``Lean.Parser.Term.let
+      && Lean4Fmt.Syntax.hasOwnedLineComment stx then
+    return (← verbatim stx)
   match stx with
   | .atom _ v => return .text v
   | .ident _ _ n _ => return .text n.toString
@@ -141,17 +146,53 @@ partial def emit
           ++ .line ++ .text "else"
           ++ .nest 2 (.line ++ elseB))
     else if kind == ``Lean.Parser.Term.let then
-      -- [let, letConfig, letDecl, sep(`;`?), body]. The binding head (config +
-      -- decl + optional `;`) is reproduced token-for-token; the body — usually a
-      -- nested `let` (a chain) or the final expression — is walked and placed on
-      -- the next line at the SAME indent (Lean let-chains don't nest). The
-      -- hardline makes flatWidth=none, so the value always drops to its own line.
-      let cfgT := (((args[1]?.map bareSrc).getD "").trimAscii.toString)
-      let declDoc ← walk (args[2]?.getD .missing)
-      let sepT := (((args[3]?.map bareSrc).getD "").trimAscii.toString)
-      let bodyDoc ← walk (args[args.size-1]?.getD .missing)
-      let cfgDoc : Doc := if cfgT.isEmpty then .nil else .text cfgT ++ .space
-      return .text "let " ++ cfgDoc ++ declDoc ++ .text sepT ++ .hardline ++ bodyDoc
+      -- The CHAIN arm: unroll `let a := x; let b := y; body` into a vertical
+      -- sequence of binding lines + the final body, each at the SAME indent
+      -- (Lean let-chains don't nest). The loop OWNS the inter-binding trivia
+      -- (the seam model): comment/blank lines between bindings place
+      -- structurally, same-line trailing comments re-append; a comment INSIDE
+      -- a binding verbatims that one binding (its span carries the comment).
+      -- The chain's outer leading/trailing belong to the enclosing seam.
+      let mut d : Doc := .nil
+      let mut cur := stx
+      let mut first := true
+      let mut steps := 0
+      while cur.getKind == ``Lean.Parser.Term.let && steps < 10000 do
+        steps := steps + 1
+        let a := cur.getArgs
+        if a.size < 5 then return (← verbatim stx)
+        let lead := (Lean4Fmt.Syntax.leading? cur).getD ""
+        if !first then
+          let some sep := Lean4Fmt.Emit.leadingSep? lead | return (← verbatim stx)
+          d := d ++ sep
+        else
+          -- the chain's head leading (between `:=` and the first `let`) is
+          -- OURS when it carries comment lines — the enclosing seam only
+          -- provides the line break. Plain whitespace stays the caller's.
+          let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
+          if !(((lead.splitOn "\n").drop 1).dropLast.all isWs) then
+            let some sep := Lean4Fmt.Emit.leadingSep? lead | return (← verbatim stx)
+            d := d ++ sep
+        first := false
+        let cfgT := (((a[1]?.map bareSrc).getD "").trimAscii.toString)
+        if cfgT.any (· == '\n') then return (← verbatim stx)
+        let decl := a[2]?.getD .missing
+        let declDoc ← walk decl
+        let sepT := (((a[3]?.map bareSrc).getD "").trimAscii.toString)
+        if sepT.any (· == '\n') then return (← verbatim stx)
+        -- same-line trailing comment on the binding (the gap to the next
+        -- binding's leading is the seam above)
+        let trailT := ((Lean4Fmt.Syntax.trailing? decl).getD "").trimAscii.toString
+        if trailT.any (· == '\n') then return (← verbatim stx)
+        let cfgDoc : Doc := if cfgT.isEmpty then .nil else .text cfgT ++ .space
+        d := d ++ .text "let " ++ cfgDoc ++ declDoc ++ .text sepT
+          ++ (if trailT.isEmpty then Doc.nil else .text (" " ++ trailT))
+        cur := a[a.size-1]?.getD .missing
+      -- the final body: its leading is the last seam the chain owns
+      let some bodySep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? cur).getD "")
+        | return (← verbatim stx)
+      let bodyDoc ← walk cur
+      return d ++ bodySep ++ bodyDoc
     else if kind == ``Lean.Parser.Term.letDecl then
       -- 1-child wrapper around letIdDecl/letPatDecl/letEqnsDecl — unwrap so the
       -- inner decl dispatches (letEqnsDecl falls through `walk` to verbatim, the
@@ -272,6 +313,25 @@ partial def emit
       let mut ds : Array Doc := #[]
       for e in elems do ds := ds.push (← walk e)
       return Lean4Fmt.Doc.commaList "(" ")" ds
+    else if kind == ``Lean.Parser.Term.forall then
+      -- [∀|forall, binders, opt, ",", body] — head token-for-token (the
+      -- quantifier atom keeps its source spelling), the body walked: flat
+      -- after the comma when it fits, else on the next line at
+      -- continuationIndent (quantifier bodies read as continuations)
+      if args.size != 5 then return (← verbatim stx)
+      let mut head := (bareSrc args[0]!).trimAscii.toString
+      if head.isEmpty then return (← verbatim stx)
+      for b in args[1]!.getArgs do
+        let t := (bareSrc b).trimAscii.toString
+        if t.isEmpty || t.any (· == '\n') then return (← verbatim stx)
+        head := head ++ " " ++ t
+      let optT := (bareSrc args[2]!).trimAscii.toString
+      if optT.any (· == '\n') then return (← verbatim stx)
+      if !optT.isEmpty then head := head ++ " " ++ optT
+      let bodyDoc ← walk args[4]!
+      if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then return (← verbatim stx)
+      let cont := (← read).layout.continuationIndent
+      return .text (head ++ ",") ++ .group (.nest cont (.line ++ bodyDoc))
     else if kind == ``Lean.Parser.Term.hole then
       return .text "_"
     else if kind == `str || kind == `num || kind == `scientific || kind == `char then

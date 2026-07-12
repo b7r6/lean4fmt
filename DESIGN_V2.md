@@ -925,6 +925,18 @@ gets.
 // coverage: code-active 22.4%  (of all output: active 12.8%, trivia 42.4%)
 ```
 
+**Update 2026-07-12** — after inductive/structure/signature/fun/tuple/header/
+mutual/by-block/tactic-interior/§7-alignment/let-chain-seam/where-suffix/forall
+ports: **code-active 43.3%**. Current residue, re-instrumented: value
+safe-spans ~20% (interior-comment values in still-unported leaves — shrinks as
+leaves port), whole-decl fallbacks ~14% (mostly `instance` — the last big
+construct port), typeSpec residue ~12% (comment/too-wide types), correctly-
+verbatim ~19% (ceiling ≈81%), then the tactic tail (`simp`, `tacticHave__`,
+`Lean.cdot`), trivial command lines (`open`/`namespace`/`end`/`in`/`#eval`,
+~4%, nearly free), and comment-bearing match/list terms. The remaining work is
+two themes: the `instance` port, and pushing the seam model from statement
+level into expression level.
+
 **Where the verbatim bytes live** (per-kind instrumentation of `Emit.verbatim`,
 ranked; the reach backlog in priority order):
 

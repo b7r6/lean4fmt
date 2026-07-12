@@ -289,7 +289,29 @@ private def valForm
     let hasWhere := (a[3]?.map (fun s => !s.getArgs.isEmpty)).getD false
     match a[1]? with
     | some v =>
-      if hasSuffix || hasWhere then return .span (← verbatim declVal)
+      if hasSuffix || hasWhere then
+        -- value active, `termination_by …` / `where …` as own-line verbatim
+        -- blocks below it, their leading trivia placed structurally. The value
+        -- must be comment-free and single-line-leaf-clean (same rules as the
+        -- plain body path); anything else keeps the whole safe span.
+        let tailCmts := Lean4Fmt.Syntax.countLineComments
+          ((Lean4Fmt.Syntax.trailing? v).getD "")
+        if v.getKind != ``Lean.Parser.Term.let
+            && Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts then
+          return .span (← verbatim declVal)
+        let vdoc ← walk v
+        if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return .span (← verbatim declVal)
+        let mut tail : Doc := .nil
+        for slot in [a[2]?, a[3]?] do
+          match slot with
+          | some sfx =>
+            if (bareSrc sfx).trimAscii.toString.isEmpty then continue
+            let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? sfx).getD "")
+              | return .span (← verbatim declVal)
+            tail := tail ++ sep ++ (← verbatim sfx)
+          | none => continue
+        let glue := v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic
+        return .body (vdoc ++ tail) glue
       let vdoc ← walk v
       -- `:= do` glues even when the do carries comments BETWEEN its statements —
       -- DoNotation places statement leading/trailing trivia structurally. A do
@@ -306,7 +328,11 @@ private def valForm
       -- single-line value. Keep the whole `:= …` span.
       let tailCmts := Lean4Fmt.Syntax.countLineComments
         ((Lean4Fmt.Syntax.trailing? v).getD "")
-      if Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts then
+      -- EXEMPT let-chains: the chain arm owns its inter-binding seams (a
+      -- binding the chain can't hold comes back as a multi-line opaque block
+      -- and the flatWidth path below spans)
+      if v.getKind != ``Lean.Parser.Term.let
+          && Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts then
         return .span (← verbatim declVal)
       let clean := !Lean4Fmt.Doc.hasMultilineVerbatim vdoc   -- comments handled above
       if isActiveMultiline v.getKind && clean then return .body vdoc false
