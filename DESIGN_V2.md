@@ -2,12 +2,13 @@
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                    // LEAN4FMT // DESIGN // V2
+                                                      // LEAN4FMT // DESIGN // V2
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     A flexible, multi-style source formatter for Lean 4, built on a document IR
     with a clang-format-style preset/override ontology, horizontal alignment,
     advanced blank-line policy, and an io_uring-backed parallel driver.
+    
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -34,12 +35,38 @@ production design (§0). Supersedes the v1 architecture.
   `lean`. Builds under both `v4.31.0` and `v4.32.0-rc1`. The 10 files it can't
   touch fail at the *parser*, not the emitter (§0.4).
 
-### Step 0 (still true, still the first deliverable)
+### Checkpoint — 2026-07-11 (milestone 1: daily-driver on continuity)
 
-The shipped executable does **not** use the emitter. `Lean4Fmt.lean` still calls
-Lean's `ppModule` and does not import `Lean4Fmt.Emitter`. All prototype results
-above ran through a throwaway harness. The first concrete v2 deliverable is to
-stand up the pure spine and wire it into the executable, replacing `ppModule`.
+The v2 spine is SHIPPED and dogfooded. The exe runs `Emit → Doc → Render`
+behind the runtime safety gate; the whole continuity corpus is formatted and
+committed (84 files, blame-shielded). Current measured state:
+
+- **Correctness**: shipping corpus gate 234/234 (double `--write`, 0
+  non-idempotent, 0 errors), including the 12 same-file-notation files via the
+  elaborating fallback. The gate compares tokens, comment content, header
+  imports, and the fixed point. Comment-preservation additionally checked by
+  diff over every reformatted file (it caught two silent comment-eaters the
+  token gate could not see — the check is part of the construct-port loop now).
+- **Coverage** (§15, `--stats`): 22.4% of code bytes actively formatted; the
+  verbatim remainder is ranked and targeted (whole-decl fallbacks
+  structure/inductive/instance ≈20%, value safe-spans ≈19%, signature
+  interiors ≈15%, correctly-verbatim-forever residue ≈11%, tactics 5%).
+- **Throughput** (§12): one shared batch env per invocation + pooled main pass
+  + parallel conflict-retry subprocesses: 234 files in 3.7s / 1.4GB peak on 32
+  cores, batch-idempotent and deterministic under concurrency.
+- **Constructs active**: def/theorem/abbrev/opaque/example decls (sig reflow,
+  eqn defs), let/do binding decomposition, the do-statement family
+  (let/←/reassign/expr/return/if/match) with comment-preserving statement
+  layout, match, structInst, app/binops/lists/if-then-else, `:= do`/`=> do`
+  glue.
+- **Flags**: `--check | --write | --stats`, `--width`, `--style`,
+  `--elab auto|off` (measured: warm full elaboration is 5–20ms/file here;
+  `--elab off` gives strict passthrough with a loud skip diagnostic),
+  `--no-retry` (subprocess recursion guard), `LEAN4FMT_JOBS`.
+
+Next: milestone 2 (friendly repos) — `lake env` discovery replacing the
+hand-built LEAN_PATH farm, packaging, foreign-corpus gate runs; construct
+backlog per §15.
 
 ---
 
@@ -761,6 +788,49 @@ Lean's module init is process-global and not re-entrant** (`interpretedModInits`
   `Frontend/Session` and `Driver/Pool` change. How *little* elaboration we can
   get away with per file (§14.7) directly sets this phase's cost.
 
+### 12.1 Measured resolution (2026-07-11) — the hybrid shipped
+
+Measurement inverted the lean above: **(1) superset-env is the shipped fast
+path, with (2) process-per-file demoted to a conflict fallback.** The facts
+that decided it:
+
+- **Per-file cost was never elaboration — it was env import.** Warm (env
+  prebuilt), full interleaved elaboration is 5–20ms/file on this corpus; the
+  200–680ms/file observed at process level was `processHeader` + startup. One
+  union `importModules (loadExts := true, leakEnv := true)` per invocation
+  removes it (`Frontend/Env.batchEnv`: header-scan → union → drop
+  unresolvables → import once).
+- **The import model is one-shot per process, by contract.**
+  `ImportingFlag.withImporting`'s `finally` sets `runInitializersRef := false`
+  after the FIRST `importModules`; a second in-process `loadExts` import
+  throws. (An in-process per-import-set env cache was tried first: 30GB peak
+  RSS of half-imported leaked closures before hitting the contract error.
+  Region pointer fix-ups are private pages — every extra env costs its closure
+  in real memory.) **The process is the runtime's unit of env isolation**; any
+  worker needing a different env is a process, which is what the mesh wanted
+  anyway.
+- **Superset conflicts are real**: 60/234 corpus files (the wire-format DSL
+  zoo — colliding syntax categories under co-import) fail to parse under the
+  union though fine under their own imports, and 6 of those conflict with
+  *each other*, so no static partition exists. Superset parsing stays safe for
+  the gate's guarantees either way (source and output are token-compared under
+  the SAME env; kept output is token-identical to input). Conflicted files
+  retry as one-file subprocesses (`--no-retry` guards recursion), spawned in
+  `LEAN4FMT_JOBS`-bounded waves. A tree that co-imports cleanly (mathlib, by
+  construction) takes zero retries.
+- **The main pass is IO tasks over the shared frozen env** (default task
+  priority = the runtime's core-sized pool; `leakEnv` marks the env
+  persistent — the LSP sharing model). Verified batch-idempotent and
+  fresh-run-deterministic under 32-way concurrency.
+
+Measured trajectory on the 234-file corpus, one invocation: 17.9s sequential →
+6.9s (retry waves) → **3.7s / 1.4GB peak** (pooled). Remaining: ~1.5s union
+import (the io_uring olean page-cache prewarm attacks this), ~2s retry waves
+(this repo's DSL quirk), <1s formatting. The io_uring roadmap (statx walk +
+prewarm + MSG_RING broker with refill mailboxes, subtree work units, sequential
+fast path for tiny batches) is unchanged — it now sits on top of a measured
+baseline instead of a guess.
+
 ---
 
 ## 13. Roadmap
@@ -799,8 +869,12 @@ Lean's module init is process-global and not re-entrant** (`interpretedModInits`
    Reference corpus: `~/src/vendor/Pantograph`.
 3. **Mathlib preset tuning.** Iterative, harness-driven (§9). How much residual
    churn is "acceptable" needs a number.
-4. **Superset-env safety.** Validate whether one read-only `Environment` can
-   safely re-parse many files, or if (2) process-per-file is mandatory.
+4. **Superset-env safety.** ~~Validate whether one read-only `Environment` can
+   safely re-parse many files, or if (2) process-per-file is mandatory.~~
+   **Answered (§12.1)**: read-only sharing is safe and shipped (token
+   comparison happens under the same env on both sides); what fails is
+   *parseability* under conflicting co-imported syntax extensions — handled by
+   the subprocess retry, zero-cost on co-importable trees.
 5. **Format-range** (`--lines a:b`, clang-format style). **Deferred**
    (clarification #5): not worth trouble on its own. Kept in mind only insofar
    as it might tip an otherwise-marginal design choice in `Doc/Render`'s
@@ -809,12 +883,13 @@ Lean's module init is process-global and not re-entrant** (`interpretedModInits`
    requires *interleaved parse+elaboration* (`Frontend/Parse`), not a standalone
    parser. Hand-tracking `namespace`/`open` scope is insufficient; the elaborator
    must run to register notation. This is the gate that unblocks mathlib.
-7. **How much of the artifact must we elaborate?** (§0.5) — open research
-   question with real cost consequences (§12). The floor is "load imports"; the
-   ceiling is "fully elaborate the file." Candidates to measure: elaborate every
-   command but skip proof/tactic bodies; a "extend-parser-tables-only" fast path
-   with fallback to full elaboration; a per-file elaboration budget. The answer
-   sets the per-file cost of the whole tool and the shape of `Frontend/Session`.
+7. **How much of the artifact must we elaborate?** (§0.5) — measured on
+   continuity (bench-elab, warm, env prebuilt): cheap parse 1–4ms/file, FULL
+   elaboration 5–20ms/file (2–7×), and `tablesOnly` via `debug.byAsSorry`
+   recovers only 0–12% — on systems code the cost is def/instance elaboration
+   and typeclass resolution, not proofs, so full-depth fallback is the shipped
+   default (`--elab auto`). **Still open for mathlib**, where proofs dominate
+   and `byAsSorry` should bite hard; re-measure there before assuming.
 
 ### Deferred: mathlib validation
 
@@ -824,3 +899,46 @@ until we return with a real project tree: it is blocked purely on `Frontend/Pars
 (§0.5), which is P0 work anyway. When P0 lands, the mathlib conformance harness
 (§9) comes online with no formatter changes. mathlib will still be there.
 ```
+
+---
+
+## 15. Coverage accounting (`--stats`)
+
+The construct-coverage number: how much code the tool actively formats versus
+reproduces verbatim because a construct is not yet ported. Tracked over time —
+the corpus gate prints it on every run — so reach regressions and progress are
+both visible.
+
+**Method.** The produced `Doc` records the attribution exactly: `.text` bytes
+are actively formatted output, `.verbatim` bytes are opaque reproduction,
+`.textRaw` bytes are comments/inter-form trivia (byte-exact by design — not a
+coverage failure). `Doc.stats` folds the tree; `lean4fmt --stats <files|dirs>`
+prints one `active verbatim trivia path` row per file plus the aggregate.
+Files the shared env cannot parse are measured in a one-file subprocess (own
+env); a file nothing can parse counts fully verbatim — passthrough is what it
+gets.
+
+**Baseline (2026-07-11, continuity corpus, 234 files):**
+
+```
+// files 234  bytes active=280595 verbatim=971135 trivia=923591
+// coverage: code-active 22.4%  (of all output: active 12.8%, trivia 42.4%)
+```
+
+**Where the verbatim bytes live** (per-kind instrumentation of `Emit.verbatim`,
+ranked; the reach backlog in priority order):
+
+| share | bucket | disposition |
+|---|---|---|
+| ~20% | whole-decl fallbacks: `structure`/`inductive` (Command emitter is scaffold), `instance`, `where`-defs | port next — the AST-definition files are 100% verbatim on this alone |
+| ~19% | `declValSimple` safe-spans (where/termination suffixes, comment bails, multiline-verbatim leaves inside values) | shrinks as leaf constructs port |
+| ~15% | signature interiors: `typeSpec` + `explicitBinder` + arrows | mostly flat term layout — cheap ports |
+| ~11% | string literals, module docs, DSL quotations, idents | **correctly verbatim forever** — excluded from the honest can't-cope number |
+| ~5% | `byTactic` proof blocks | modest here; becomes the #1 bucket on mathlib |
+| ~4% | comment-bearing `let` chains (whole-term comment guard) | relaxation, same seam pattern as the do-block fix |
+| ~7% | tail: `mutual`, `tuple`, `fun`, `letrec`, module header | header is trivial and un-verbatims the import-barrel files |
+
+Honest can't-cope is therefore ≈66% of code bytes today; the two big buckets
+plus signature interiors (≈35% of code combined) roughly triple active
+coverage, with a practical ceiling near 85–90% given the correctly-verbatim
+residue.

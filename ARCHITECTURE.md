@@ -19,7 +19,7 @@ We walk this tree and emit formatted text directly.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                           Syntax Tree                                │
+│                           Syntax Tree                               │
 │  ┌─────────────────────────────────────────────────────────────────┐│
 │  │ Module                                                          ││
 │  │  ├─ Header (imports)                                            ││
