@@ -45,6 +45,9 @@ inductive Doc where
   -- spec.maxDelta AND every padded row fits the line width — otherwise the
   -- ordinary fallback layout ("a cell that must wrap opts out of the grid").
   | alignOr    (spec : ColSpec) (rows : Array (Array Doc)) (fallback : Doc)
+  -- §5: pack flat items separated by single spaces, wrapping at the width
+  -- (literal pools — byte tables, opcode lists). Items must be flat-capable.
+  | fillSep    (items : Array Doc)
   | blank      (req : BlankReq)                              -- §8
   | flatten    (d : Doc)                                     -- force flat
   | textRaw    (s : String)                                  -- verbatim comment (may contain '\n')

@@ -39,6 +39,9 @@ partial def flatWidth : Doc → Option Nat
   | .blank _ => none
   | .alignTable _ _ => none
   | .alignOr _ _ fb => flatWidth fb
+  | .fillSep items =>
+    items.foldl (fun acc i => match acc, flatWidth i with
+      | some a, some w => some (a + w + 1) | _, _ => none) (some 0) |>.map (· - Nat.min 1 items.size)
 
 /-- Whether a doc contains a multi-line opaque block (`verbatim`/`textRaw` with a
     newline). Such blocks re-anchor by column, which is only idempotent at their
@@ -53,6 +56,7 @@ partial def hasMultilineVerbatim : Doc → Bool
   | .group d | .nest _ d | .align d | .flatten d => hasMultilineVerbatim d
   | .alignTable _ rows => rows.any (·.any hasMultilineVerbatim)
   | .alignOr _ _ fb => hasMultilineVerbatim fb
+  | .fillSep items => items.any hasMultilineVerbatim
   | _ => false
 
 /-- Coverage accounting (DESIGN_V2 §15): byte attribution over a produced doc.
@@ -78,6 +82,10 @@ partial def stats : Doc → (Nat × Nat × Nat)
           (acc.1 + a, acc.2.1 + v, acc.2.2 + t)) acc)
       (0, 0, 0)
   | .alignOr _ _ fb => stats fb
+  | .fillSep items =>
+    items.foldl (fun (acc : Nat × Nat × Nat) i =>
+      let (a, v, t) := stats i
+      (acc.1 + a, acc.2.1 + v, acc.2.2 + t)) (0, 0, 0)
   | _ => (0, 0, 0)
 
 /-- Width a doc contributes to the CURRENT line, up to its first possible break
@@ -102,6 +110,7 @@ partial def firstLineWidth : Doc → Nat × Bool
   | .flatten d => match flatWidth d with | some w => (w, false) | none => firstLineWidth d
   | .alignTable _ _ => (0, true)
   | .alignOr _ _ fb => firstLineWidth fb
+  | .fillSep items => ((items[0]?.map (fun i => (flatWidth i).getD 0)).getD 0, items.size > 1)
 
 private def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')private def newlines (n : Nat) : String := String.ofList (List.replicate n '\n')
 
@@ -217,6 +226,19 @@ partial def render
       (strRows.foldl (fun (p : RSt × Bool) r =>
         let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
         (wr st indent (renderRow r), false)) (st, true)).1
+    | .fillSep items =>
+      -- pack items with single spaces, wrapping at the width; each item
+      -- renders FLAT (fill items are flat-capable by construction)
+      let itemStr (c : Doc) : String := (go c indent true {}).out
+      let strs := items.map itemStr
+      (strs.foldl (fun (p : RSt × Bool) t =>
+        let (st, first) := p
+        if first then (wr st indent t, false)
+        else
+          let effCol := if st.pend > 0 then indent else st.col
+          if effCol + 1 + t.length > width then
+            (wr { st with pend := Nat.min (st.pend + 1) maxPend } indent t, false)
+          else (wr st indent (" " ++ t), false)) (st, true)).1
     | .alignOr spec rows fallback =>
       -- FLAT fallback first when it fits (a record that fits on one line must
       -- not become a grid); then the padded table when the delta guardrail

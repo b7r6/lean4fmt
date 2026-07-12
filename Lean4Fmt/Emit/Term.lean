@@ -31,6 +31,12 @@ private def commaGroup
   for c in children do
     if c.isAtom then continue
     ds := ds.push (← walk c)
+  -- literal pools (§5 fill): many short flat items — byte tables, opcode
+  -- lists — pack and wrap at the width instead of exploding one per line
+  if ds.size ≥ 8 && ds.all (fun d => ((Lean4Fmt.Doc.flatWidth d).getD 1000) ≤ 12) then
+    let items := (Array.range ds.size).map (fun i =>
+      ds[i]! ++ (if i + 1 == ds.size then Doc.nil else Doc.text ","))
+    return .text l ++ .nest 2 (Doc.fillSep items) ++ .text r
   return Lean4Fmt.Doc.commaList l r ds
 
 /-- Comment-bearing comma list, FORCED broken (a line comment cannot flatten,

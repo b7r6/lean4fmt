@@ -363,7 +363,7 @@ private def valForm
       let clean := !Lean4Fmt.Doc.hasMultilineVerbatim vdoc   -- comments handled above
       if isActiveMultiline v.getKind && clean then return .body vdoc false
       match Lean4Fmt.Doc.flatWidth vdoc with
-      | some _ => return .body (.flatten vdoc) false                                 -- dense flat body
+      | some _ => return .body vdoc false      -- width decides (no forced flatten)
       | none => return .span (← verbatim declVal)                                    -- multi-line: safe span
     | none => return .span (← verbatim declVal)
   else if declVal.getKind == ``Lean.Parser.Command.declValEqns then
