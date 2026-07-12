@@ -34,15 +34,23 @@ unsafe def runJobsImpl
            (width : Nat)
            (preset : String)
            (elabFallback : Bool)
+           (retry : Bool)
            : IO (Array Driver.Result) := do
   let base := (Style.byName? preset).getD Style.straylight
   let style := { base with layout := { base.layout with lineWidth := width } }
   let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
-  Driver.runAll style expanded elabFallback
+  let retryCfg ← do
+    if retry then
+      let exe ← IO.appPath
+      pure (some (exe.toString,
+        #["--width", toString width, "--style", preset]
+          ++ (if elabFallback then #[] else #["--elab", "off"])))
+    else pure none
+  Driver.runAll style expanded elabFallback retryCfg
 
 @[implemented_by runJobsImpl]
 opaque runJobs
-    (files : List String) (width : Nat) (preset : String) (elabFallback : Bool)
+    (files : List String) (width : Nat) (preset : String) (elabFallback : Bool) (retry : Bool)
     : IO (Array Driver.Result)
 
 def main
@@ -55,7 +63,7 @@ def main
 
   initEnv
   let err ← IO.getStderr
-  let results ← runJobs o.files o.width o.preset o.elabFallback
+  let results ← runJobs o.files o.width o.preset o.elabFallback o.retry
 
   let mut failed := false
   for r in results do

@@ -12,3 +12,4 @@
 import Lean4Fmt.Frontend.Parse
 import Lean4Fmt.Frontend.Gate
 import Lean4Fmt.Frontend.Session
+import Lean4Fmt.Frontend.Env

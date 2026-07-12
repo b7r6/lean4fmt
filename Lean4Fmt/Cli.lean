@@ -26,6 +26,10 @@ structure Options where
       cost is 5–20ms/file on the continuity corpus — hence the default; `--elab
       off` keeps strict passthrough (such files skip, with a diagnostic). -/
   elabFallback : Bool := true
+  /-- Retry superset-env parse conflicts in a one-file subprocess (see
+      Driver.runJob). `--no-retry` is set on those subprocesses themselves —
+      the recursion guard. -/
+  retry : Bool := true
   files  : List String := []
   deriving Repr, Inhabited
 
@@ -43,6 +47,7 @@ def parse
     | "--width" :: n :: r => o := { o with width := n.toNat! }; rest := r
     | "--style" :: s :: r => o := { o with preset := s }; rest := r
     | "--elab" :: v :: r => o := { o with elabFallback := v != "off" }; rest := r
+    | "--no-retry" :: r => o := { o with retry := false }; rest := r
     | f :: r => o := { o with files := o.files ++ [f] }; rest := r
     | [] => break
   return o

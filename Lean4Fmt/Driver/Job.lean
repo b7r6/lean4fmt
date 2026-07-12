@@ -49,13 +49,32 @@ def Result.changed (r : Result) : Bool := r.output != r.original
     an error diagnostic) so a batch never aborts — this is what a worker pool
     dispatches. -/
 unsafe def runJob
+           (env : Lean.Environment)
            (style : Style.Style)
            (path : System.FilePath)
            (elabFallback : Bool := true)
+           (retry : Option (String × Array String) := none)
            : IO Result := do
   let original ← IO.FS.readFile path
   try
-    let (output, diagnostics) ← Frontend.formatFile path.toString original style elabFallback
+    let (output, diagnostics) ←
+      Frontend.formatSafe env path.toString original style elabFallback
+    -- Retry ladder: a parse failure under the shared SUPERSET env can be a
+    -- syntax-extension conflict between co-imported DSLs, not a broken file.
+    -- The runtime's import model is one-shot (ImportingFlag: the first
+    -- `importModules` disables initializer execution for the process), so a
+    -- second in-process `loadExts` import is off the table — the retry is a
+    -- SUBPROCESS: this exe, one file, its own env (`--no-retry` stops
+    -- recursion; a genuinely broken file fails there too and keeps its loud
+    -- diagnostic via stderr).
+    if output == original && diagnostics.any (·.rule == "parse") then
+      if let some (exe, extraArgs) := retry then
+        let r ← IO.Process.output
+          { cmd := exe, args := #["--no-retry"] ++ extraArgs ++ #[path.toString] }
+        if r.exitCode == 0 && !r.stdout.isEmpty then
+          let stillUnparsed := (r.stderr.splitOn "not formatted:").length > 1
+          return { path, original, output := r.stdout,
+                   diagnostics := if stillUnparsed then diagnostics else #[] }
     return { path, original, output, diagnostics }
   catch e =>
     return { path, original, output := original,
@@ -63,14 +82,18 @@ unsafe def runJob
 
 /-- The scheduler seam. SEQUENTIAL today — the single place a core-pinned worker
     pool (Driver.Pool) or batched uring loop (Driver.Io) will slot in, leaving the
-    pure core and `runJob` untouched. -/
+    pure core and `runJob` untouched. Every job shares ONE batch env
+    (`Frontend.batchEnv` — imported once per invocation, immutable thereafter);
+    per-file syntax extensions layer on top functionally inside `Session`, and
+    superset-conflicted files retry in a one-file subprocess. -/
 unsafe def runAll
            (style : Style.Style)
            (paths : Array System.FilePath)
            (elabFallback : Bool := true)
-           : IO (Array Result) :=
-
-  paths.mapM (runJob style · elabFallback)
+           (retry : Option (String × Array String) := none)
+           : IO (Array Result) := do
+  let env ← Frontend.batchEnv paths
+  paths.mapM (runJob env style · elabFallback retry)
 
 /-- Expand file/dir inputs into the `.lean` file set to process (directories are
     walked, `.lake` build trees skipped), deduplicated and in a deterministic
