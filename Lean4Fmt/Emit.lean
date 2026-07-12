@@ -69,6 +69,19 @@ partial def walk
          || kind == ``Lean.Parser.Tactic.induction
          || kind == ``Lean.Parser.Tactic.cases
          || kind == ``Lean.Parser.Tactic.tacticHave__
+         || kind == `Lean.cdot
+         || kind == ``Lean.Parser.Tactic.tacticRfl
+         || kind == ``Lean.Parser.Tactic.omega
+         || kind == ``Lean.Parser.Tactic.decide
+         || kind == ``Lean.Parser.Tactic.nativeDecide
+         || kind == ``Lean.Parser.Tactic.constructor
+         || kind == ``Lean.Parser.Tactic.tacticTrivial
+         || kind == ``Lean.Parser.Tactic.contradiction
+         || kind == ``Lean.Parser.Tactic.assumption
+         || kind == ``Lean.Parser.Tactic.tacticAnd_intros
+         || kind == ``Lean.Parser.Tactic.simpAll
+         || kind == ``Lean.Parser.Tactic.intro
+         || kind == ``Lean.Parser.Tactic.intros
          || kind == ``Lean.Parser.Tactic.simp then
       Tactic.emit walk stx
     -- expression constructs → Term (flat, comment-guarded; else verbatim)

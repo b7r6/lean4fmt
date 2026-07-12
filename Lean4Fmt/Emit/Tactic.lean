@@ -23,23 +23,95 @@ namespace Lean4Fmt.Emit.Tactic
 
 open Lean Lean4Fmt.Doc
 
-/-- The items of a `tacticSeq` (unwrapping `tacticSeq1Indented`), skipping the
-    empty separator slots; `none` on an explicit `;` (the line layout would
-    lose it) or a structural surprise. -/
-private def tacticItems?
+/-- The items of a `tacticSeq` (unwrapping `tacticSeq1Indented`), grouped into
+    LINES: an explicit `;` joins its neighbors into one group (rendered as one
+    line, `t1; t2; t3`); empty separator slots (newlines) split groups. `none`
+    on a trailing `;` or a structural surprise. -/
+private def tacticGroups?
             (seq : Lean.Syntax)
-            : Option (Array Lean.Syntax) := Id.run do
+            : Option (Array (Array Lean.Syntax)) := Id.run do
   if seq.getKind != ``Lean.Parser.Tactic.tacticSeq then return none
   let s1 := (seq.getArgs[0]?).getD .missing
   if s1.getKind != ``Lean.Parser.Tactic.tacticSeq1Indented then return none
   let some inner := s1.getArgs[0]? | return none
-  let mut items : Array Lean.Syntax := #[]
+  let mut groups : Array (Array Lean.Syntax) := #[]
+  let mut cur : Array Lean.Syntax := #[]
+  let mut joinNext := false
   for c in inner.getArgs do
-    if (Lean4Fmt.Emit.bareSrc c).trimAscii.toString.isEmpty then continue  -- separator slot
-    if c.isAtom then return none   -- explicit `;`
-    items := items.push c
-  if items.isEmpty then return none
-  return some items
+    if (Lean4Fmt.Emit.bareSrc c).trimAscii.toString.isEmpty then continue -- newline slot
+    if c.isAtom then
+      if (Lean4Fmt.Emit.bareSrc c).trimAscii.toString == ";" then
+        if cur.isEmpty then return none
+        joinNext := true
+        continue
+      else return none
+    if joinNext then
+      cur := cur.push c
+      joinNext := false
+    else
+      if !cur.isEmpty then groups := groups.push cur
+      cur := #[c]
+  if joinNext then return none          -- dangling `;`
+  if !cur.isEmpty then groups := groups.push cur
+  if groups.isEmpty then return none
+  return some groups
+
+/-- One `;`-joined run as a single line: items token-for-token joined by
+    `"; "`. `none` when an item is multi-line, carries an interior comment, or
+    an INTERMEDIATE item has trailing trivia content (a comment there would
+    comment out the rest of the joined line). -/
+private def groupText?
+            (g : Array Lean.Syntax)
+            : Option String := Id.run do
+  let mut txt := ""
+  for j in [0:g.size] do
+    let it := g[j]!
+    if Lean4Fmt.Syntax.interiorHasLineComment it then return none
+    let t := (Lean4Fmt.Emit.bareSrc it).trimAscii.toString
+    if t.isEmpty || t.any (· == '\n') then return none
+    if j + 1 < g.size then
+      let tr := (Lean4Fmt.Syntax.trailing? it).getD ""
+      if !tr.trimAscii.toString.isEmpty || tr.any (· == '\n') then return none
+    if j > 0 then
+      let ld := (Lean4Fmt.Syntax.leading? it).getD ""
+      if !ld.trimAscii.toString.isEmpty || ld.any (· == '\n') then return none
+    txt := if txt.isEmpty then t else txt ++ "; " ++ t
+  if txt.isEmpty then return none
+  return some txt
+
+/-- One group's doc: a single tactic walks (active layouts apply); a
+    `;`-joined run rides as one text line. -/
+private def groupDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (g : Array Lean.Syntax)
+            : Lean4Fmt.Emit.EmitM (Option Doc) := do
+  if g.size == 1 then return some (← walk g[0]!)
+  return (groupText? g).map Doc.text
+
+/-- The seam loop over groups (mirrors `DoNotation.seqLinesDoc?`): each group
+    one line, its leading trivia placed structurally, same-line trailing
+    comments re-appended (leading of the group's FIRST item, trailing of its
+    LAST). -/
+private def seqGroupsDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (groups : Array (Array Lean.Syntax))
+            (lastOwned : Bool)
+            : Lean4Fmt.Emit.EmitM (Option Doc) := do
+  let mut body : Doc := .nil
+  for h : i in [0:groups.size] do
+    let g := groups[i]
+    let first := g[0]!
+    let glast := g[g.size - 1]!
+    let trailT := ((Lean4Fmt.Syntax.trailing? glast).getD "").trimAscii.toString
+    let last := i + 1 == groups.size
+    if !last && trailT.any (· == '\n') then return none
+    if last && !lastOwned && !trailT.isEmpty then return none
+    let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
+    let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? first).getD "")
+      | return none
+    let some gDoc ← groupDoc? walk g | return none
+    body := body ++ sep ++ gDoc ++ trailDoc
+  return some body
 
 /-- An arm body (`induction … with | alt => <tactics>`): a single clean flat
     tactic goes width-aware after the `=>` (inline when it fits); anything else
@@ -48,15 +120,15 @@ private def armSeqDoc?
             (walk : Lean4Fmt.Emit.Walk)
             (seq : Lean.Syntax)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
-  let some items := tacticItems? seq | return none
-  if items.size == 1 then
-    let lead := (Lean4Fmt.Syntax.leading? items[0]!).getD ""
+  let some groups := tacticGroups? seq | return none
+  if groups.size == 1 then
+    let lead := (Lean4Fmt.Syntax.leading? groups[0]![0]!).getD ""
     let plainLead := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
     if plainLead then
-      let tDoc ← walk items[0]!
+      let some tDoc ← groupDoc? walk groups[0]! | return none
       if (Lean4Fmt.Doc.flatWidth tDoc).isSome && !Lean4Fmt.Doc.hasMultilineVerbatim tDoc then
         return some (.group (.nest 2 (.line ++ tDoc)))
-  match ← DoNotation.seqLinesDoc? walk items true with
+  match ← seqGroupsDoc? walk groups true with
   | some body => return some (.nest 2 body)
   | none => return none
 
@@ -166,6 +238,44 @@ def emit
       let some bD ← armSeqDoc? walk seq | return (← Lean4Fmt.Emit.verbatim stx)
       d := d ++ .hardline ++ .text (lhsT ++ " =>") ++ bD
     return d
+  else if kind == `Lean.cdot then
+    -- bullet: [cdotTk, tacticSeq] — first group rides the bullet line
+    -- (`· intro l; exact h`), the rest one line per group at +2 under it
+    if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
+    if !((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString.isEmpty then
+      return (← Lean4Fmt.Emit.verbatim stx)   -- comment on the `·` itself
+    let tkT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
+    let some groups := tacticGroups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
+    let g0 := groups[0]!
+    let lead0 := (Lean4Fmt.Syntax.leading? g0[0]!).getD ""
+    if ((lead0.splitOn "\n").drop 1).dropLast.any (fun l => !l.trimAscii.toString.isEmpty) then
+      return (← Lean4Fmt.Emit.verbatim stx)   -- comment lines between `·` and first tactic
+    let some d0 ← groupDoc? walk g0 | return (← Lean4Fmt.Emit.verbatim stx)
+    if Lean4Fmt.Doc.hasMultilineVerbatim d0 then return (← Lean4Fmt.Emit.verbatim stx)
+    let trail0T := ((Lean4Fmt.Syntax.trailing? g0[g0.size - 1]!).getD "").trimAscii.toString
+    if groups.size == 1 then
+      if !trail0T.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)   -- owned by parent seam
+      return .text (tkT ++ " ") ++ d0
+    if trail0T.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+    let trail0 : Doc := if trail0T.isEmpty then .nil else .text (" " ++ trail0T)
+    match ← seqGroupsDoc? walk (groups.extract 1 groups.size) true with
+    | some rest => return .text (tkT ++ " ") ++ d0 ++ trail0 ++ .nest 2 rest
+    | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if kind == ``Lean.Parser.Tactic.tacticRfl || kind == ``Lean.Parser.Tactic.omega
+      || kind == ``Lean.Parser.Tactic.decide || kind == ``Lean.Parser.Tactic.nativeDecide
+      || kind == ``Lean.Parser.Tactic.constructor || kind == ``Lean.Parser.Tactic.tacticTrivial
+      || kind == ``Lean.Parser.Tactic.contradiction || kind == ``Lean.Parser.Tactic.assumption
+      || kind == ``Lean.Parser.Tactic.tacticAnd_intros || kind == ``Lean.Parser.Tactic.simpAll
+      || kind == ``Lean.Parser.Tactic.intro || kind == ``Lean.Parser.Tactic.intros then
+    -- token-line tactics: single line, token-for-token, single-spaced
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut line := ""
+    for c in a do
+      let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+      if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+      if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
+    if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    return .text line
   else if kind != ``Lean.Parser.Term.byTactic then
     return (← Lean4Fmt.Emit.verbatim stx)
   else
@@ -173,8 +283,8 @@ def emit
   -- a comment on the `by` line itself has no home in the layout
   if !((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString.isEmpty then
     return (← Lean4Fmt.Emit.verbatim stx)
-  let some items := tacticItems? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
-  match ← DoNotation.seqLinesDoc? walk items true with
+  let some groups := tacticGroups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
+  match ← seqGroupsDoc? walk groups true with
   | some body => return .text "by" ++ .nest 2 body
   | none => return (← Lean4Fmt.Emit.verbatim stx)
 
