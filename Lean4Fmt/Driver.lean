@@ -1,3 +1,4 @@
+import Lean4Fmt.Driver.Config
 import Lean4Fmt.Driver.Format
 import Lean4Fmt.Driver.Check
 import Lean4Fmt.Driver.Walk

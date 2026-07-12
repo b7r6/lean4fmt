@@ -72,6 +72,7 @@ unsafe def runStatsImpl
   let mut rows : Array (Nat × Nat × Nat × String) := #[]
   for p in expanded do
     let contents ← IO.FS.readFile p
+    let style ← Driver.styleFor style p
     match ← Frontend.statsFor env p.toString contents style elabFallback with
     | some (a, v, t) => rows := rows.push (a, v, t, p.toString)
     | none =>

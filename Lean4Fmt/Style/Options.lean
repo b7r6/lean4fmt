@@ -35,6 +35,13 @@ def BlankPolicy.ofString? : String → Option BlankPolicy
   | "preserve" => some .preserve | "impose" => some .impose
   | "normalize" => some .normalize | _ => none
 
+def ColonPlacement.ofString? : String → Option ColonPlacement
+  | "breakBefore" => some .breakBefore | "breakAfter" => some .breakAfter | _ => none
+
+def BinderLayout.ofString? : String → Option BinderLayout
+  | "oneLine" => some .oneLine | "onePerLine" => some .onePerLine
+  | "fill" => some .fill | _ => none
+
 -- ── grouped sub-records ─────────────────────────────────────────────────────
 
 structure Layout where

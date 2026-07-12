@@ -11,6 +11,7 @@
 
 import Lean4Fmt.Frontend
 import Lean4Fmt.Style
+import Lean4Fmt.Driver.Config
 
 namespace Lean4Fmt.Driver
 
@@ -25,7 +26,8 @@ unsafe def formatFile
            : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   let contents ← IO.FS.readFile path
   let base := (Lean4Fmt.Style.byName? preset).getD Lean4Fmt.Style.straylight
-  let style := { base with layout := { base.layout with lineWidth := width } }
+  let base := { base with layout := { base.layout with lineWidth := width } }
+  let style ← styleFor base path
   Lean4Fmt.Frontend.formatFile path contents style elabFallback
 
 end Lean4Fmt.Driver

@@ -24,6 +24,7 @@
 import Lean4Fmt.Frontend
 import Lean4Fmt.Driver.Walk
 import Lean4Fmt.Style
+import Lean4Fmt.Driver.Config
 import Lean4Fmt.Rules
 
 namespace Lean4Fmt.Driver
@@ -57,6 +58,8 @@ unsafe def runJob
            : IO Result := do
   let original ← IO.FS.readFile path
   try
+    -- per-file config: `style` is the CLI base; fmt.lean chain overrides
+    let style ← styleFor style path
     let (output, diagnostics) ←
       Frontend.formatSafe env path.toString original style elabFallback
     -- Retry ladder: a parse failure under the shared SUPERSET env can be a
