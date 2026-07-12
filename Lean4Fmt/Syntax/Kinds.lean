@@ -44,6 +44,8 @@ def ownsSeams
 
   kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.match
       || kind == ``Lean.Parser.Term.anonymousCtor
+      || kind == ``Lean.Parser.Term.structInst
+      || kind == ``Lean.Parser.Term.app
       || kind.toString == "«term[_]»"
       || kind.toString == "«term#[_,]»"
 

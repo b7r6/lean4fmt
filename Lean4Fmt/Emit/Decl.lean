@@ -282,6 +282,7 @@ private def isActiveMultiline
       || kind == ``Lean.Parser.Term.structInst
       || kind.toString == "«term[_]»"
       || kind == ``Lean.Parser.Term.let
+      || kind == ``Lean.Parser.Term.letrec
       || kind == ``Lean.Parser.Term.match
       || Lean4Fmt.Syntax.isBinOp kind
 

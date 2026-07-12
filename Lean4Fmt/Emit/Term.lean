@@ -42,10 +42,14 @@ private def commaGroup
 private def seamCommaList?
             (walk : Walk)
             (l r : String)
+            (opener : Lean.Syntax)
             (pairs : Array (Lean.Syntax × Option Lean.Syntax))
             (closer : Lean.Syntax)
             : EmitM (Option Doc) := do
   if pairs.isEmpty then return none
+  -- a comment on the opener's own line (`[ -- note`) is OUR zone
+  let openTrail := ((Lean4Fmt.Syntax.trailing? opener).getD "").trimAscii.toString
+  if openTrail.any (· == '\n') then return none
   -- comments directly before the closer have no seam yet
   let isWs (t : String) : Bool := t.all (fun c => c == ' ' || c == '\t')
   let closerLead := (Lean4Fmt.Syntax.leading? closer).getD ""
@@ -77,7 +81,8 @@ private def seamCommaList?
     let commaD : Doc := if last then .nil else .text ","
     let trailD : Doc := if trailT.isEmpty then .nil else .text (" " ++ trailT)
     body := body ++ sep ++ eDoc ++ commaD ++ trailD
-  return some (.text l ++ .nest 2 body ++ .hardline ++ .text r)
+  let openD : Doc := if openTrail.isEmpty then .nil else .text (" " ++ openTrail)
+  return some (.text l ++ openD ++ .nest 2 body ++ .hardline ++ .text r)
 
 /-- A single `structInstField` = [structInstLVal, «rest»]. The LVal (field name /
     path) is reproduced verbatim; the value (the term after `:=`, found inside the
@@ -138,6 +143,23 @@ partial def emit
       let argList := (args[1]?.map (·.getArgs)).getD #[]
       let ind := (← read).layout.indent
       let fnDoc ← walk fn
+      if Lean4Fmt.Syntax.interiorHasLineComment stx then
+        -- comment-bearing application: forced broken, one argument per line,
+        -- per-argument seams (leading comment lines placed, same-line trailing
+        -- comments re-appended; the LAST argument's trailing is the enclosing
+        -- seam's)
+        if Lean4Fmt.Syntax.interiorHasLineComment fn then return (← verbatim stx)
+        let mut argsDoc : Doc := .nil
+        for h : i in [0:argList.size] do
+          let a := argList[i]
+          let last := i + 1 == argList.size
+          let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? a).getD "")
+            | return (← verbatim stx)
+          let trailT := ((Lean4Fmt.Syntax.trailing? a).getD "").trimAscii.toString
+          if !last && trailT.any (· == '\n') then return (← verbatim stx)
+          let trailD : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
+          argsDoc := argsDoc ++ sep ++ (← walk a) ++ trailD
+        return fnDoc ++ .nest ind argsDoc
       let mut argsDoc : Doc := .nil
       for a in argList do argsDoc := argsDoc ++ .line ++ (← walk a)
       return .group (fnDoc ++ .nest ind argsDoc)
@@ -160,7 +182,7 @@ partial def emit
             if !pairs.isEmpty then
               pairs := pairs.set! (pairs.size - 1) (pairs[pairs.size - 1]!.1, some c)
           else pairs := pairs.push (c, none)
-        match ← seamCommaList? walk "⟨" "⟩" pairs (args[2]?.getD .missing) with
+        match ← seamCommaList? walk "⟨" "⟩" (args[0]?.getD .missing) pairs (args[2]?.getD .missing) with
         | some d => return d
         | none => return (← verbatim stx)
       return (← commaGroup walk "⟨" "⟩" children)
@@ -178,16 +200,55 @@ partial def emit
       let ellipsisEmpty := ((args[3]?.map bareSrc).getD "").trimAscii.toString.isEmpty
       if !srcEmpty || !ellipsisEmpty then return (← verbatim stx)
       let mut fields : Array Lean.Syntax := #[]
+      let mut pairs : Array (Lean.Syntax × Option Lean.Syntax) := #[]
       let mut commas := 0
       for g in ((args[2]?.map (·.getArgs)).getD #[]) do
         for c in g.getArgs do
-          if c.getKind == ``Lean.Parser.Term.structInstField then fields := fields.push c
-          else if c.isAtom && bareSrc c == "," then commas := commas + 1
+          if c.getKind == ``Lean.Parser.Term.structInstField then
+            fields := fields.push c
+            pairs := pairs.push (c, none)
+          else if c.isAtom && bareSrc c == "," then
+            commas := commas + 1
+            if !pairs.isEmpty then
+              pairs := pairs.set! (pairs.size - 1) (pairs[pairs.size - 1]!.1, some c)
       if fields.isEmpty then return (← verbatim stx)
       if fields.size > 1 && commas + 1 != fields.size then return (← verbatim stx)  -- newline-separated
+      if Lean4Fmt.Syntax.interiorHasLineComment stx then
+        -- comment-bearing record: forced broken, per-field seams
+        match ← seamCommaList? walk "{" "}" (args[0]?.getD .missing) pairs (args[args.size - 1]?.getD .missing) with
+        | some d => return d
+        | none => return (← verbatim stx)
       let mut ds : Array Doc := #[]
       for f in fields do ds := ds.push (← structFieldDoc walk f)
-      return .group (.text "{ " ++ .nest 2 (Lean4Fmt.Doc.sepBy (.text "," ++ .line) ds) ++ .text " }")
+      let groupForm : Doc :=
+        .group (.text "{ " ++ .nest 2 (Lean4Fmt.Doc.sepBy (.text "," ++ .line) ds) ++ .text " }")
+      -- §7 recordFields: the broken form as an aligned grid — `{ `/`  ` ride in
+      -- the first column so the grid IS the hanging house style; flat still
+      -- wins when it fits (the renderer prefers a flat-capable fallback).
+      let al := (← read).alignment
+      if al.recordFields != Lean4Fmt.Style.AlignMode.never && fields.size ≥ 2 then
+        let mut rows : Array (Array Doc) := #[]
+        let mut ok := true
+        for h : i in [0:fields.size] do
+          let fa := fields[i]!.getArgs
+          let lvalT := (bareSrc (fa[0]?.getD .missing)).trimAscii.toString
+          if lvalT.isEmpty || lvalT.any (· == '\n') then ok := false
+          let rest := (fa[1]?.getD Lean.Syntax.missing).getArgs
+          match rest.find? (·.getKind == ``Lean.Parser.Term.structInstFieldDef) with
+          | some fd =>
+            let v := (fd.getArgs[fd.getArgs.size - 1]?).getD Lean.Syntax.missing
+            let vDoc ← walk v
+            if (Lean4Fmt.Doc.flatWidth vDoc).isNone then ok := false
+            let last := i + 1 == fields.size
+            rows := rows.push
+              #[Doc.text ((if i == 0 then "{ " else "  ") ++ lvalT), Doc.text ":=",
+                vDoc ++ Doc.text (if last then " }" else ",")]
+          | none => ok := false
+        if ok then
+          let cap := if al.recordFields == Lean4Fmt.Style.AlignMode.always
+            then 1000000 else al.maxDelta
+          return Doc.alignOr { sep := " ", maxDelta := cap } rows groupForm
+      return groupForm
     else if kind.toString == "«term[_]»" || kind.toString == "«term#[_,]»" then
       let l := if kind.toString == "«term[_]»" then "[" else "#["
       let children := (args[1]?.map (·.getArgs)).getD #[]
@@ -198,7 +259,7 @@ partial def emit
             if !pairs.isEmpty then
               pairs := pairs.set! (pairs.size - 1) (pairs[pairs.size - 1]!.1, some c)
           else pairs := pairs.push (c, none)
-        match ← seamCommaList? walk l "]" pairs (args[2]?.getD .missing) with
+        match ← seamCommaList? walk l "]" (args[0]?.getD .missing) pairs (args[2]?.getD .missing) with
         | some d => return d
         | none => return (← verbatim stx)
       return (← commaGroup walk l "]" children)
@@ -398,6 +459,30 @@ partial def emit
       let mut ds : Array Doc := #[]
       for e in elems do ds := ds.push (← walk e)
       return Lean4Fmt.Doc.commaList "(" ")" ds
+    else if kind == ``Lean.Parser.Term.letrec then
+      -- single, plain `let rec` binding: 'let rec ' ++ decl (walked — the
+      -- 5-slot letIdDecl machinery applies) ++ body at the SAME indent.
+      -- Multi-decl (comma), doc/attr-bearing, or suffix-bearing recs verbatim.
+      if args.size != 4 then return (← verbatim stx)
+      let kwT := (bareSrc args[0]!).trimAscii.toString
+      if kwT.any (· == '\n') then return (← verbatim stx)
+      let decls := ((args[1]!.getArgs[0]?).map (·.getArgs)).getD #[]
+      if decls.size != 1 then return (← verbatim stx)
+      let rd := decls[0]!
+      if rd.getKind != ``Lean.Parser.Term.letRecDecl || rd.getArgs.size != 4 then
+        return (← verbatim stx)
+      if !(bareSrc rd.getArgs[0]!).trimAscii.toString.isEmpty then return (← verbatim stx)
+      if !(bareSrc rd.getArgs[1]!).trimAscii.toString.isEmpty then return (← verbatim stx)
+      if !(bareSrc rd.getArgs[3]!).trimAscii.toString.isEmpty then return (← verbatim stx)
+      let declDoc ← walk rd.getArgs[2]!
+      if Lean4Fmt.Doc.hasMultilineVerbatim declDoc then return (← verbatim stx)
+      let sepT := (((args[2]?.map bareSrc).getD "").trimAscii.toString)
+      if sepT.any (· == '\n') then return (← verbatim stx)
+      let body := args[3]!
+      let some bodySep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? body).getD "")
+        | return (← verbatim stx)
+      let bodyDoc ← walk body
+      return .text (kwT ++ " ") ++ declDoc ++ .text sepT ++ bodySep ++ bodyDoc
     else if kind == ``Lean.Parser.Term.forall then
       -- [∀|forall, binders, opt, ",", body] — head token-for-token (the
       -- quantifier atom keeps its source spelling), the body walked: flat
