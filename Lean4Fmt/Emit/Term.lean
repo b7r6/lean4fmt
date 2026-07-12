@@ -63,10 +63,13 @@ partial def emit
   -- The tail token's TRAILING is exempt: it belongs to the enclosing seam
   -- (whoever places this form also places its trailing — Module for commands,
   -- the do-statement loop for statements), so it survives without our help.
-  -- `let` bypasses this guard: the CHAIN arm owns its inter-binding seams
-  -- (comments and blank lines between bindings place structurally, like
-  -- do-statements); a comment INSIDE a binding still verbatims that binding.
+  -- `let` and `match` bypass this guard: their arms own the inter-item seams
+  -- (comments and blank lines between bindings/arms place structurally, like
+  -- do-statements); a comment INSIDE a binding verbatims that binding, and a
+  -- comment inside an ARM verbatims the whole match (arm spans re-anchoring
+  -- among active arms is a drift gamble we don't take).
   if stx.getKind != ``Lean.Parser.Term.let
+      && stx.getKind != ``Lean.Parser.Term.match
       && Lean4Fmt.Syntax.hasOwnedLineComment stx then
     return (← verbatim stx)
   match stx with
@@ -239,9 +242,21 @@ partial def emit
           if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
       if alts.isEmpty || head.any (· == '\n') then return (← verbatim stx)
       let mut armsDoc : Doc := .nil
-      let mut first := true
+      let mut armsPlain : Doc := .nil   -- the classic first-nil/hardline join, for the §7 grid fallback
       let mut aligned : Array (Doc × Option Doc) := #[]
-      for alt in alts do
+      let mut plainArms := true
+      for h : i in [0:alts.size] do
+        let alt := alts[i]
+        -- a comment INSIDE the arm (pattern/body interior) — whole-match verbatim
+        if Lean4Fmt.Syntax.interiorHasLineComment alt then return (← verbatim stx)
+        let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
+        let some sep := Lean4Fmt.Emit.leadingSep? lead | return (← verbatim stx)
+        let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
+        let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
+        let last := i + 1 == alts.size
+        if !last && trailT.any (· == '\n') then return (← verbatim stx)
+        let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
+        if !plainSep || (!last && !trailT.isEmpty) then plainArms := false
         let aa := alt.getArgs
         let patDoc ← walk (aa[1]?.getD .missing)
         let body := aa[aa.size-1]?.getD .missing
@@ -252,14 +267,18 @@ partial def emit
           then .text " " ++ bodyDoc
           else .group (.nest 2 (.line ++ bodyDoc))
         let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
-        armsDoc := armsDoc ++ (if first then .nil else .hardline) ++ armDoc
-        first := false
+        armsDoc := armsDoc ++ sep ++ armDoc ++ trailDoc
+        armsPlain := armsPlain ++ (if i == 0 then Doc.nil else .hardline) ++ armDoc
         let inlineOk := body.getKind != ``Lean.Parser.Term.do
           && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
         aligned := aligned.push (patDoc, if inlineOk then some bodyDoc else none)
       let al := (← read).alignment
-      return .text head ++ .hardline
-        ++ armsAligned al.matchArms al.maxDelta aligned armsDoc
+      -- the aligned grid only for a comment-free, blank-free arm set (a grid
+      -- with foreign lines interleaved reads worse than no grid)
+      if plainArms then
+        return .text head ++ .hardline
+          ++ armsAligned al.matchArms al.maxDelta aligned armsPlain
+      return .text head ++ armsDoc
     else if kind.toString == "termDepIfThenElse" then
       -- [if, binderIdent, :, cond, then, thenBranch, else, elseBranch] — the
       -- dependent `if h : c then … else …`; same layout as termIfThenElse.

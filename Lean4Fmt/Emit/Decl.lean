@@ -75,17 +75,37 @@ private def isDefShape
 private def eqnsFormattable
             (declVal : Lean.Syntax)
             : Bool := Id.run do
-  if Lean4Fmt.Syntax.subtreeHasLineComment declVal then return false
+  -- comments handle per-seam in the arm loop (between-arm comments place
+  -- structurally; an arm-INTERIOR comment falls back there). One zone stays
+  -- whole-declaration verbatim: declVal's HEAD leading (a comment between the
+  -- signature and the first arm) — every fallback in the loop is a `.span`,
+  -- and the span's bare source EXCLUDES that leading, so a span bail there
+  -- would silently drop the comment (found exactly that way).
+  if Lean4Fmt.Syntax.hasLineComment ((Lean4Fmt.Syntax.leading? declVal).getD "") then
+    return false
   let mawd := (declVal.getArgs[0]?).getD .missing
   let margs := mawd.getArgs
   if (margs.toList.drop 1).any (fun s => !(bareSrc s).trimAscii.toString.isEmpty) then
     return false
   let altsNode := (margs[0]?).getD .missing
-  let mut n := 0
+  let mut alts : Array Lean.Syntax := #[]
   for g in altsNode.getArgs do
     for c in g.getArgs do
-      if c.getKind == ``Lean.Parser.Term.matchAlt then n := n + 1
-  return n != 0
+      if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+  if alts.isEmpty then return false
+  -- the per-arm seam conditions, mirrored from the valForm loop: any bail
+  -- there can only `.span`, and an eqns span under a reformatted signature
+  -- re-anchors wrongly (there is no `:=` seam) — so anything the loop cannot
+  -- hold must be decided HERE, where the fallback is whole-decl verbatim
+  for h : i in [0:alts.size] do
+    let alt := alts[i]
+    if Lean4Fmt.Syntax.interiorHasLineComment alt then return false
+    let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
+    let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
+    if !isWs ((lead.splitOn "\n").headD "") then return false
+    let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
+    if i + 1 < alts.size && trailT.any (· == '\n') then return false
+  return true
 
 /-- The comment block (if any) inside a trivia string: the non-whitespace-only
     lines, dedented to column 0 (so a caller can re-anchor them with
@@ -347,7 +367,6 @@ private def valForm
     -- mirroring the `match` arm layout. Guarded: a line comment anywhere, a
     -- `where`/`termination_by` suffix, or a structural surprise falls back to the
     -- safe verbatim span (the gate would otherwise trip on it).
-    if Lean4Fmt.Syntax.subtreeHasLineComment declVal then return .span (← verbatim declVal)
     let mawd := (declVal.getArgs[0]?).getD .missing
     let margs := mawd.getArgs
     let hasSuffix := (margs.toList.drop 1).any (fun s =>
@@ -360,9 +379,22 @@ private def valForm
         if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
     if alts.isEmpty then return .span (← verbatim declVal)
     let mut armsDoc : Doc := .nil
-    let mut first := true
+    let mut armsPlain : Doc := .nil
     let mut aligned : Array (Doc × Option Doc) := #[]
-    for alt in alts do
+    let mut plainArms := true
+    for h : i in [0:alts.size] do
+      let alt := alts[i]
+      -- a comment INSIDE the arm — whole-declaration verbatim (via the
+      -- defnDoc multiline-arms gate: the span carries it)
+      if Lean4Fmt.Syntax.interiorHasLineComment alt then return .span (← verbatim declVal)
+      let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
+      let some sep := Lean4Fmt.Emit.leadingSep? lead | return .span (← verbatim declVal)
+      let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
+      let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
+      let last := i + 1 == alts.size
+      if !last && trailT.any (· == '\n') then return .span (← verbatim declVal)
+      let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
+      if !plainSep || (!last && !trailT.isEmpty) then plainArms := false
       let aa := alt.getArgs
       let patDoc ← walk (aa[1]?.getD .missing)
       let body := aa[aa.size-1]?.getD .missing
@@ -373,13 +405,18 @@ private def valForm
         then .text " " ++ bodyDoc
         else .group (.nest 2 (.line ++ bodyDoc))
       let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
-      armsDoc := armsDoc ++ (if first then .nil else .hardline) ++ armDoc
-      first := false
+      armsDoc := armsDoc ++ sep ++ armDoc ++ trailDoc
+      armsPlain := armsPlain ++ (if i == 0 then Doc.nil else .hardline) ++ armDoc
       let inlineOk := body.getKind != ``Lean.Parser.Term.do
         && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
       aligned := aligned.push (patDoc, if inlineOk then some bodyDoc else none)
     let al := (← read).alignment
-    return .eqns (armsAligned al.matchArms al.maxDelta aligned armsDoc)
+    -- the arms doc OWNS its leading break (defnDoc places it bare at +2):
+    -- plain arm sets lead with a hardline; seam-led sets already start with
+    -- their first arm's separator
+    if plainArms then
+      return .eqns (.hardline ++ armsAligned al.matchArms al.maxDelta aligned armsPlain)
+    return .eqns armsDoc
   else
     return .span (← verbatim declVal)   -- where-struct: literal span
 
@@ -439,7 +476,7 @@ private def defnDoc
         pure (bInline ++ typeInline)
       else
         match sigStx with | some s => sigDoc walk nameCol prefixWidth 0 s | none => pure .nil
-    return .text kw ++ .space ++ .text declId ++ sigDocFinal ++ .nest 2 (.hardline ++ arms)
+    return .text kw ++ .space ++ .text declId ++ sigDocFinal ++ .nest 2 arms
   | _ => pure ()
   let vFlat := vf.flatWidth
   let noComment := !Lean4Fmt.Syntax.subtreeHasLineComment defn
