@@ -77,7 +77,7 @@ private def stmts?
     caller re-appends it; a final if-branch, whose statement seam follows); when
     false there is NO seam for it (a then-branch before `else`) — any content
     there aborts to `none`. -/
-private def seqLinesDoc?
+def seqLinesDoc?
             (walk : Lean4Fmt.Emit.Walk)
             (ss : Array Lean.Syntax)
             (lastOwned : Bool)

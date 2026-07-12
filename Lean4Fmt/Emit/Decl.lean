@@ -296,8 +296,9 @@ private def valForm
       -- with a comment INSIDE a statement still lands here with a multi-line
       -- opaque block in vdoc (a line comment runs to end-of-line, so its
       -- statement is multi-line → verbatim), falling through to the safe span.
-      if v.getKind == ``Lean.Parser.Term.do && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
-        return .body vdoc true
+      if (v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic)
+          && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
+        return .body vdoc true    -- glue `:= do` / `:= by`
       -- Comment hazard: a line comment anywhere in the value except its tail
       -- token's trailing (that one sits in the inter-form gap, placed byte-exact
       -- by Module) has no seam to survive at in an active layout — in particular
