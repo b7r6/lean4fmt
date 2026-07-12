@@ -194,8 +194,16 @@ partial def render
       let cellStr (c : Doc) : String := (go c indent true {}).out
       let strRows := rows.map (·.map cellStr)
       let ncol := strRows.foldl (fun m r => Nat.max m r.size) 0
-      let widths := (Array.range ncol).map fun j =>
-        Nat.min spec.maxDelta (strRows.foldl (fun m r => Nat.max m ((r[j]?.getD "").length)) 0)
+      -- §7 guardrail: `maxDelta` caps the column DELTA (max−min), not the
+      -- width — a run whose padding would exceed it opts out of alignment
+      -- entirely (rows emit unpadded) rather than producing the ragged-
+      -- whitespace anti-pattern.
+      let maxOf (j : Nat) : Nat := strRows.foldl (fun m r => Nat.max m ((r[j]?.getD "").length)) 0
+      let minOf (j : Nat) : Nat :=
+        strRows.foldl (fun m r => Nat.min m ((r[j]?.getD "").length)) 1000000
+      let deltaOk := (Array.range ncol).all fun j =>
+        j + 1 == ncol || maxOf j - minOf j ≤ spec.maxDelta
+      let widths := (Array.range ncol).map fun j => if deltaOk then maxOf j else 0
       let renderRow (r : Array String) : String :=
         (Array.range r.size).foldl (fun acc j =>
           let cell := r[j]?.getD ""

@@ -490,9 +490,10 @@ def emit
     -- whole-declaration verbatim, as does any shape the layout can't hold.
     if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
       return (← verbatim stx)
+    let al := (← read).alignment
     let inner? := if defn.getKind == ``Lean.Parser.Command.inductive
-      then Command.inductiveDoc? defn
-      else Command.structureDoc? defn
+      then Command.inductiveDoc? defn al.trailingComments al.maxDelta
+      else Command.structureDoc? defn al.trailingComments al.maxDelta
     match inner? with
     | some d =>
       let attrsOwnLine := (← read).breaking.attributesOwnLine

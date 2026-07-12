@@ -26,7 +26,7 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
     declaration. -/
 private def ctorDoc?
             (c : Lean.Syntax)
-            : Option Doc := Id.run do
+            : Option (Doc × String) := Id.run do
   if c.getKind != ``Lean.Parser.Command.ctor then return none
   let a := c.getArgs
   if a.size != 5 then return none
@@ -54,13 +54,64 @@ private def ctorDoc?
   -- the doc comment is byte-exact on its own line above (it may be multi-line;
   -- it sits at a hardline position, literal emission is the stable choice)
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
-  return some (docD ++ .text line)
+  return some (docD, line)
+
+/-- A body item for the seam-owning loops: its separator (leading trivia,
+    already placed), whether that separator is a plain single newline, its
+    prefix (doc comment lines), the single-line content, and its trailing
+    comment (empty when none / not owned). -/
+private structure Item where
+  sep       : Doc
+  plainSep  : Bool
+  prefixDoc : Doc
+  hasPrefix : Bool
+  line      : String
+  trailT    : String
+  deriving Inhabited
+
+/-- Assemble body items, aligning RUNS of consecutive plain items that carry
+    trailing comments into `[code, comment]` alignTable rows (§7,
+    `alignment.trailingComments`). A run breaks at: a doc-comment prefix, a
+    non-plain separator (blank lines / placed comments — a blank line resets
+    alignment, matching clang-format), or an item without a trailing comment.
+    `.always` ignores the delta cap; `.whenShort` passes it to the renderer
+    (which opts the whole run out rather than padding raggedly); `.never`
+    emits everything plain. -/
+private def assemble
+            (mode : Lean4Fmt.Style.AlignMode)
+            (maxDelta : Nat)
+            (items : Array Item)
+            : Doc := Id.run do
+  let alignOn := mode != Lean4Fmt.Style.AlignMode.never
+  let cap := if mode == Lean4Fmt.Style.AlignMode.always then 1000000 else maxDelta
+  let plain (o : Doc) (it : Item) : Doc :=
+    o ++ it.sep ++ it.prefixDoc ++ .text it.line
+      ++ (if it.trailT.isEmpty then Doc.nil else .text (" " ++ it.trailT))
+  let flush (o : Doc) (run : Array Item) : Doc := Id.run do
+    if run.size >= 2 then
+      let rows := run.map (fun it => #[Doc.text it.line, Doc.text it.trailT])
+      return o ++ run[0]!.sep ++ Doc.alignTable { sep := " ", maxDelta := cap } rows
+    let mut o := o
+    for it in run do o := plain o it
+    return o
+  let mut out : Doc := .nil
+  let mut run : Array Item := #[]
+  for it in items do
+    if alignOn && it.plainSep && !it.hasPrefix && !it.trailT.isEmpty then
+      run := run.push it
+    else
+      out := flush out run
+      run := #[]
+      out := plain out it
+  return flush out run
 
 /-- Active layout for a `where`-style `inductive` body (the declaration node
     WITHOUT its modifiers — `Decl.emit` places those). `none` when this layout
     can't hold the input faithfully. -/
 def inductiveDoc?
     (defn : Lean.Syntax)
+    (alignMode : Lean4Fmt.Style.AlignMode)
+    (alignDelta : Nat)
     : Option Doc := Id.run do
   let a := defn.getArgs
   if a.size != 7 then return none
@@ -102,7 +153,7 @@ def inductiveDoc?
   let some derSep :=
     (if hasDer then leadingSep? ((Lean4Fmt.Syntax.leading? a[6]!).getD "") else some Doc.nil)
     | return none
-  let mut body : Doc := .nil
+  let mut items : Array Item := #[]
   for h : i in [0:ctors.size] do
     let c := ctors[i]
     if Lean4Fmt.Syntax.interiorHasLineComment c then return none
@@ -112,10 +163,14 @@ def inductiveDoc?
     -- `deriving` follows, in which case the loop owns it like any other
     let owned := !last || hasDer
     if owned && trailT.any (· == '\n') then return none
-    let trailDoc : Doc := if owned && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-    let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? c).getD "") | return none
-    let some d := ctorDoc? c | return none
-    body := body ++ sep ++ d ++ trailDoc
+    let lead := (Lean4Fmt.Syntax.leading? c).getD ""
+    let some sep := leadingSep? lead | return none
+    let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
+    let some (docD, line) := ctorDoc? c | return none
+    items := items.push
+      { sep, plainSep, prefixDoc := docD, hasPrefix := !(docD matches Doc.nil),
+        line, trailT := if owned then trailT else "" }
+  let body := assemble alignMode alignDelta items
   let derD : Doc := if hasDer then derSep ++ .text derT else .nil
   return some (.text head ++ .nest 2 (body ++ derD))
 
@@ -126,7 +181,7 @@ def inductiveDoc?
     surprise. -/
 private def fieldDoc?
             (f : Lean.Syntax)
-            : Option Doc := Id.run do
+            : Option (Doc × String) := Id.run do
   if f.getKind != ``Lean.Parser.Command.structSimpleBinder then return none
   let a := f.getArgs
   if a.size != 4 then return none
@@ -160,7 +215,7 @@ private def fieldDoc?
     ++ (match tyT with | some t => " : " ++ t | none => "")
     ++ (if defT.isEmpty then "" else " " ++ defT)
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
-  return some (docD ++ .text line)
+  return some (docD, line)
 
 /-- Active layout for a `structure`/`class` declaration (WITHOUT its modifiers —
     `Decl.emit` places those): head on one line
@@ -170,6 +225,8 @@ private def fieldDoc?
     groups, comments in seamless zones, multi-line pieces). -/
 def structureDoc?
     (defn : Lean.Syntax)
+    (alignMode : Lean4Fmt.Style.AlignMode)
+    (alignDelta : Nat)
     : Option Doc := Id.run do
   let a := defn.getArgs
   if a.size != 6 then return none
@@ -217,7 +274,7 @@ def structureDoc?
   -- comment/blank lines placed structurally, same-line trailing comments
   -- re-appended; the LAST field's trailing belongs to the enclosing seam
   -- unless `deriving` follows)
-  let mut body : Doc := .nil
+  let mut items : Array Item := #[]
   for h : i in [0:fields.size] do
     let f := fields[i]
     if Lean4Fmt.Syntax.interiorHasLineComment f then return none
@@ -225,10 +282,14 @@ def structureDoc?
     let last := i + 1 == fields.size
     let owned := !last || hasDer
     if owned && trailT.any (· == '\n') then return none
-    let trailDoc : Doc := if owned && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-    let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? f).getD "") | return none
-    let some d := fieldDoc? f | return none
-    body := body ++ sep ++ d ++ trailDoc
+    let lead := (Lean4Fmt.Syntax.leading? f).getD ""
+    let some sep := leadingSep? lead | return none
+    let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
+    let some (docD, line) := fieldDoc? f | return none
+    items := items.push
+      { sep, plainSep, prefixDoc := docD, hasPrefix := !(docD matches Doc.nil),
+        line, trailT := if owned then trailT else "" }
+  let body := assemble alignMode alignDelta items
   return some (.text head ++ .nest 2 (body ++ derD))
 
 /-- Emit the Command construct rooted at `stx`, recursing via `walk`:
