@@ -305,6 +305,26 @@ private def glueBodyBlank : Doc → Doc
   | .cat kw rest => .cat kw (.cat (.blank 1) rest)
   | d => d
 
+/-- `bodyOwnLine` for VERBATIM value spans: when the span's first line is
+    exactly `:=` / `:= by` / `:= do`, split that keyword line off the opaque
+    block and put the body blank between — the body itself stays byte-exact
+    (base 0: top-level lines keep their absolute indent). Without this, a decl
+    whose body carries unported constructs would silently lose the rhythm the
+    active path imposes ("blank when the tactics are simple, none when they
+    aren't"). Idempotent: the injected blank is a leading blank line of the
+    block on the next pass, and wrBlock drops those. -/
+private def spanBodyBlank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : ValForm → ValForm
+  | .span d => Id.run do
+    if !bodyOwnLine then return .span d
+    match (bareSrc declVal).splitOn "\n" with
+    | first :: rest =>
+      let ft := first.trimAsciiEnd.toString
+      if (ft == ":=" || ft == ":= by" || ft == ":= do") && !rest.isEmpty then
+        return .span (.text ft ++ .blank 1 ++ .verbatim (String.intercalate "\n" rest) 0)
+      return .span d
+    | _ => return .span d
+  | vf => vf
+
 /-- Classify a `declVal` into a `ValForm` (see above). Splitting the `:=` from the
     body lets the caller choose the separator: inline ` := `, or (bodyOwnLine)
     `:=` then a blank then the body on its own indented line. -/
@@ -460,6 +480,10 @@ private def defnDoc
   let kw := match a[0]? with | some (.atom _ v) => v | _ => "def"
   let declId := (a[1]?.map bareSrc).getD ""
   let vf ← match a[3]? with | some v => valForm walk v | none => pure (.body .nil false)
+  let bodyOwn := (← read).breaking.bodyOwnLine
+  let vf := match a[3]? with
+    | some v => spanBodyBlank bodyOwn v vf
+    | none => vf
   let nameCol := modsWidth + kw.length + 1              -- column where the declId starts
   let prefixWidth := nameCol + declId.length            -- column where binders start
   let w := (← read).layout.lineWidth
@@ -587,7 +611,8 @@ private def instanceDoc?
   if head.length + 6 > w then return none
   let declVal := a[5]!
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
-    match ← valForm walk declVal with
+    let bodyOwn := (← read).breaking.bodyOwnLine
+    match spanBodyBlank bodyOwn declVal (← valForm walk declVal) with
     | .span d => return some (.text head ++ .space ++ d)
     | .body d glue =>
       let bodyOwnLine := (← read).breaking.bodyOwnLine
