@@ -17,6 +17,7 @@
 -/
 
 import Lean4Fmt.Doc.Core
+import Lean4Fmt.Doc.Content
 import Lean4Fmt.Style
 
 namespace Lean4Fmt.Doc
@@ -39,8 +40,10 @@ def flatWidth : Doc → Option Nat
   | .nest _ d => flatWidth d
   | .align d => flatWidth d
   | .flatten d => flatWidth d
-  | .textRaw s => if s.any (· == '\n') then none else some s.length
-  | .verbatim s _ => if s.any (· == '\n') then none else some s.trimAscii.toString.length
+  | .textRaw s => if s.toList.any (· == '\n') then none else some s.length
+  -- must be EXACT for what wrBlock emits on a single line (Proofs T2): the
+  -- line is trailing-trimmed, leading whitespace KEPT
+  | .verbatim s _ => if s.toList.any (· == '\n') then none else some (trimEndWs s.toList).length
   | .blank _ => none
   | .alignTable _ _ => none
   | .alignOr _ _ fb => flatWidth fb
@@ -162,38 +165,51 @@ def wr
     else st
   { st with out := st.out ++ s, col := st.col + s.length }
 
+/-- Split a char list on '\n' (never returns `[]`; `[]` input → one empty line
+    — the char-list twin of `splitOn "\n"`, owned so Proofs can induct). -/
+def splitLines : List Char → List (List Char)
+  | [] => [[]]
+  | c :: cs =>
+    match splitLines cs with
+    | [] => [[c]]                                   -- unreachable (never nil)
+    | l :: ls => if c = '\n' then [] :: l :: ls else (c :: l) :: ls
+
+/-- A line of nothing but spaces (the blank-line notion of `wrBlock`; NOT full
+    whitespace — a tab-bearing line may be string-literal interior). -/
+def isBlankLine (l : List Char) : Bool := l.all (· == ' ')
+
+/-- One continuation line of a block: dedent, then emit behind one pending
+    newline. Dedent drops ONLY spaces: if the first `base` chars aren't all
+    spaces (a continuation less indented than its head), fall back to stripping
+    just the leading spaces — dropping `base` chars unconditionally would eat
+    CONTENT on such lines (latent until the content-preservation theorem in
+    Proofs demanded it be impossible). Lines dedented to empty stay pending. -/
+def dedent (base : Nat) (l : List Char) : List Char :=
+  if l.length ≥ base && (l.take base).all (· == ' ')
+    then l.drop base
+    else l.dropWhile (· == ' ')
+
+def wrLine (st : RSt) (indent base : Nat) (l : List Char) : RSt :=
+  if (dedent base l).isEmpty then { st with pend := st.pend + 1 }
+  else wr { st with pend := st.pend + 1 } indent (String.ofList (dedent base l))
+
+def wrLines (indent base : Nat) : List (List Char) → RSt → RSt
+  | [], st => st
+  | l :: ls, st => wrLines indent base ls (wrLine st indent base l)
+
 /-- Emit a possibly-multi-line block (verbatim/comment), re-anchored to `indent`:
     dedent every continuation by the block's OWN base column `base`, re-indent to
-    `indent` (§0.3). Interior EMPTY lines stay pending newlines (hygiene; byte-
-    empty only — whitespace-bearing lines may be string-literal interiors). -/
+    `indent` (§0.3). Trailing whitespace is trimmed (so trailing blank lines
+    cannot exist); leading blank lines are dropped. -/
 def wrBlock
     (st : RSt)
     (indent : Nat)
     (base : Nat)
     (raw : String)
-    : RSt := Id.run do
-  let nonblank (l : String) : Bool := l.any (· != ' ')
-  let mut ls := raw.trimAsciiEnd.toString.splitOn "\n"
-  ls := ls.dropWhile (fun l => !nonblank l)
-  ls := (ls.reverse.dropWhile (fun l => !nonblank l)).reverse
-  if ls.isEmpty then return st
-  let mut st := st
-  let mut first := true
-  for l in ls do
-    if first then
-      st := wr st indent l; first := false
-    else
-      -- dedent drops ONLY spaces: if the first `base` chars aren't all spaces
-      -- (a continuation less indented than its head), fall back to stripping
-      -- just the leading spaces — dropping `base` chars unconditionally would
-      -- eat CONTENT on such lines (latent until the content-preservation
-      -- theorem in Proofs demanded it be impossible)
-      let ded := if l.length ≥ base && (l.toList.take base).all (· == ' ')
-        then String.ofList (l.toList.drop base)
-        else String.ofList (l.toList.dropWhile (· == ' '))
-      if ded.isEmpty then st := { st with pend := st.pend + 1 }
-      else st := wr { st with pend := st.pend + 1 } indent ded
-  return st
+    : RSt :=
+  match (splitLines (trimEndWs raw.toList)).dropWhile isBlankLine with
+  | [] => st
+  | l :: rest => wrLines indent base rest (wr st indent (String.ofList l))
 
 /-- Pad-and-join one table row from rendered cell strings: every cell but the
     last is padded to its column width and followed by `sep`. Recursive (not a
@@ -227,7 +243,12 @@ def go (width maxPend : Nat) : Doc → Nat → Bool → RSt → RSt
   | .textRaw s, indent, _, st =>
     let st := if st.pend > 0
       then { out := st.out ++ newlines st.pend ++ spaces indent, col := indent, pend := 0 } else st
-    { st with out := st.out ++ s, col := ((s.splitOn "\n").getLast!).length }
+    -- single-line: col ADVANCES (it used to reset to s.length, silently
+    -- misinforming every later fit decision on the line — found by T2)
+    if s.toList.any (· == '\n') then
+      { st with out := st.out ++ s, col := ((s.splitOn "\n").getLast!).length }
+    else
+      { st with out := st.out ++ s, col := st.col + s.length }
   | .verbatim s b, indent, _, st => wrBlock st indent b s
   | .cat a b, indent, flat, st => go width maxPend b indent flat (go width maxPend a indent flat st)
   | .line, indent, flat, st =>
@@ -280,7 +301,12 @@ def go (width maxPend : Nat) : Doc → Nat → Bool → RSt → RSt
     let widths := (List.range ncol).map maxOf
     let rowsFit := strRows.all fun r =>
       decide (indent + (renderRowStr spec.sep widths r).length ≤ width)
-    if deltaOk && rowsFit && decide (rows.length ≥ 2) then
+    -- coherence BY CONSTRUCTION: the grid is taken only when its content
+    -- provably equals the fallback's — an incoherent emitter degrades to the
+    -- fallback instead of corrupting (and render_content holds unconditionally)
+    let gridContent := (strRows.map fun r => nonWs (renderRowStr spec.sep widths r)).flatten
+    if deltaOk && rowsFit && decide (rows.length ≥ 2)
+        && decide (gridContent = content fallback) then
       emitTable maxPend indent spec.sep widths strRows st
     else go width maxPend fallback indent flat st
 
