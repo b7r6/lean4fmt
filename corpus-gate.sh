@@ -82,5 +82,10 @@ done
 
 errs="$(printf '%s\n%s\n' "$p1_errors" "$p2_errors" | grep -c .)"
 echo "// corpus-gate: files=${#files[@]} non-idempotent=$nonidem errors=$errs"
+
+# Coverage accounting (DESIGN_V2 §15): the construct-coverage number, tracked
+# over time in the gate output. Informational — never fails the gate.
+"$exe" --stats "${files[@]}" 2>/dev/null | tail -2 || true
+
 [ "$nonidem" -eq 0 ] && [ "$errs" -eq 0 ] && { echo "// corpus-gate: PASS"; exit 0; }
 echo "// corpus-gate: FAIL" >&2; exit 1

@@ -12,6 +12,7 @@
 -/
 
 import Lean
+import Lean4Fmt.Frontend.Gate
 
 namespace Lean4Fmt.Frontend
 
@@ -75,5 +76,21 @@ unsafe def batchEnv
   for p in paths do
     all := all ++ (← fileImports p)
   importsEnv all
+
+/-- Coverage stats for one file under `env` (DESIGN_V2 §15): the
+    active/verbatim/trivia byte attribution of its produced doc, or `none` when
+    the file doesn't parse under this env (caller decides: count it fully
+    verbatim, or retry under the file's own env in a subprocess). -/
+unsafe def statsFor
+           (env : Environment)
+           (path contents : String)
+           (style : Lean4Fmt.Style.Style)
+           (elabFallback : Bool := true)
+           : IO (Option (Nat × Nat × Nat)) := do
+  match ← parseFull? env path contents elabFallback with
+  | none => pure none
+  | some stx =>
+    let (doc, _) := Lean4Fmt.Emit.run style stx.updateLeading
+    pure (some (Lean4Fmt.Doc.stats doc))
 
 end Lean4Fmt.Frontend

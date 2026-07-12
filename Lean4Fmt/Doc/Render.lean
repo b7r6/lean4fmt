@@ -53,6 +53,30 @@ partial def hasMultilineVerbatim : Doc → Bool
   | .alignTable _ rows => rows.any (·.any hasMultilineVerbatim)
   | _ => false
 
+/-- Coverage accounting (DESIGN_V2 §15): byte attribution over a produced doc.
+    `.text` is actively formatted output; `.verbatim` is opaque reproduction —
+    constructs not yet ported, plus content that is correctly byte-exact forever
+    (string literals, DSL quotations); `.textRaw` is comments/trivia (inherently
+    byte-exact, not a coverage failure). The ratio active/(active+verbatim) is
+    the tool's construct-coverage number, tracked over time via `--stats`. -/
+partial def stats : Doc → (Nat × Nat × Nat)
+  | .text s => (s.utf8ByteSize, 0, 0)
+  | .verbatim s _ => (0, s.utf8ByteSize, 0)
+  | .textRaw s => (0, 0, s.utf8ByteSize)
+  | .cat a b =>
+    let (a1, v1, t1) := stats a
+    let (a2, v2, t2) := stats b
+    (a1 + a2, v1 + v2, t1 + t2)
+  | .group d | .nest _ d | .align d | .flatten d => stats d
+  | .alignTable _ rows =>
+    rows.foldl
+      (fun acc r => r.foldl
+        (fun (acc : Nat × Nat × Nat) c =>
+          let (a, v, t) := stats c
+          (acc.1 + a, acc.2.1 + v, acc.2.2 + t)) acc)
+      (0, 0, 0)
+  | _ => (0, 0, 0)
+
 /-- Width a doc contributes to the CURRENT line, up to its first possible break
     point (line/softline/hardline/blank, or a newline inside a verbatim/textRaw),
     plus whether such a break was reached. Used to couple a signature's

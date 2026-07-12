@@ -15,6 +15,7 @@ inductive Mode
   | format   -- print to stdout (default)
   | check    -- exit 1 if any file would change
   | write    -- overwrite in place
+  | stats    -- coverage accounting: active/verbatim/trivia bytes per file + total
   deriving Repr, Inhabited, BEq
 
 structure Options where
@@ -42,6 +43,7 @@ def parse
   repeat
     match rest with
     | "--check" :: r => o := { o with mode := .check }; rest := r
+    | "--stats" :: r => o := { o with mode := .stats }; rest := r
     | "--write" :: r => o := { o with mode := .write }; rest := r
     | "-w" :: r => o := { o with mode := .write }; rest := r
     | "--width" :: n :: r => o := { o with width := n.toNat! }; rest := r
@@ -55,7 +57,7 @@ def parse
 def usage
     : String :=
 
-  "Usage: lean4fmt [--check | --write] [--width N] [--style NAME] [--elab auto|off] <file...>\n\n"
+  "Usage: lean4fmt [--check | --write | --stats] [--width N] [--style NAME] [--elab auto|off] <file...>\n\n"
       ++ "Multiple files in one invocation are supported (each is parsed against its own\n"
       ++ "imports). If a file's syntax-extension initializers ever conflict in-process,\n"
       ++ "fall back to one file per process: find . -name '*.lean' | xargs -n1 lean4fmt"
