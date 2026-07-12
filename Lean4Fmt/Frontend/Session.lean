@@ -1,6 +1,6 @@
 /-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                   // LEAN4FMT // FRONTEND // SESSION
+                                               // LEAN4FMT // FRONTEND // SESSION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     THE OPEN QUESTION (DESIGN_V2 §0.5, §14.7): formatting requires running the
@@ -21,6 +21,7 @@
       • the parse-parallelism strategy (§12: superset-env vs process-per-file).
 
     Deferred with mathlib. SCAFFOLD ONLY.
+    
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 

@@ -56,35 +56,56 @@ private def headerDoc?
     partition the inter-form gap exactly, forms tile byte-exactly — handled kinds
     are actively formatted, the rest reproduced verbatim. Per-form granularity.
 
-    Note (blank-line policy): inter-form trivia is emitted BYTE-EXACT, so
-    `Style.blankLines` (normalize / betweenTopLevelDecls / maxConsecutive) is not
-    applied here — straylight's `.normalize` currently behaves as `.preserve`
-    (verified: straylight and mathlib presets produce identical output; 17/234
-    corpus files carry >1 consecutive blank line). This is deliberate: blank runs
-    can sit INSIDE block comments (e.g. `/- … -/` banners), and the safety gate
-    (§4.2) validates tokens/reparse/fixed-point but NOT comment content — so a
-    trivia rewrite that touched a comment interior would escape the gate. Applying
-    the policy safely requires clamping only whitespace-region blanks (comment-
-    aware) and is deferred until that can be done without risking comment/banner
-    content. -/
+    Blank-line policy (`blankLines.policy = .normalize`): a PURE-WHITESPACE
+    inter-form gap containing a newline, where either neighbor is a multi-line
+    form, is replaced by exactly `blankLines.betweenTopLevelDecls` blank lines —
+    the top-level rhythm is imposed, not preserved. Everything else stays
+    byte-exact: gaps carrying comments (banners, section markers), same-line
+    gaps, and gaps between single-line forms (runs of one-line defs keep their
+    hand grouping). `.preserve` keeps every gap byte-exact. -/
 def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
     : Lean4Fmt.Emit.EmitM Doc := do
+  let style ← read
   let args := stx.getArgs
-  let unit (c : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
-    pure (Lean4Fmt.Emit.leadingRaw c ++ (← walk c) ++ Lean4Fmt.Emit.trailingRaw c)
+  -- multi-line form ⇢ participates in the imposed top-level rhythm
+  let multi (c : Lean.Syntax) : Bool := (Lean4Fmt.Emit.bareSrc c).any (· == '\n')
+  -- normalizable gap: whitespace-only, has a newline, a multi-line neighbor
+  let gapOk (p c : Lean.Syntax) : Bool := Id.run do
+    if style.blankLines.policy != Lean4Fmt.Style.BlankPolicy.normalize then
+      return false
+    let gap := ((Lean4Fmt.Syntax.trailing? p).getD "")
+      ++ ((Lean4Fmt.Syntax.leading? c).getD "")
+    return gap.toList.all (·.isWhitespace) && gap.toList.any (· == '\n')
+      && (multi p || multi c)
   let mut acc : Doc := .nil
+  let mut prev : Option Lean.Syntax := none   -- previous form; its trailing is HELD
+  let mut pendTrail : Doc := .nil
   match args[0]? with
   | some h =>
-    match headerDoc? h with
-    | some d => acc := Lean4Fmt.Emit.leadingRaw h ++ d ++ Lean4Fmt.Emit.trailingRaw h
-    | none => acc := (← unit h)
+    let body ← match headerDoc? h with
+      | some d => pure d
+      | none => walk h
+    acc := Lean4Fmt.Emit.leadingRaw h ++ body
+    prev := some h
+    pendTrail := Lean4Fmt.Emit.trailingRaw h
   | none => pure ()
   let cmds := (args[1]?.map (·.getArgs)).getD #[]
   for c in cmds do
     if c.getKind == ``Lean.Parser.Command.eoi then continue
-    acc := acc ++ (← unit c)
-  return acc
+    let body ← walk c
+    match prev with
+    | some p =>
+      if gapOk p c then
+        -- swallow prev trailing + c leading (both pure ws): impose the rhythm
+        acc := acc ++ .blank style.blankLines.betweenTopLevelDecls ++ body
+      else
+        acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leadingRaw c ++ body
+    | none =>
+      acc := acc ++ Lean4Fmt.Emit.leadingRaw c ++ body
+    prev := some c
+    pendTrail := Lean4Fmt.Emit.trailingRaw c
+  return acc ++ pendTrail
 
 end Lean4Fmt.Emit.Module
