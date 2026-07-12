@@ -458,9 +458,11 @@ def emit
   -- a comment on the `by` line itself has no home in the layout
   if !((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString.isEmpty then
     return (← Lean4Fmt.Emit.verbatim stx)
-  let some groups := tacticGroups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
-  match ← seqGroupsDoc? walk groups true with
-  | some body => return .text "by" ++ .nest 2 body
+  -- the branch layout: a single clean flat group is width-aware (`by rfl`
+  -- stays inline when it fits — flatWidth is exact, T2); anything else one
+  -- line per group at +2
+  match ← armSeqDoc? walk a[1]! with
+  | some body => return .text "by" ++ body
   | none => return (← Lean4Fmt.Emit.verbatim stx)
 
 end Lean4Fmt.Emit.Tactic

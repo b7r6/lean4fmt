@@ -69,18 +69,25 @@ def emit
     : Lean4Fmt.Emit.EmitM Doc := do
   let style ← read
   let args := stx.getArgs
-  -- multi-line form ⇢ participates in the imposed top-level rhythm
-  let multi (c : Lean.Syntax) : Bool := (Lean4Fmt.Emit.bareSrc c).any (· == '\n')
+  -- multi-line form ⇢ participates in the imposed top-level rhythm. Decided
+  -- from the EMITTED doc, not the source shape (a one-liner that the active
+  -- layout breaks — or vice versa — must count as its OUTPUT shape, or the
+  -- second pass disagrees with the first): flatWidth is exact (T2), so
+  -- "fits the line width" is precisely "renders single-line" at indent 0.
+  let multi (body : Doc) : Bool :=
+    match Lean4Fmt.Doc.flatWidth body with
+    | some w => w > style.layout.lineWidth
+    | none => true
   -- normalizable gap: whitespace-only, has a newline, a multi-line neighbor
-  let gapOk (p c : Lean.Syntax) : Bool := Id.run do
+  let gapOk (p c : Lean.Syntax) (pBody cBody : Doc) : Bool := Id.run do
     if style.blankLines.policy != Lean4Fmt.Style.BlankPolicy.normalize then
       return false
     let gap := ((Lean4Fmt.Syntax.trailing? p).getD "")
       ++ ((Lean4Fmt.Syntax.leading? c).getD "")
     return gap.toList.all (·.isWhitespace) && gap.toList.any (· == '\n')
-      && (multi p || multi c)
+      && (multi pBody || multi cBody)
   let mut acc : Doc := .nil
-  let mut prev : Option Lean.Syntax := none   -- previous form; its trailing is HELD
+  let mut prev : Option (Lean.Syntax × Doc) := none   -- previous form + its body; trailing HELD
   let mut pendTrail : Doc := .nil
   match args[0]? with
   | some h =>
@@ -88,7 +95,7 @@ def emit
       | some d => pure d
       | none => walk h
     acc := Lean4Fmt.Emit.leadingRaw h ++ body
-    prev := some h
+    prev := some (h, body)
     pendTrail := Lean4Fmt.Emit.trailingRaw h
   | none => pure ()
   let cmds := (args[1]?.map (·.getArgs)).getD #[]
@@ -96,15 +103,15 @@ def emit
     if c.getKind == ``Lean.Parser.Command.eoi then continue
     let body ← walk c
     match prev with
-    | some p =>
-      if gapOk p c then
+    | some (p, pBody) =>
+      if gapOk p c pBody body then
         -- swallow prev trailing + c leading (both pure ws): impose the rhythm
         acc := acc ++ .blank style.blankLines.betweenTopLevelDecls ++ body
       else
         acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leadingRaw c ++ body
     | none =>
       acc := acc ++ Lean4Fmt.Emit.leadingRaw c ++ body
-    prev := some c
+    prev := some (c, body)
     pendTrail := Lean4Fmt.Emit.trailingRaw c
   return acc ++ pendTrail
 

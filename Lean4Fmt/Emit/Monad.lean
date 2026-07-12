@@ -40,19 +40,23 @@ def bareSrc
 
   (stx.getSubstring? false false).map (·.toString) |>.getD ""
 
+/-- The opt-out trail entry (debug level): names the kind and position.
+    `verbatim` emits it; PROBE constructions (docs built speculatively and
+    possibly discarded) use `verbatimQuiet` and log at their decision site —
+    the trail reports what is EMITTED, not what was considered. -/
+def logOptOut (stx : Lean.Syntax) : EmitM Unit :=
+  emitDiag { severity := .debug, pos := (stx.getPos?.map (·.byteIdx)).getD 0,
+             rule := "verbatim", message := s!"opt-out: {stx.getKind}" }
+
 /-- Opaque reproduction (§4.1): the safe default for any construct not yet
     actively formatted. Reproduces the BARE source as a re-anchorable `verbatim`
     doc whose `baseIndent` is the first token's source column (from leading
     trivia) — the renderer dedents continuations by that, so the block re-anchors
-    correctly at whatever column it is placed (the composition seam, §0.3). -/
-def verbatim
+    correctly at whatever column it is placed (the composition seam, §0.3).
+    This variant is TRAIL-QUIET — for speculative doc construction. -/
+def verbatimQuiet
     (stx : Lean.Syntax)
     : EmitM Doc := do
-  -- every opt-out is VISIBLE: a debug-level diagnostic names the kind and
-  -- position (the census trail — `--log-level debug` shows what still rides
-  -- verbatim and where)
-  emitDiag { severity := .debug, pos := (stx.getPos?.map (·.byteIdx)).getD 0,
-             rule := "verbatim", message := s!"opt-out: {stx.getKind}" }
   let lead := (Lean4Fmt.Syntax.leading? stx).getD ""
   let base := if lead.any (· == '\n')
     then (((lead.splitOn "\n").getLastD "").toList.takeWhile (· == ' ')).length
@@ -61,6 +65,13 @@ def verbatim
   if s.isEmpty then
     match stx.reprint with | some r => pure (.verbatim r base) | none => pure .nil
   else pure (.verbatim s base)
+
+/-- Opaque reproduction WITH the opt-out trail entry — the safe default. -/
+def verbatim
+    (stx : Lean.Syntax)
+    : EmitM Doc := do
+  logOptOut stx
+  verbatimQuiet stx
 
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
 def passthrough

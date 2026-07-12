@@ -144,8 +144,17 @@ partial def walk
          || kind == ``Lean.Parser.Term.letIdDeclNoBinders
          || kind == ``Lean.Parser.Term.match then
       Term.emit walk stx
-    -- default: reproduce verbatim (safe; §4.1)
-    else verbatim stx
+    -- default: a SINGLE-LINE construct rides as active text — byte-exact
+    -- (bareSrc is the source bytes, inter-token trivia included) and
+    -- content-safe either way (T1 covers text and verbatim alike); only
+    -- multi-line constructs need opaque re-anchoring (§4.1). This is what
+    -- makes literals, types, and custom notations ACTIVE without per-kind
+    -- ports — the opt-out log shows only the multi-line residue.
+    else
+      let t := Lean4Fmt.Emit.bareSrc stx
+      if !t.isEmpty && !t.any (· == '
+') then pure (.text t)
+      else verbatim stx
 
 /-- Format a whole module to a `Doc` plus collected diagnostics, under `style`. -/
 def run

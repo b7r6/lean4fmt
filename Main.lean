@@ -12,7 +12,7 @@
 -/
 
 import Lean
-import StdlibEx.Logging
+import Lean4Fmt.Log
 import Lean4Fmt.Cli
 import Lean4Fmt.Driver
 
@@ -110,14 +110,7 @@ def main
     IO.Process.exit 1
 
   initEnv
-  let lvl : StdlibEx.Logging.Level := match o.logLevel with
-    | "trace" => .trace
-    | "debug" => .debug
-    | "info" => .info
-    | "warn" => .warn
-    | "error" => .error
-    | _ => .warn
-  StdlibEx.Logging.initConsole lvl
+  Lean4Fmt.Log.setLevel (Lean4Fmt.Log.Level.ofString o.logLevel)
   let err ← IO.getStderr
 
   if o.mode == .stats then
@@ -141,12 +134,12 @@ def main
   let mut failed := false
   for r in results do
     for d in r.diagnostics do
-      let lvl : StdlibEx.Logging.Level := match d.severity with
+      let lvl : Lean4Fmt.Log.Level := match d.severity with
         | .debug => .debug
         | .info => .info
         | .warning => .warn
         | .error => .error
-      StdlibEx.Logging.log lvl s!"{r.path}:{d.render}"
+      Lean4Fmt.Log.log lvl s!"{r.path}:{d.render}"
       if d.severity == .error then failed := true
     match o.mode with
     | .stats => pure ()   -- unreachable: stats returns above

@@ -182,13 +182,14 @@ private def typeInfo
     if ts.getKind == ``Lean.Parser.Term.typeSpec
         && !Lean4Fmt.Syntax.subtreeHasLineComment ts then
       let term ← walk (ts.getArgs[1]?.getD .missing)
-      let colonType ← verbatim ts
+      let colonType ← verbatimQuiet ts   -- probe: logged only if the span is TAKEN
       let w := (← read).layout.lineWidth
       -- a type too wide to EVER fit flat would explode into the all-or-nothing
       -- group layouts (a 20-element byte list, one element per line) — keep the
       -- author's hand-packed span for those until a fill mode exists (§5)
       let tooWide := (Lean4Fmt.Doc.flatWidth term).getD (w + 1) > w
       if Lean4Fmt.Doc.hasMultilineVerbatim term || tooWide then
+        logOptOut ts
         return some (colonType, colonType, (Lean4Fmt.Doc.flatWidth colonType).getD 0, true)
       return some (term, colonType, (Lean4Fmt.Doc.flatWidth term).getD 0, false)
     else
@@ -302,6 +303,11 @@ private inductive ValForm
     into the blank (renderer pend accumulation), so exactly one blank line
     appears — the same rhythm term bodies get after `:=`. -/
 private def glueBodyBlank : Doc → Doc
+  -- width-aware single-tactic body (`by rfl` shape): the group's leading
+  -- `.line` must be REPLACED by the blank, not preceded by it — a flat-decided
+  -- group after a pending blank renders the line's space after the indent
+  -- flush (a spurious column; caught as an idempotence failure)
+  | .cat kw (.group (.nest n (.cat .line rest))) => .cat kw (.nest n (.cat (.blank 1) rest))
   | .cat kw rest => .cat kw (.cat (.blank 1) rest)
   | d => d
 
@@ -574,6 +580,107 @@ private def whereFieldDoc?
     return some (.text (head ++ " := ") ++ vdoc)
   return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc)))
 
+/-- `<head> := value` placement shared by instance/example heads: inline when
+    it fits, else per the bodyOwnLine knob (glued do/by keep the keyword on the
+    `:=` line, blank after it). -/
+private def headValDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (head : String)
+            (declVal : Lean.Syntax)
+            : EmitM (Option Doc) := do
+  let w := (← read).layout.lineWidth
+  let bodyOwnLine := (← read).breaking.bodyOwnLine
+  match spanBodyBlank bodyOwnLine declVal (← valForm walk declVal) with
+  | .span d => return some (.text head ++ .space ++ d)
+  | .body d glue =>
+    match Lean4Fmt.Doc.flatWidth d with
+    | some fw =>
+      if head.length + 4 + fw ≤ w then
+        return some (.text head ++ .text " := " ++ .flatten d)
+      else if glue then
+        return some (.text head ++ .text " := "
+          ++ (if bodyOwnLine then glueBodyBlank d else d))
+      else if bodyOwnLine then
+        return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
+      else return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ d)))
+    | none =>
+      if glue then
+        return some (.text head ++ .text " := "
+          ++ (if bodyOwnLine then glueBodyBlank d else d))
+      else if bodyOwnLine then
+        return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
+      else return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ d)))
+  | .eqns _ => return none
+
+/-- The field block of a `whereStructInst` declVal: one field per line, the
+    seam loop owning inter-field trivia. The caller prepends `<head> where`
+    and nests. -/
+private def whereBodyDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (declVal : Lean.Syntax)
+            : EmitM (Option Doc) := do
+  let wa := declVal.getArgs
+  if wa.size != 3 then return none
+  if !((wa[2]?.map bareSrc).getD "").trimAscii.toString.isEmpty then return none
+  if !((Lean4Fmt.Syntax.trailing? wa[0]!).getD "").trimAscii.toString.isEmpty then return none
+  let fields := ((wa[1]?.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
+  let mut body : Doc := .nil
+  let mut n := 0
+  for h : i in [0:fields.size] do
+    let f := fields[i]
+    if (bareSrc f).trimAscii.toString.isEmpty then continue  -- separator slot
+    if f.isAtom then return none
+    if Lean4Fmt.Syntax.interiorHasLineComment f then return none
+    n := n + 1
+    let trailT := ((Lean4Fmt.Syntax.trailing? f).getD "").trimAscii.toString
+    let last := i + 1 == fields.size
+    if !last && trailT.any (· == '\n') then return none
+    let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
+    let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? f).getD "")
+      | return none
+    let some d ← whereFieldDoc? walk f | return none
+    body := body ++ sep ++ d ++ trailDoc
+  if n == 0 then return none
+  return some body
+
+/-- `def name <sig> where <fields>` (the codegen Func-where pattern): head
+    tokens single-line, fields via the where machinery. -/
+private def defWhereDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (defn : Lean.Syntax)
+            : EmitM (Option Doc) := do
+  let dargs := defn.getArgs
+  if dargs.size < 4 then return none
+  let mut head := ""
+  for c in dargs.extract 0 3 do
+    if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then return none
+    let t := (bareSrc c).trimAscii.toString
+    if t.any (· == '\n') then return none
+    if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
+  if head.isEmpty then return none
+  if head.length + 6 > (← read).layout.lineWidth then return none
+  match ← whereBodyDoc? walk dargs[3]! with
+  | some body => return some (.text (head ++ " where") ++ .nest 2 body)
+  | none => return none
+
+/-- `example <sig> := value`: keyword + signature single-line, the value via
+    the shared head-value placement. -/
+private def exampleDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (defn : Lean.Syntax)
+            : EmitM (Option Doc) := do
+  let dargs := defn.getArgs
+  if dargs.size != 3 then return none
+  let mut head := ""
+  for c in dargs.extract 0 2 do
+    if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then return none
+    let t := (bareSrc c).trimAscii.toString
+    if t.any (· == '\n') then return none
+    if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
+  if head.isEmpty then return none
+  if dargs[2]!.getKind != ``Lean.Parser.Command.declValSimple then return none
+  headValDoc? walk head dargs[2]!
+
 /-- Active layout for `instance` declarations: head on one line
     (`instance (prio)? (name)? <binders> : τ`), then `:= value` (walked, the
     same placement rules as a def) or `where` + one field per line at +2 (the
@@ -611,53 +718,11 @@ private def instanceDoc?
   if head.length + 6 > w then return none
   let declVal := a[5]!
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
-    let bodyOwn := (← read).breaking.bodyOwnLine
-    match spanBodyBlank bodyOwn declVal (← valForm walk declVal) with
-    | .span d => return some (.text head ++ .space ++ d)
-    | .body d glue =>
-      let bodyOwnLine := (← read).breaking.bodyOwnLine
-      match Lean4Fmt.Doc.flatWidth d with
-      | some fw =>
-        if head.length + 4 + fw ≤ w then
-          return some (.text head ++ .text " := " ++ .flatten d)
-        else if glue then
-          return some (.text head ++ .text " := "
-            ++ (if bodyOwnLine then glueBodyBlank d else d))
-        else if bodyOwnLine then
-          return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
-        else return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ d)))
-      | none =>
-        if glue then
-          return some (.text head ++ .text " := "
-            ++ (if bodyOwnLine then glueBodyBlank d else d))
-        else if bodyOwnLine then
-          return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
-        else return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ d)))
-    | .eqns _ => return none
+    headValDoc? walk head declVal
   else if declVal.getKind == ``Lean.Parser.Command.whereStructInst then
-    let wa := declVal.getArgs
-    if wa.size != 3 then return none
-    if !((wa[2]?.map bareSrc).getD "").trimAscii.toString.isEmpty then return none
-    if !((Lean4Fmt.Syntax.trailing? wa[0]!).getD "").trimAscii.toString.isEmpty then return none
-    let fields := ((wa[1]?.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
-    let mut body : Doc := .nil
-    let mut n := 0
-    for h : i in [0:fields.size] do
-      let f := fields[i]
-      if (bareSrc f).trimAscii.toString.isEmpty then continue  -- separator slot
-      if f.isAtom then return none
-      if Lean4Fmt.Syntax.interiorHasLineComment f then return none
-      n := n + 1
-      let trailT := ((Lean4Fmt.Syntax.trailing? f).getD "").trimAscii.toString
-      let last := i + 1 == fields.size
-      if !last && trailT.any (· == '\n') then return none
-      let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-      let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? f).getD "")
-        | return none
-      let some d ← whereFieldDoc? walk f | return none
-      body := body ++ sep ++ d ++ trailDoc
-    if n == 0 then return none
-    return some (.text (head ++ " where") ++ .nest 2 body)
+    match ← whereBodyDoc? walk declVal with
+    | some body => return some (.text (head ++ " where") ++ .nest 2 body)
+    | none => return none
   else
     return none
 
@@ -739,8 +804,32 @@ def emit
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx)
+  if defn.getKind == ``Lean.Parser.Command.example then
+    -- example: no declId — [kw, optDeclSig, declVal]
+    if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
+      return (← verbatim stx)
+    match ← exampleDoc? walk defn with
+    | some d =>
+      let attrsOwnLine := (← read).breaking.attributesOwnLine
+      let (modsDoc, _) := match a[0]? with
+        | some m => modifiersDoc attrsOwnLine m
+        | none => (.nil, 0)
+      return modsDoc ++ d
+    | none => return (← verbatim stx)
+  if isDefShape defn.getKind && valKind == some ``Lean.Parser.Command.whereStructInst then
+    -- `def … where` (struct-instance value on a def)
+    if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
+      return (← verbatim stx)
+    match ← defWhereDoc? walk defn with
+    | some d =>
+      let attrsOwnLine := (← read).breaking.attributesOwnLine
+      let (modsDoc, _) := match a[0]? with
+        | some m => modifiersDoc attrsOwnLine m
+        | none => (.nil, 0)
+      return modsDoc ++ d
+    | none => return (← verbatim stx)
   if !isDefShape defn.getKind || !isActiveVal then
-    return (← verbatim stx)     -- structure/instance/where: reproduce
+    return (← verbatim stx)     -- other value forms: reproduce
   if isEqns && !eqnsFormattable (dargs[3]?.getD .missing) then
     return (← verbatim stx)     -- comment/where/termination-bearing eqns: whole-decl verbatim
   if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
