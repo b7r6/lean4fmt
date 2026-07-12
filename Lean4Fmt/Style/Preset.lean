@@ -35,33 +35,30 @@ def mathlib
   blankLines := { straylight.blankLines with policy := .preserve }
 }
 
-/-- The `aniva` style (Pantograph, §14.2): inline signatures, break-after
-    colon, no body blank, no alignment grids, blanks preserved, binder
-    interiors byte-exact (`s: String` stays). -/
+/-- The `aniva` style (Pantograph-derived), PRESCRIPTIVE: one canonical fixed
+    point per parse, origin-agnostic. Inline signatures, break-after colon,
+    normalized binder spacing (the repo's own 70/30 majority), no body blank,
+    no alignment grids. -/
 def aniva
     : Style := {
   layout     := { lineWidth := 120, indent := 2, continuationIndent := 4 }
   breaking   := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,
-                  bodyOwnLine := false, compactDo := true, preserveLineBreaks := true }
+                  bodyOwnLine := false, compactDo := true }
   alignment  := { structFields := .never, matchArms := .never, recordFields := .never,
                   trailingComments := .never }
-  blankLines := { policy := .preserve }
-  spacing    := { preserveBinders := true }
+  blankLines := { policy := .normalize, betweenTopLevelDecls := 1, maxConsecutive := 1 }
 }
 
-/-- The `purtell` style (lithe): inline signatures, attributes on the def
-    line, EVERY body on its own line (no blank), no alignment grids, blanks
-    preserved. -/
+/-- The `purtell` style (lithe-derived), PRESCRIPTIVE: inline signatures,
+    attributes on the declaration line, inline-when-fits bodies, no grids. -/
 def purtell
     : Style := {
   layout     := { lineWidth := 120, indent := 2, continuationIndent := 4 }
   breaking   := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := false,
-                  bodyOwnLine := false, compactDo := true,
-                  preserveLineBreaks := true }
+                  bodyOwnLine := false, compactDo := true }
   alignment  := { structFields := .never, matchArms := .never, recordFields := .never,
                   trailingComments := .never }
-  blankLines := { policy := .preserve }
-  spacing    := { preserveBinders := true }
+  blankLines := { policy := .normalize, betweenTopLevelDecls := 1, maxConsecutive := 1 }
 }
 
 /-- Look up a preset by name. -/
