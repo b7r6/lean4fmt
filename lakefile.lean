@@ -15,7 +15,15 @@ open Lake DSL
 -/
 
 package «lean4fmt» where
+  -- StdlibEx shims (spdlog logging) compile against libstdc++; the link names
+  -- it here (stdlibex decision VII: never mix libc++ and libstdc++)
+  moreLinkArgs := #["-lspdlog", "-lfmt", "-lstdc++", "-lpthread"]
   leanOptions := #[⟨`autoImplicit, false⟩]
+
+-- StdlibEx.Logging (spdlog-backed leveled sinks) — the diagnostic sink.
+-- The shims archive (extern_lib «straylight-shims») links automatically
+-- through the dependency closure.
+require «stdlibex» from ".." / "stdlibex"
 
 lean_lib «Lean4Fmt» where
   -- the whole v2 tree: the barrel (Lean4Fmt.lean) plus every Lean4Fmt.* submodule

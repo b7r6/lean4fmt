@@ -48,6 +48,11 @@ def bareSrc
 def verbatim
     (stx : Lean.Syntax)
     : EmitM Doc := do
+  -- every opt-out is VISIBLE: a debug-level diagnostic names the kind and
+  -- position (the census trail — `--log-level debug` shows what still rides
+  -- verbatim and where)
+  emitDiag { severity := .debug, pos := (stx.getPos?.map (·.byteIdx)).getD 0,
+             rule := "verbatim", message := s!"opt-out: {stx.getKind}" }
   let lead := (Lean4Fmt.Syntax.leading? stx).getD ""
   let base := if lead.any (· == '\n')
     then (((lead.splitOn "\n").getLastD "").toList.takeWhile (· == ' ')).length
@@ -60,8 +65,9 @@ def verbatim
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
 def passthrough
     (stx : Lean.Syntax)
-    : EmitM Doc :=
-
+    : EmitM Doc := do
+  emitDiag { severity := .debug, pos := (stx.getPos?.map (·.byteIdx)).getD 0,
+             rule := "passthrough", message := s!"opt-out: {stx.getKind}" }
   pure (.textRaw ((stx.getSubstring? true false).map (·.toString) |>.getD ""))
 
 /-- Structural placement of a form's leading trivia, as the separator doc that

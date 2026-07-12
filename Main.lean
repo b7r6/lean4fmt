@@ -12,6 +12,7 @@
 -/
 
 import Lean
+import StdlibEx.Logging
 import Lean4Fmt.Cli
 import Lean4Fmt.Driver
 
@@ -35,6 +36,7 @@ unsafe def runJobsImpl
            (preset : String)
            (elabFallback : Bool)
            (retry : Bool)
+           (logLevel : String)
            : IO (Array Driver.Result) := do
   let base := (Style.byName? preset).getD Style.straylight
   let style := { base with layout := { base.layout with lineWidth := width } }
@@ -43,7 +45,7 @@ unsafe def runJobsImpl
     if retry then
       let exe ← IO.appPath
       pure (some (exe.toString,
-        #["--width", toString width, "--style", preset]
+        #["--width", toString width, "--style", preset, "--log-level", logLevel]
           ++ (if elabFallback then #[] else #["--elab", "off"])))
     else pure none
   Driver.runAll style expanded elabFallback retryCfg
@@ -51,6 +53,7 @@ unsafe def runJobsImpl
 @[implemented_by runJobsImpl]
 opaque runJobs
     (files : List String) (width : Nat) (preset : String) (elabFallback : Bool) (retry : Bool)
+    (logLevel : String)
     : IO (Array Driver.Result)
 
 /-- Coverage accounting (`--stats`, DESIGN_V2 §15): per-file
@@ -107,6 +110,14 @@ def main
     IO.Process.exit 1
 
   initEnv
+  let lvl : StdlibEx.Logging.Level := match o.logLevel with
+    | "trace" => .trace
+    | "debug" => .debug
+    | "info" => .info
+    | "warn" => .warn
+    | "error" => .error
+    | _ => .warn
+  StdlibEx.Logging.initConsole lvl
   let err ← IO.getStderr
 
   if o.mode == .stats then
@@ -125,12 +136,17 @@ def main
     IO.println s!"// coverage: code-active {pct ta code}  (of all output: active {pct ta (code + tt)}, trivia {pct tt (code + tt)})"
     return
 
-  let results ← runJobs o.files o.width o.preset o.elabFallback o.retry
+  let results ← runJobs o.files o.width o.preset o.elabFallback o.retry o.logLevel
 
   let mut failed := false
   for r in results do
     for d in r.diagnostics do
-      err.putStrLn s!"{r.path}:{d.render}"
+      let lvl : StdlibEx.Logging.Level := match d.severity with
+        | .debug => .debug
+        | .info => .info
+        | .warning => .warn
+        | .error => .error
+      StdlibEx.Logging.log lvl s!"{r.path}:{d.render}"
       if d.severity == .error then failed := true
     match o.mode with
     | .stats => pure ()   -- unreachable: stats returns above

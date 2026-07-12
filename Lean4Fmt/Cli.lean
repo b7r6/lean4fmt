@@ -31,6 +31,9 @@ structure Options where
       Driver.runJob). `--no-retry` is set on those subprocesses themselves —
       the recursion guard. -/
   retry : Bool := true
+  /-- Diagnostic log threshold: trace|debug|info|warn|error. `debug` shows
+      every verbatim opt-out (the coverage trail). -/
+  logLevel : String := "warn"
   files  : List String := []
   deriving Repr, Inhabited
 
@@ -48,6 +51,7 @@ def parse
     | "-w" :: r => o := { o with mode := .write }; rest := r
     | "--width" :: n :: r => o := { o with width := n.toNat! }; rest := r
     | "--style" :: s :: r => o := { o with preset := s }; rest := r
+    | "--log-level" :: l :: r => o := { o with logLevel := l }; rest := r
     | "--elab" :: v :: r => o := { o with elabFallback := v != "off" }; rest := r
     | "--no-retry" :: r => o := { o with retry := false }; rest := r
     | f :: r => o := { o with files := o.files ++ [f] }; rest := r

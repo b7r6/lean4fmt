@@ -64,8 +64,9 @@ unsafe def formatSafe
       else "not formatted: needs the elaborating frontend (rerun with --elab auto)"
     pure (contents, #[{ severity := .warning, rule := "parse", message := msg }])
   | some stx =>
-    let diags := Lean4Fmt.Rules.lint stx
-    let (active, _) := Lean4Fmt.Emit.format style stx.updateLeading
+    let lintDiags := Lean4Fmt.Rules.lint stx
+    let (active, emitDiags) := Lean4Fmt.Emit.format style stx.updateLeading
+    let diags := lintDiags ++ emitDiags
     if active == contents then pure (contents, diags)
     else match ← parseFull? env path active elabFallback with
     | none => pure (contents, diags)
