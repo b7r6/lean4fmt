@@ -101,6 +101,28 @@ def emit
     if locT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let locD : Doc := if locT.isEmpty then .nil else .text (" " ++ locT)
     return .text "rw " ++ Lean4Fmt.Doc.commaList "[" "]" ds ++ locD
+  else if kind == ``Lean.Parser.Tactic.tacticHave__ then
+    -- ["have", letConfig, letDecl] — the doLet shape minus `mut`; the letDecl
+    -- walks through the existing 5-slot machinery
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
+    let cfgT := (Lean4Fmt.Emit.bareSrc a[1]!).trimAscii.toString
+    if cfgT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+    let dDoc ← walk a[2]!
+    if Lean4Fmt.Doc.hasMultilineVerbatim dDoc then return (← Lean4Fmt.Emit.verbatim stx)
+    return .text "have " ++ (if cfgT.isEmpty then Doc.nil else .text (cfgT ++ " ")) ++ dDoc
+  else if kind == ``Lean.Parser.Tactic.simp then
+    -- [kw, config, discharger?, only?, [lemmas]?, location?] — token-for-token
+    -- on one line (the lemma list rides as text; active list layout is a
+    -- follow-on)
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut line := ""
+    for c in a do
+      let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+      if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+      if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
+    if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    return .text line
   else if kind == ``Lean.Parser.Tactic.unfold then
     -- ["unfold", idents, location?] — plain text, token-for-token
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)

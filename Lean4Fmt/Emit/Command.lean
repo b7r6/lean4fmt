@@ -341,7 +341,32 @@ def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
     : Lean4Fmt.Emit.EmitM Doc := do
-  if stx.getKind != ``Lean.Parser.Command.mutual then
+  let kind := stx.getKind
+  if kind == ``Lean.Parser.Command.open || kind == ``Lean.Parser.Command.namespace
+      || kind == ``Lean.Parser.Command.end || kind == ``Lean.Parser.Command.section
+      || kind == ``Lean.Parser.Command.universe || kind == ``Lean.Parser.Command.eval then
+    -- trivial one-line commands, token-for-token
+    if Lean4Fmt.Syntax.hasOwnedLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut line := ""
+    for c in stx.getArgs do
+      let t := (bareSrc c).trimAscii.toString
+      if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+      if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
+    if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    return .text line
+  if kind == ``Lean.Parser.Command.in then
+    -- `open X in\n<command>` — prefix command token-for-token, the trailed
+    -- command walked (usually a declaration; Decl does the real work)
+    let a := stx.getArgs
+    if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
+    let preT := (bareSrc a[0]!).trimAscii.toString
+    if preT.isEmpty || preT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+    if !((Lean4Fmt.Syntax.trailing? a[1]!).getD "").trimAscii.toString.isEmpty then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? a[2]!).getD "")
+      | return (← Lean4Fmt.Emit.verbatim stx)
+    return .text (preT ++ " in") ++ sep ++ (← walk a[2]!)
+  if kind != ``Lean.Parser.Command.mutual then
     return (← Lean4Fmt.Emit.verbatim stx)
   let a := stx.getArgs
   if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)

@@ -41,7 +41,14 @@ partial def walk
     if kind == ``Lean.Parser.Module.module then Module.emit walk stx
     else if kind == ``Lean.Parser.Command.declaration then Decl.emit walk stx
     else if kind == ``Lean.Parser.Command.structure || kind == ``Lean.Parser.Command.inductive
-         || kind == ``Lean.Parser.Command.mutual then
+         || kind == ``Lean.Parser.Command.mutual
+         || kind == ``Lean.Parser.Command.open
+         || kind == ``Lean.Parser.Command.namespace
+         || kind == ``Lean.Parser.Command.end
+         || kind == ``Lean.Parser.Command.section
+         || kind == ``Lean.Parser.Command.universe
+         || kind == ``Lean.Parser.Command.eval
+         || kind == ``Lean.Parser.Command.in then
       Command.emit walk stx
     else if kind == ``Lean.Parser.Term.do
          || kind == ``Lean.Parser.Term.doLet
@@ -60,7 +67,9 @@ partial def walk
          || kind == ``Lean.Parser.Tactic.rwSeq
          || kind == ``Lean.Parser.Tactic.unfold
          || kind == ``Lean.Parser.Tactic.induction
-         || kind == ``Lean.Parser.Tactic.cases then
+         || kind == ``Lean.Parser.Tactic.cases
+         || kind == ``Lean.Parser.Tactic.tacticHave__
+         || kind == ``Lean.Parser.Tactic.simp then
       Tactic.emit walk stx
     -- expression constructs → Term (flat, comment-guarded; else verbatim)
     else if Lean4Fmt.Syntax.isBinOp kind
