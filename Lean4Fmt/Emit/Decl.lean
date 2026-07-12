@@ -297,6 +297,14 @@ private inductive ValForm
   | body (doc : Doc) (glue : Bool)
   | eqns (arms : Doc)
 
+/-- `bodyOwnLine` for GLUED bodies (`:= do` / `:= by`): the blank goes after
+    the keyword, before the block. The block's own leading separator collapses
+    into the blank (renderer pend accumulation), so exactly one blank line
+    appears — the same rhythm term bodies get after `:=`. -/
+private def glueBodyBlank : Doc → Doc
+  | .cat kw rest => .cat kw (.cat (.blank 1) rest)
+  | d => d
+
 /-- Classify a `declVal` into a `ValForm` (see above). Splitting the `:=` from the
     body lets the caller choose the separator: inline ` := `, or (bodyOwnLine)
     `:=` then a blank then the body on its own indented line. -/
@@ -501,7 +509,8 @@ private def defnDoc
     let valBroken : Doc := match vf with
       | .span d => .space ++ d
       | .body d glue =>
-        if glue then .text " := " ++ d
+        if glue then
+          .text " := " ++ (if bodyOwnLine then glueBodyBlank d else d)
         else if bodyOwnLine then .text " :=" ++ .nest 2 (.blank 1 ++ d)
         else .text " :=" ++ .group (.nest 2 (.line ++ d))
       | .eqns _ => .nil     -- unreachable: eqns returned above
@@ -586,12 +595,16 @@ private def instanceDoc?
       | some fw =>
         if head.length + 4 + fw ≤ w then
           return some (.text head ++ .text " := " ++ .flatten d)
-        else if glue then return some (.text head ++ .text " := " ++ d)
+        else if glue then
+          return some (.text head ++ .text " := "
+            ++ (if bodyOwnLine then glueBodyBlank d else d))
         else if bodyOwnLine then
           return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
         else return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ d)))
       | none =>
-        if glue then return some (.text head ++ .text " := " ++ d)
+        if glue then
+          return some (.text head ++ .text " := "
+            ++ (if bodyOwnLine then glueBodyBlank d else d))
         else if bodyOwnLine then
           return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
         else return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ d)))
