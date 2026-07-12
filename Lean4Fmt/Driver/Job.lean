@@ -67,25 +67,30 @@ unsafe def runJob
     -- SUBPROCESS: this exe, one file, its own env (`--no-retry` stops
     -- recursion; a genuinely broken file fails there too and keeps its loud
     -- diagnostic via stderr).
-    if output == original && diagnostics.any (·.rule == "parse") then
-      if let some (exe, extraArgs) := retry then
-        let r ← IO.Process.output
-          { cmd := exe, args := #["--no-retry"] ++ extraArgs ++ #[path.toString] }
-        if r.exitCode == 0 && !r.stdout.isEmpty then
-          let stillUnparsed := (r.stderr.splitOn "not formatted:").length > 1
-          return { path, original, output := r.stdout,
-                   diagnostics := if stillUnparsed then diagnostics else #[] }
+    let _ := retry   -- retries are batched by runAll (waves), not per-job
     return { path, original, output, diagnostics }
   catch e =>
     return { path, original, output := original,
              diagnostics := #[{ severity := .error, rule := "io", message := toString e }] }
 
-/-- The scheduler seam. SEQUENTIAL today — the single place a core-pinned worker
-    pool (Driver.Pool) or batched uring loop (Driver.Io) will slot in, leaving the
-    pure core and `runJob` untouched. Every job shares ONE batch env
-    (`Frontend.batchEnv` — imported once per invocation, immutable thereafter);
-    per-file syntax extensions layer on top functionally inside `Session`, and
-    superset-conflicted files retry in a one-file subprocess. -/
+/-- Whether a result is a candidate for the subprocess retry: unchanged output
+    with a parse diagnostic (a superset-env conflict, an own-notation file the
+    union could not help, or a genuinely broken file — the retry sorts them). -/
+private def Result.retryable (r : Result) : Bool :=
+  r.output == r.original && r.diagnostics.any (·.rule == "parse")
+
+/-- The scheduler seam. The main pass is SEQUENTIAL today — the single place a
+    core-pinned worker pool (Driver.Pool) or batched uring loop (Driver.Io) will
+    slot in, leaving the pure core and `runJob` untouched. Every job shares ONE
+    batch env (`Frontend.batchEnv` — imported once per invocation, immutable
+    thereafter); per-file syntax extensions layer on top functionally inside
+    `Session`.
+
+    Files the union env cannot parse (co-imported DSL syntax conflicts; the
+    runtime's one-shot import model forbids a second in-process loadExts import)
+    retry as ONE-FILE SUBPROCESSES, spawned in bounded concurrent waves — they
+    are independent processes, each importing its own (subset) env, so the only
+    coupling is transient memory: `LEAN4FMT_JOBS` bounds the wave (default 8). -/
 unsafe def runAll
            (style : Style.Style)
            (paths : Array System.FilePath)
@@ -93,7 +98,46 @@ unsafe def runAll
            (retry : Option (String × Array String) := none)
            : IO (Array Result) := do
   let env ← Frontend.batchEnv paths
-  paths.mapM (runJob env style · elabFallback retry)
+  -- main pass: IO tasks over the shared frozen env (default task priority = the
+  -- runtime's core-sized pool; the env is `leakEnv`-persistent, shared
+  -- read-only — the LSP sharing model). `runJob` catches its own errors, so a
+  -- task failure here is a runtime fault, reported per file rather than thrown.
+  let tasks ← paths.mapM (fun p => IO.asTask (runJob env style p elabFallback none))
+  let mut results : Array Result := #[]
+  for p in paths, t in tasks do
+    match t.get with
+    | .ok r => results := results.push r
+    | .error e =>
+      results := results.push
+        { path := p, original := "", output := "",
+          diagnostics := #[{ severity := .error, rule := "io", message := toString e }] }
+  let some (exe, extraArgs) := retry | return results
+  let conflicted := (Array.range results.size).filter (fun i => results[i]!.retryable)
+  if conflicted.isEmpty then return results
+  let jobs := (((← IO.getEnv "LEAN4FMT_JOBS").bind (·.toNat?)).getD 8).max 1
+  let spawnRetry (p : System.FilePath) : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
+    IO.Process.spawn
+      { cmd := exe, args := #["--no-retry"] ++ extraArgs ++ #[p.toString],
+        stdin := .null, stdout := .piped, stderr := .piped }
+  let mut i := 0
+  while i < conflicted.size do
+    let wave := conflicted.extract i (Nat.min (i + jobs) conflicted.size)
+    let mut children : Array (IO.Process.Child ⟨.null, .piped, .piped⟩) := #[]
+    for idx in wave do
+      children := children.push (← spawnRetry results[idx]!.path)
+    for (idx, child) in wave.zip children do
+      -- stdout is the gated output (bounded: one source file); stderr is a few
+      -- diagnostic lines — read stdout first, the safe order for these sizes
+      let out ← child.stdout.readToEnd
+      let errOut ← child.stderr.readToEnd
+      let rc ← child.wait
+      if rc == 0 && !out.isEmpty then
+        let r := results[idx]!
+        let stillUnparsed := (errOut.splitOn "not formatted:").length > 1
+        results := results.set! idx
+          { r with output := out, diagnostics := if stillUnparsed then r.diagnostics else #[] }
+    i := i + jobs
+  return results
 
 /-- Expand file/dir inputs into the `.lean` file set to process (directories are
     walked, `.lake` build trees skipped), deduplicated and in a deterministic
