@@ -75,6 +75,7 @@ partial def walk
          || kind == ``Lean.Parser.Term.structInst
          || kind == ``Lean.Parser.Term.hole
          || kind.toString == "«term[_]»"
+         || kind.toString == "«term#[_,]»"
          || kind.toString == "termIfThenElse"
          || kind.toString == "termDepIfThenElse"
          || kind == ``Lean.Parser.Term.let

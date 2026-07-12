@@ -316,8 +316,10 @@ private def valForm
         -- plain body path); anything else keeps the whole safe span.
         let tailCmts := Lean4Fmt.Syntax.countLineComments
           ((Lean4Fmt.Syntax.trailing? v).getD "")
-        if v.getKind != ``Lean.Parser.Term.let
-            && Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts then
+        let leadCmts := Lean4Fmt.Syntax.countLineComments
+          ((Lean4Fmt.Syntax.leading? v).getD "")
+        if (if Lean4Fmt.Syntax.ownsSeams v.getKind then leadCmts > 0
+            else Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts) then
           return .span (← verbatim declVal)
         let vdoc ← walk v
         if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return .span (← verbatim declVal)
@@ -348,11 +350,14 @@ private def valForm
       -- single-line value. Keep the whole `:= …` span.
       let tailCmts := Lean4Fmt.Syntax.countLineComments
         ((Lean4Fmt.Syntax.trailing? v).getD "")
-      -- EXEMPT let-chains: the chain arm owns its inter-binding seams (a
-      -- binding the chain can't hold comes back as a multi-line opaque block
-      -- and the flatWidth path below spans)
-      if v.getKind != ``Lean.Parser.Term.let
-          && Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts then
+      -- EXEMPT seam-owning kinds (Kinds.ownsSeams) — but only for comments
+      -- INSIDE their seams: the value's own HEAD leading (between `:=` and
+      -- the first token) has no owner in expression space, so it keeps the
+      -- span (which carries it byte-exact)
+      let leadCmts := Lean4Fmt.Syntax.countLineComments
+        ((Lean4Fmt.Syntax.leading? v).getD "")
+      if (if Lean4Fmt.Syntax.ownsSeams v.getKind then leadCmts > 0
+          else Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts) then
         return .span (← verbatim declVal)
       let clean := !Lean4Fmt.Doc.hasMultilineVerbatim vdoc   -- comments handled above
       if isActiveMultiline v.getKind && clean then return .body vdoc false

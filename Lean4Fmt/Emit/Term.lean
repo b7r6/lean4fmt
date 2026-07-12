@@ -33,6 +33,52 @@ private def commaGroup
     ds := ds.push (← walk c)
   return Lean4Fmt.Doc.commaList l r ds
 
+/-- Comment-bearing comma list, FORCED broken (a line comment cannot flatten,
+    §0.4): one element per line at +2, each element's leading comment/blank
+    lines placed structurally, the same-line comment after each COMMA (its
+    trailing) re-appended, the last element's same-line trailing kept before
+    the closer. `none` (caller verbatims) when the closer's leading carries
+    content, a trailing spans lines, or a seam has no home. -/
+private def seamCommaList?
+            (walk : Walk)
+            (l r : String)
+            (pairs : Array (Lean.Syntax × Option Lean.Syntax))
+            (closer : Lean.Syntax)
+            : EmitM (Option Doc) := do
+  if pairs.isEmpty then return none
+  -- comments directly before the closer have no seam yet
+  let isWs (t : String) : Bool := t.all (fun c => c == ' ' || c == '\t')
+  let closerLead := (Lean4Fmt.Syntax.leading? closer).getD ""
+  if !(((closerLead.splitOn "\n").drop 1).dropLast.all isWs) then return none
+  if !isWs ((closerLead.splitOn "\n").headD "") then return none
+  let mut body : Doc := .nil
+  for h : i in [0:pairs.size] do
+    let (e, comma?) := pairs[i]
+    let last := i + 1 == pairs.size
+    let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? e).getD "")
+      | return none
+    let eDoc ← walk e
+    -- the same-line comment can trail the ELEMENT (comma-leading style:
+    -- `e  -- note` with `, e₂` on the next line) or the COMMA (`e, -- note`);
+    -- own both zones. Content in a comma's own LEADING has no seam — bail.
+    let eTrail := ((Lean4Fmt.Syntax.trailing? e).getD "").trimAscii.toString
+    let cTrail ← do
+      match comma? with
+      | some c =>
+        let isWsC (t : String) : Bool := t.all (fun ch => ch == ' ' || ch == '\t')
+        let cl := (Lean4Fmt.Syntax.leading? c).getD ""
+        if !(((cl.splitOn "\n").drop 1).dropLast.all isWsC) then return none
+        pure (((Lean4Fmt.Syntax.trailing? c).getD "").trimAscii.toString)
+      | none => pure ""
+    let trailT := String.intercalate " " (([eTrail, cTrail].filter (fun t => !t.isEmpty)))
+    if trailT.any (· == '\n') then return none
+    -- when the comma is the LAST element's trailing zone owner, drop through:
+    let _ := ()
+    let commaD : Doc := if last then .nil else .text ","
+    let trailD : Doc := if trailT.isEmpty then .nil else .text (" " ++ trailT)
+    body := body ++ sep ++ eDoc ++ commaD ++ trailD
+  return some (.text l ++ .nest 2 body ++ .hardline ++ .text r)
+
 /-- A single `structInstField` = [structInstLVal, «rest»]. The LVal (field name /
     path) is reproduced verbatim; the value (the term after `:=`, found inside the
     `structInstFieldDef` in «rest») is walked so it lays out actively. A shorthand
@@ -63,13 +109,10 @@ partial def emit
   -- The tail token's TRAILING is exempt: it belongs to the enclosing seam
   -- (whoever places this form also places its trailing — Module for commands,
   -- the do-statement loop for statements), so it survives without our help.
-  -- `let` and `match` bypass this guard: their arms own the inter-item seams
-  -- (comments and blank lines between bindings/arms place structurally, like
-  -- do-statements); a comment INSIDE a binding verbatims that binding, and a
-  -- comment inside an ARM verbatims the whole match (arm spans re-anchoring
-  -- among active arms is a drift gamble we don't take).
-  if stx.getKind != ``Lean.Parser.Term.let
-      && stx.getKind != ``Lean.Parser.Term.match
+  -- seam-owning kinds bypass this guard (Kinds.ownsSeams): their arms place
+  -- inter-item comments structurally; anything they can't hold falls back
+  -- internally.
+  if !Lean4Fmt.Syntax.ownsSeams stx.getKind
       && Lean4Fmt.Syntax.hasOwnedLineComment stx then
     return (← verbatim stx)
   match stx with
@@ -109,7 +152,18 @@ partial def emit
     else if kind == ``Lean.Parser.Term.dotIdent then
       return .text "." ++ (← walk (args[1]?.getD .missing))
     else if kind == ``Lean.Parser.Term.anonymousCtor then
-      return (← commaGroup walk "⟨" "⟩" ((args[1]?.map (·.getArgs)).getD #[]))
+      let children := (args[1]?.map (·.getArgs)).getD #[]
+      if Lean4Fmt.Syntax.interiorHasLineComment stx then
+        let mut pairs : Array (Lean.Syntax × Option Lean.Syntax) := #[]
+        for c in children do
+          if c.isAtom then
+            if !pairs.isEmpty then
+              pairs := pairs.set! (pairs.size - 1) (pairs[pairs.size - 1]!.1, some c)
+          else pairs := pairs.push (c, none)
+        match ← seamCommaList? walk "⟨" "⟩" pairs (args[2]?.getD .missing) with
+        | some d => return d
+        | none => return (← verbatim stx)
+      return (← commaGroup walk "⟨" "⟩" children)
     else if kind == ``Lean.Parser.Term.structInst then
       -- `{ f₁ := v₁, f₂ := v₂ }` — width-aware: flat if it fits, else one field
       -- per line, aligned under the first (which sits on the `{ ` line). Guarded:
@@ -134,8 +188,20 @@ partial def emit
       let mut ds : Array Doc := #[]
       for f in fields do ds := ds.push (← structFieldDoc walk f)
       return .group (.text "{ " ++ .nest 2 (Lean4Fmt.Doc.sepBy (.text "," ++ .line) ds) ++ .text " }")
-    else if kind.toString == "«term[_]»" then
-      return (← commaGroup walk "[" "]" ((args[1]?.map (·.getArgs)).getD #[]))
+    else if kind.toString == "«term[_]»" || kind.toString == "«term#[_,]»" then
+      let l := if kind.toString == "«term[_]»" then "[" else "#["
+      let children := (args[1]?.map (·.getArgs)).getD #[]
+      if Lean4Fmt.Syntax.interiorHasLineComment stx then
+        let mut pairs : Array (Lean.Syntax × Option Lean.Syntax) := #[]
+        for c in children do
+          if c.isAtom then
+            if !pairs.isEmpty then
+              pairs := pairs.set! (pairs.size - 1) (pairs[pairs.size - 1]!.1, some c)
+          else pairs := pairs.push (c, none)
+        match ← seamCommaList? walk l "]" pairs (args[2]?.getD .missing) with
+        | some d => return d
+        | none => return (← verbatim stx)
+      return (← commaGroup walk l "]" children)
     else if kind.toString == "termIfThenElse" then
       -- [if, cond, then, thenBranch, else, elseBranch]; a width-aware group:
       -- flat `if c then a else b`, or broken with 2-space branches, `else` at

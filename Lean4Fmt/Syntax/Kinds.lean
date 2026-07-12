@@ -34,6 +34,19 @@ def isInlineProneContainer
       || kind.toString == "«term[_]»"
       || kind.toString == "«term{_}»"
 
+/-- Kinds whose emitters OWN their interior comment seams (the seam model
+    pushed into expression space): the entry comment-guard and the value
+    span-guard exempt these — their arms place inter-item comments
+    structurally, and anything they can't hold falls back internally. -/
+def ownsSeams
+    (kind : SyntaxNodeKind)
+    : Bool :=
+
+  kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.match
+      || kind == ``Lean.Parser.Term.anonymousCtor
+      || kind.toString == "«term[_]»"
+      || kind.toString == "«term#[_,]»"
+
 /-- Layout-sensitive / proof kinds that must never be inlined (§0.7 #10). -/
 def isNeverInline
     (kind : SyntaxNodeKind)
