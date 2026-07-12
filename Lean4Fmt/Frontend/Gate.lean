@@ -72,6 +72,10 @@ unsafe def formatSafe
     | some stx2 =>
       let (active2, _) := Lean4Fmt.Emit.format style stx2.updateLeading
       let ok := Lean4Fmt.Syntax.leafToks stx == Lean4Fmt.Syntax.leafToks stx2  -- tokens preserved
+            && Lean4Fmt.Syntax.kindSpine stx == Lean4Fmt.Syntax.kindSpine stx2  -- tree shape kept: in
+                  -- whitespace-sensitive regions (tactic bullets, branches) identical
+                  -- tokens can parse to a DIFFERENT tree — re-scoped meaning the token
+                  -- check alone cannot see
             && Lean4Fmt.Syntax.commentContent stx == Lean4Fmt.Syntax.commentContent stx2  -- comments kept
             && headerToks stx == headerToks stx2                                -- imports in header
             && active2 == active                                                -- fixed point

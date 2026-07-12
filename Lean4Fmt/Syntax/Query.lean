@@ -44,6 +44,18 @@ def commentContent
 
   String.ofList ((triviaText stx).toList.filter (fun c => !c.isWhitespace))
 
+/-- The kind SPINE: every node kind in preorder. Token equality alone
+    under-specifies meaning in whitespace-sensitive regions — dedenting a tactic
+    out of a `·` bullet (or a statement out of a branch) moves it to a different
+    scope with an IDENTICAL token stream. Tree-shape equality closes that class:
+    a meaning-preserving formatter keeps the token stream AND the kind spine. -/
+partial def kindSpine
+            (stx : Lean.Syntax)
+            : Array Name :=
+  match stx with
+  | .node _ kind args => args.foldl (fun acc x => acc ++ kindSpine x) #[kind]
+  | _ => #[]
+
 /-- First identifier appearing in a subtree (the target of `namespace`/`open`). -/
 partial def firstIdent : Lean.Syntax → Name
   | .ident _ _ n _ => n
