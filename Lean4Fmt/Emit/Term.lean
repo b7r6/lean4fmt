@@ -225,6 +225,47 @@ partial def emit
           ++ .nest 2 (.line ++ thenB)
           ++ .line ++ .text "else"
           ++ .nest 2 (.line ++ elseB))
+    else if kind == ``Lean.Parser.Term.fun then
+      -- `fun x (y : τ) => body` — ["fun", basicFun [binders, type?, "=>", body]].
+      -- Binders as active text (trimmed, single-spaced), the body walked: flat
+      -- on the `=>` line when it fits, else on the next line at +2; a `do` body
+      -- glues (its statements bring their own hardline). The `fun | pat => …`
+      -- match-alternative form stays verbatim.
+      let some bf := args[1]? | return (← verbatim stx)
+      if bf.getKind != ``Lean.Parser.Term.basicFun then return (← verbatim stx)
+      let ba := bf.getArgs
+      if ba.size != 4 then return (← verbatim stx)
+      let mut head := "fun"
+      for b in ((ba[0]?).map (·.getArgs)).getD #[] do
+        let t := (bareSrc b).trimAscii.toString
+        if t.isEmpty || t.any (· == '\n') then return (← verbatim stx)
+        head := head ++ " " ++ t
+      let tyT := ((ba[1]?.map bareSrc).getD "").trimAscii.toString
+      if tyT.any (· == '\n') then return (← verbatim stx)
+      if !tyT.isEmpty then head := head ++ " " ++ tyT
+      let body := ba[3]!
+      let bodyDoc ← walk body
+      if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then return (← verbatim stx)
+      if body.getKind == ``Lean.Parser.Term.do then
+        return .text (head ++ " => ") ++ bodyDoc
+      return .text (head ++ " =>") ++ .group (.nest 2 (.line ++ bodyDoc))
+    else if kind == ``Lean.Parser.Term.tuple then
+      -- `(a, b, c)` — [hygienicLParen, elems, ")"] where elems RIGHT-NEST:
+      -- null[e, ",", null[e₂, ",", e₃]] with the innermost tail a bare term.
+      -- Flatten, walk each element, and lay out as the standard commaList.
+      let mut elems : Array Lean.Syntax := #[]
+      let mut cur := args[1]?.getD .missing
+      let mut steps := 0
+      while cur.getKind == `null && cur.getArgs.size == 3 && steps < 1000 do
+        elems := elems.push cur.getArgs[0]!
+        cur := cur.getArgs[2]!
+        steps := steps + 1
+      if cur.getKind == `null && cur.getArgs.size == 1 then cur := cur.getArgs[0]!
+      if elems.isEmpty then return (← verbatim stx)
+      elems := elems.push cur
+      let mut ds : Array Doc := #[]
+      for e in elems do ds := ds.push (← walk e)
+      return Lean4Fmt.Doc.commaList "(" ")" ds
     else if kind == ``Lean.Parser.Term.hole then
       return .text "_"
     else if kind == `str || kind == `num || kind == `scientific || kind == `char then

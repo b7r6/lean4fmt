@@ -61,6 +61,8 @@ partial def walk
          || kind == ``Lean.Parser.Term.proj
          || kind == ``Lean.Parser.Term.dotIdent
          || kind == ``Lean.Parser.Term.anonymousCtor
+         || kind == ``Lean.Parser.Term.fun
+         || kind == ``Lean.Parser.Term.tuple
          || kind == ``Lean.Parser.Term.structInst
          || kind == ``Lean.Parser.Term.hole
          || kind.toString == "«term[_]»"
