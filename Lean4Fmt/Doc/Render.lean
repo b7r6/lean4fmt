@@ -145,7 +145,14 @@ private def wrBlock
       st := wr st indent l; first := false
     else
       let ded := if l.length ≥ base then String.ofList (l.toList.drop base) else String.ofList (l.toList.dropWhile (· == ' '))
-      st := wr { st with pend := st.pend + 1 } indent ded
+      -- an interior EMPTY line stays a pending newline — `wr` would write the
+      -- indent with nothing after it (trailing whitespace, and non-idempotent
+      -- once a verbatim block is re-anchored at a nonzero indent, e.g. inside
+      -- `mutual`). Byte-empty ONLY: a whitespace-bearing line may be the
+      -- interior of a multi-line string literal, where the spaces are token
+      -- content and must survive byte-exact.
+      if ded.isEmpty then st := { st with pend := st.pend + 1 }
+      else st := wr { st with pend := st.pend + 1 } indent ded
   return st
 
 /-- Render a `Doc` to a string under `style`. -/
