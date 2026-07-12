@@ -52,39 +52,6 @@ private def idDeclDoc?
     return some (.text head ++ .text (" " ++ arrowT ++ " ") ++ vdoc)
   return some (.text head ++ .text (" " ++ arrowT) ++ .group (.nest 2 (.line ++ vdoc)))
 
-/-- Structural placement of a statement's leading trivia, as the separator doc
-    that goes BEFORE the statement: each full line of the trivia is either a
-    blank line (a `.blank` request, §8-clamped) or comment content (line or block
-    comment — emitted `textRaw`, dedented by the run's minimum indent so relative
-    offsets survive, re-anchored at the statement indent). Two partial lines are
-    dropped: the HEAD segment before the first newline (the remainder of the
-    previous token's line — its newline IS the separator; leading trivia starts
-    before it, the previous trailing does not consume it) and the TAIL segment
-    (the statement's own indentation — the renderer re-indents). Pure
-    single-newline trivia degenerates to the plain `.hardline` separator.
-    `none` when the head segment carries content (a comment the previous line's
-    trailing did not capture — no seam for it here; the caller goes verbatim). -/
-private def leadingSep?
-            (lead : String)
-            : Option Doc := Id.run do
-  let ls := lead.splitOn "\n"
-  let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
-  if !isWs (ls.headD "") then return none
-  let full := (ls.drop 1).dropLast
-  let content := full.filter (fun l => !isWs l)
-  let indentOf (l : String) : Nat := (l.toList.takeWhile (· == ' ')).length
-  let base := content.foldl (fun m l => Nat.min m (indentOf l)) 1000000
-  let mut d : Doc := .nil
-  let mut blanks := 0
-  for l in full do
-    if isWs l then blanks := blanks + 1
-    else
-      let ded := if l.length ≥ base then String.ofList (l.toList.drop base) else l
-      d := d ++ (if blanks > 0 then .blank blanks else .hardline)
-        ++ .textRaw ded.trimAsciiEnd.toString
-      blanks := 0
-  return some (d ++ (if blanks > 0 then .blank blanks else .hardline))
-
 /-- The statements of a plain `doSeqIndent`, provided no item carries an explicit
     `;` terminator (walking only the statement would lose that token). `none` on
     the bracketed `{ … }` shape or any structural surprise. -/
@@ -123,7 +90,7 @@ private def seqLinesDoc?
     if !last && trailT.any (· == '\n') then return none
     if last && !lastOwned && !trailT.isEmpty then return none
     let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-    let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? stmt).getD "") | return none
+    let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? stmt).getD "") | return none
     let sDoc ← walk stmt
     body := body ++ sep ++ sDoc ++ trailDoc
   return some body

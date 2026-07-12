@@ -15,6 +15,7 @@
 -/
 
 import Lean4Fmt.Emit.Monad
+import Lean4Fmt.Emit.Command
 import Lean4Fmt.Syntax.Kinds
 
 namespace Lean4Fmt.Emit.Decl
@@ -432,8 +433,25 @@ def emit
   let valKind := dargs[3]?.map (·.getKind)
   let isEqns := valKind == some ``Lean.Parser.Command.declValEqns
   let isActiveVal := valKind == some ``Lean.Parser.Command.declValSimple || isEqns
+  if defn.getKind == ``Lean.Parser.Command.inductive then
+    -- `where`-style inductive: modifiers as usual, head + one ctor per line at
+    -- +2 (Command.inductiveDoc?). Ctor doc comments ride byte-exact; inter-ctor
+    -- line comments and blank groups place structurally (the ctor loop owns
+    -- those seams). A comment in the modifiers region, inside a ctor, or in a
+    -- zone with no seam (the `where` line, a multi-line head) falls back to
+    -- whole-declaration verbatim, as does any shape the layout can't hold.
+    if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
+      return (← verbatim stx)
+    match Command.inductiveDoc? defn with
+    | some d =>
+      let attrsOwnLine := (← read).breaking.attributesOwnLine
+      let (modsDoc, _) := match a[0]? with
+        | some m => modifiersDoc attrsOwnLine m
+        | none => (.nil, 0)
+      return modsDoc ++ d
+    | none => return (← verbatim stx)
   if !isDefShape defn.getKind || !isActiveVal then
-    return (← verbatim stx)     -- structure/inductive/instance/where: reproduce
+    return (← verbatim stx)     -- structure/instance/where: reproduce
   if isEqns && !eqnsFormattable (dargs[3]?.getD .missing) then
     return (← verbatim stx)     -- comment/where/termination-bearing eqns: whole-decl verbatim
   if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
