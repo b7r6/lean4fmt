@@ -22,8 +22,9 @@ for ln in lines:
                     toks[i] = ' ' + toks[i]              # double an inner gap
                 s = ' '.join(toks)
     out.append(s)
+    # blank INSERTION/removal between decls is a CONTENT mutation under the
+    # blank-line pin (0-vs->=1 between one-liners is authorial) -- excluded.
+    # Extra blanks inside an existing blank run stay ws-perturbation:
     if not s.strip() and random.random() < 0.2:
-        out.append('')                                    # extra blank line
-    elif not guard and s.strip() and random.random() < 0.05:
-        out.append('')                                    # inserted blank
+        out.append('')
 print('\n'.join(out), end='')

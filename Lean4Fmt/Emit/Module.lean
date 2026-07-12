@@ -84,8 +84,9 @@ def emit
       return false
     let gap := ((Lean4Fmt.Syntax.trailing? p).getD "")
       ++ ((Lean4Fmt.Syntax.leading? c).getD "")
-    return gap.toList.all (·.isWhitespace) && gap.toList.any (· == '\n')
-      && (multi pBody || multi cBody)
+    let nls := (gap.toList.filter (· == '\n')).length
+    return gap.toList.all (·.isWhitespace) && nls ≥ 1
+      && (multi pBody || multi cBody || nls ≥ 2)
   let mut acc : Doc := .nil
   let mut prev : Option (Lean.Syntax × Doc) := none   -- previous form + its body; trailing HELD
   let mut pendTrail : Doc := .nil
@@ -108,7 +109,16 @@ def emit
         -- swallow prev trailing + c leading (both pure ws): impose the rhythm
         acc := acc ++ .blank style.blankLines.betweenTopLevelDecls ++ body
       else
-        acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leadingRaw c ++ body
+        -- adjacent ONE-LINER pair (ws-only gap, no blank line): adjacency is
+        -- content, but the gap bytes canonicalize to a single newline
+        let gap := ((Lean4Fmt.Syntax.trailing? p).getD "")
+          ++ ((Lean4Fmt.Syntax.leading? c).getD "")
+        if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize
+            && gap.toList.all (·.isWhitespace)
+            && (gap.toList.filter (· == '\n')).length == 1 then
+          acc := acc ++ .hardline ++ body
+        else
+          acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leadingRaw c ++ body
     | none =>
       acc := acc ++ Lean4Fmt.Emit.leadingRaw c ++ body
     prev := some (c, body)
