@@ -433,7 +433,8 @@ def emit
   let valKind := dargs[3]?.map (·.getKind)
   let isEqns := valKind == some ``Lean.Parser.Command.declValEqns
   let isActiveVal := valKind == some ``Lean.Parser.Command.declValSimple || isEqns
-  if defn.getKind == ``Lean.Parser.Command.inductive then
+  if defn.getKind == ``Lean.Parser.Command.inductive
+      || defn.getKind == ``Lean.Parser.Command.structure then
     -- `where`-style inductive: modifiers as usual, head + one ctor per line at
     -- +2 (Command.inductiveDoc?). Ctor doc comments ride byte-exact; inter-ctor
     -- line comments and blank groups place structurally (the ctor loop owns
@@ -442,7 +443,10 @@ def emit
     -- whole-declaration verbatim, as does any shape the layout can't hold.
     if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
       return (← verbatim stx)
-    match Command.inductiveDoc? defn with
+    let inner? := if defn.getKind == ``Lean.Parser.Command.inductive
+      then Command.inductiveDoc? defn
+      else Command.structureDoc? defn
+    match inner? with
     | some d =>
       let attrsOwnLine := (← read).breaking.attributesOwnLine
       let (modsDoc, _) := match a[0]? with
