@@ -66,6 +66,11 @@ private structure Item where
   prefixDoc : Doc
   hasPrefix : Bool
   line      : String
+  /-- the `name (binders)` segment of `line`, when the site aligns name columns
+      (§7 structFields); empty when the site aligns trailing comments only -/
+  nameSeg   : String := ""
+  /-- the `: τ (:= v)` remainder matching `nameSeg` -/
+  restSeg   : String := ""
   trailT    : String
   deriving Inhabited
 
@@ -78,26 +83,60 @@ private structure Item where
     (which opts the whole run out rather than padding raggedly); `.never`
     emits everything plain. -/
 private def assemble
-            (mode : Lean4Fmt.Style.AlignMode)
+            (trailMode : Lean4Fmt.Style.AlignMode)
+            (colMode : Lean4Fmt.Style.AlignMode)
             (maxDelta : Nat)
             (items : Array Item)
             : Doc := Id.run do
-  let alignOn := mode != Lean4Fmt.Style.AlignMode.never
-  let cap := if mode == Lean4Fmt.Style.AlignMode.always then 1000000 else maxDelta
+  let trailOn := trailMode != Lean4Fmt.Style.AlignMode.never
+  let colOn := colMode != Lean4Fmt.Style.AlignMode.never
+  let cap := if trailMode == Lean4Fmt.Style.AlignMode.always
+      || colMode == Lean4Fmt.Style.AlignMode.always
+    then 1000000 else maxDelta
   let plain (o : Doc) (it : Item) : Doc :=
     o ++ it.sep ++ it.prefixDoc ++ .text it.line
       ++ (if it.trailT.isEmpty then Doc.nil else .text (" " ++ it.trailT))
   let flush (o : Doc) (run : Array Item) : Doc := Id.run do
+    if run.size < 2 then
+      -- short runs emit plainly, WITH their separators
+      let mut o := o
+      for it in run do o := plain o it
+      return o
+    -- the run's leading separator is emitted once, outside the alignOr — the
+    -- fallback must start sep-less, or a fallback render would double it (a
+    -- spurious blank that shifts the run every pass: caught as idempotence
+    -- failures by the harness)
+    let mut fallback : Doc := .nil
+    for h : i in [0:run.size] do
+      let it := run[i]!
+      if i == 0 then
+        fallback := fallback ++ it.prefixDoc ++ .text it.line
+          ++ (if it.trailT.isEmpty then Doc.nil else .text (" " ++ it.trailT))
+      else fallback := plain fallback it
     if run.size >= 2 then
-      let rows := run.map (fun it => #[Doc.text it.line, Doc.text it.trailT])
-      return o ++ run[0]!.sep ++ Doc.alignTable { sep := " ", maxDelta := cap } rows
-    let mut o := o
-    for it in run do o := plain o it
-    return o
+      -- name-column rows when the site provides the split (structFields);
+      -- [code, comment] rows otherwise. A row without a trailing comment is
+      -- shorter — its last populated column goes unpadded, so no trailing
+      -- whitespace is ever produced.
+      let rows := run.map (fun it =>
+        if colOn && !it.nameSeg.isEmpty then
+          if it.trailT.isEmpty then #[Doc.text it.nameSeg, Doc.text it.restSeg]
+          else #[Doc.text it.nameSeg, Doc.text it.restSeg, Doc.text it.trailT]
+        else
+          if it.trailT.isEmpty then #[Doc.text it.line]
+          else #[Doc.text it.line, Doc.text it.trailT])
+      return o ++ run[0]!.sep
+        ++ Doc.alignOr { sep := " ", maxDelta := cap } rows fallback
+    return o ++ fallback  -- unreachable (size < 2 returned above)
+  -- run eligibility: plain separator, no doc-comment prefix, and — when only
+  -- trailing alignment is on — a trailing comment to align
+  let eligible (it : Item) : Bool :=
+    it.plainSep && !it.hasPrefix
+      && ((colOn && !it.nameSeg.isEmpty) || (trailOn && !it.trailT.isEmpty))
   let mut out : Doc := .nil
   let mut run : Array Item := #[]
   for it in items do
-    if alignOn && it.plainSep && !it.hasPrefix && !it.trailT.isEmpty then
+    if eligible it then
       run := run.push it
     else
       out := flush out run
@@ -170,7 +209,7 @@ def inductiveDoc?
     items := items.push
       { sep, plainSep, prefixDoc := docD, hasPrefix := !(docD matches Doc.nil),
         line, trailT := if owned then trailT else "" }
-  let body := assemble alignMode alignDelta items
+  let body := assemble alignMode .never alignDelta items
   let derD : Doc := if hasDer then derSep ++ .text derT else .nil
   return some (.text head ++ .nest 2 (body ++ derD))
 
@@ -181,7 +220,7 @@ def inductiveDoc?
     surprise. -/
 private def fieldDoc?
             (f : Lean.Syntax)
-            : Option (Doc × String) := Id.run do
+            : Option (Doc × String × String × String) := Id.run do
   if f.getKind != ``Lean.Parser.Command.structSimpleBinder then return none
   let a := f.getArgs
   if a.size != 4 then return none
@@ -210,12 +249,12 @@ private def fieldDoc?
     | _ => return none
   let defT := ((a[3]?.map bareSrc).getD "").trimAscii.toString
   if defT.any (· == '\n') then return none
-  let line := modsT ++ nameT
-    ++ (parts.foldl (fun s p => s ++ " " ++ p) "")
-    ++ (match tyT with | some t => " : " ++ t | none => "")
-    ++ (if defT.isEmpty then "" else " " ++ defT)
+  let nameSeg := modsT ++ nameT ++ (parts.foldl (fun s p => s ++ " " ++ p) "")
+  let restSeg := (match tyT with | some t => ": " ++ t | none => "")
+    ++ (if defT.isEmpty then "" else (if tyT.isSome then " " else "") ++ defT)
+  let line := nameSeg ++ (if restSeg.isEmpty then "" else " " ++ restSeg)
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
-  return some (docD, line)
+  return some (docD, nameSeg, restSeg, line)
 
 /-- Active layout for a `structure`/`class` declaration (WITHOUT its modifiers —
     `Decl.emit` places those): head on one line
@@ -226,6 +265,7 @@ private def fieldDoc?
 def structureDoc?
     (defn : Lean.Syntax)
     (alignMode : Lean4Fmt.Style.AlignMode)
+    (fieldColMode : Lean4Fmt.Style.AlignMode)
     (alignDelta : Nat)
     : Option Doc := Id.run do
   let a := defn.getArgs
@@ -285,11 +325,11 @@ def structureDoc?
     let lead := (Lean4Fmt.Syntax.leading? f).getD ""
     let some sep := leadingSep? lead | return none
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
-    let some (docD, line) := fieldDoc? f | return none
+    let some (docD, nameSeg, restSeg, line) := fieldDoc? f | return none
     items := items.push
       { sep, plainSep, prefixDoc := docD, hasPrefix := !(docD matches Doc.nil),
-        line, trailT := if owned then trailT else "" }
-  let body := assemble alignMode alignDelta items
+        line, nameSeg, restSeg := restSeg, trailT := if owned then trailT else "" }
+  let body := assemble alignMode fieldColMode alignDelta items
   return some (.text head ++ .nest 2 (body ++ derD))
 
 /-- Emit the Command construct rooted at `stx`, recursing via `walk`:

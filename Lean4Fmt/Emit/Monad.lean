@@ -97,6 +97,28 @@ def leadingSep?
       blanks := 0
   return some (d ++ (if blanks > 0 then .blank blanks else .hardline))
 
+/-- §7 matchArms: the aligned form `| pat => body` with the arrow column padded
+    across a whole arm set — offered via `alignOr`, so the delta guardrail and
+    the line width decide at render time; `fallback` is the ordinary per-arm
+    layout. Only when EVERY arm has a flattenable pattern and an inline-capable
+    body (a broken body opts the whole set out — mixed grids read worse than no
+    grid). -/
+def armsAligned
+    (mode : Lean4Fmt.Style.AlignMode)
+    (maxDelta : Nat)
+    (arms : Array (Doc × Option Doc))
+    (fallback : Doc)
+    : Doc := Id.run do
+  if mode == Lean4Fmt.Style.AlignMode.never || arms.size < 2 then return fallback
+  let mut rows : Array (Array Doc) := #[]
+  for (p, b?) in arms do
+    let some b := b? | return fallback
+    if (Lean4Fmt.Doc.flatWidth p).isNone || (Lean4Fmt.Doc.flatWidth b).isNone then
+      return fallback
+    rows := rows.push #[Doc.text "| " ++ p, Doc.text "=>", b]
+  let cap := if mode == Lean4Fmt.Style.AlignMode.always then 1000000 else maxDelta
+  return Doc.alignOr { sep := " ", maxDelta := cap } rows fallback
+
 /-- The leading trivia (comments + blank lines) before a form, as literal text. -/
 def leadingRaw (stx : Lean.Syntax) : Doc := .textRaw (Lean4Fmt.Syntax.leading? stx |>.getD "")
 

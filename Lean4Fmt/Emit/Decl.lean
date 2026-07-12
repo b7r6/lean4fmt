@@ -335,6 +335,7 @@ private def valForm
     if alts.isEmpty then return .span (← verbatim declVal)
     let mut armsDoc : Doc := .nil
     let mut first := true
+    let mut aligned : Array (Doc × Option Doc) := #[]
     for alt in alts do
       let aa := alt.getArgs
       let patDoc ← walk (aa[1]?.getD .missing)
@@ -348,7 +349,11 @@ private def valForm
       let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
       armsDoc := armsDoc ++ (if first then .nil else .hardline) ++ armDoc
       first := false
-    return .eqns armsDoc
+      let inlineOk := body.getKind != ``Lean.Parser.Term.do
+        && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
+      aligned := aligned.push (patDoc, if inlineOk then some bodyDoc else none)
+    let al := (← read).alignment
+    return .eqns (armsAligned al.matchArms al.maxDelta aligned armsDoc)
   else
     return .span (← verbatim declVal)   -- where-struct: literal span
 
@@ -493,7 +498,7 @@ def emit
     let al := (← read).alignment
     let inner? := if defn.getKind == ``Lean.Parser.Command.inductive
       then Command.inductiveDoc? defn al.trailingComments al.maxDelta
-      else Command.structureDoc? defn al.trailingComments al.maxDelta
+      else Command.structureDoc? defn al.trailingComments al.structFields al.maxDelta
     match inner? with
     | some d =>
       let attrsOwnLine := (← read).breaking.attributesOwnLine

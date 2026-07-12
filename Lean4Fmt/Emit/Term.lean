@@ -199,6 +199,7 @@ partial def emit
       if alts.isEmpty || head.any (· == '\n') then return (← verbatim stx)
       let mut armsDoc : Doc := .nil
       let mut first := true
+      let mut aligned : Array (Doc × Option Doc) := #[]
       for alt in alts do
         let aa := alt.getArgs
         let patDoc ← walk (aa[1]?.getD .missing)
@@ -212,7 +213,12 @@ partial def emit
         let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
         armsDoc := armsDoc ++ (if first then .nil else .hardline) ++ armDoc
         first := false
-      return .text head ++ .hardline ++ armsDoc
+        let inlineOk := body.getKind != ``Lean.Parser.Term.do
+          && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
+        aligned := aligned.push (patDoc, if inlineOk then some bodyDoc else none)
+      let al := (← read).alignment
+      return .text head ++ .hardline
+        ++ armsAligned al.matchArms al.maxDelta aligned armsDoc
     else if kind.toString == "termDepIfThenElse" then
       -- [if, binderIdent, :, cond, then, thenBranch, else, elseBranch] — the
       -- dependent `if h : c then … else …`; same layout as termIfThenElse.

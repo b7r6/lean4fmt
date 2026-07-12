@@ -38,6 +38,7 @@ partial def flatWidth : Doc → Option Nat
   | .verbatim s _ => if s.any (· == '\n') then none else some s.trimAscii.toString.length
   | .blank _ => none
   | .alignTable _ _ => none
+  | .alignOr _ _ fb => flatWidth fb
 
 /-- Whether a doc contains a multi-line opaque block (`verbatim`/`textRaw` with a
     newline). Such blocks re-anchor by column, which is only idempotent at their
@@ -51,6 +52,7 @@ partial def hasMultilineVerbatim : Doc → Bool
   | .cat a b => hasMultilineVerbatim a || hasMultilineVerbatim b
   | .group d | .nest _ d | .align d | .flatten d => hasMultilineVerbatim d
   | .alignTable _ rows => rows.any (·.any hasMultilineVerbatim)
+  | .alignOr _ _ fb => hasMultilineVerbatim fb
   | _ => false
 
 /-- Coverage accounting (DESIGN_V2 §15): byte attribution over a produced doc.
@@ -75,6 +77,7 @@ partial def stats : Doc → (Nat × Nat × Nat)
           let (a, v, t) := stats c
           (acc.1 + a, acc.2.1 + v, acc.2.2 + t)) acc)
       (0, 0, 0)
+  | .alignOr _ _ fb => stats fb
   | _ => (0, 0, 0)
 
 /-- Width a doc contributes to the CURRENT line, up to its first possible break
@@ -98,6 +101,7 @@ partial def firstLineWidth : Doc → Nat × Bool
   | .group d | .nest _ d | .align d => firstLineWidth d
   | .flatten d => match flatWidth d with | some w => (w, false) | none => firstLineWidth d
   | .alignTable _ _ => (0, true)
+  | .alignOr _ _ fb => firstLineWidth fb
 
 private def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')private def newlines (n : Nat) : String := String.ofList (List.replicate n '\n')
 
@@ -213,6 +217,31 @@ partial def render
       (strRows.foldl (fun (p : RSt × Bool) r =>
         let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
         (wr st indent (renderRow r), false)) (st, true)).1
+    | .alignOr spec rows fallback =>
+      -- padded table when the delta guardrail holds AND every padded row fits
+      -- the width at this indent; the ordinary fallback layout otherwise
+      let cellStr (c : Doc) : String := (go c indent true {}).out
+      let strRows := rows.map (·.map cellStr)
+      let ncol := strRows.foldl (fun m r => Nat.max m r.size) 0
+      let maxOf (j : Nat) : Nat := strRows.foldl (fun m r => Nat.max m ((r[j]?.getD "").length)) 0
+      let minOf (j : Nat) : Nat :=
+        strRows.foldl (fun m r =>
+          if j < r.size then Nat.min m ((r[j]?.getD "").length) else m) 1000000
+      let deltaOk := (Array.range ncol).all fun j =>
+        j + 1 == ncol || maxOf j - minOf j ≤ spec.maxDelta
+      let widths := (Array.range ncol).map maxOf
+      let renderRow (r : Array String) : String :=
+        (Array.range r.size).foldl (fun acc j =>
+          let cell := r[j]?.getD ""
+          let last := j + 1 == r.size
+          let pad := if last then "" else spaces ((widths[j]?.getD 0) - cell.length)
+          acc ++ cell ++ pad ++ (if last then "" else spec.sep)) ""
+      let rowsFit := strRows.all fun r => indent + (renderRow r).length ≤ width
+      if deltaOk && rowsFit && rows.size ≥ 2 then
+        (strRows.foldl (fun (p : RSt × Bool) r =>
+          let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
+          (wr st indent (renderRow r), false)) (st, true)).1
+      else go fallback indent flat st
   let st := go doc 0 false {}
   -- NOTE: no blanket trailing-whitespace strip — active layout never emits trailing
   -- whitespace, and a final-pass strip would damage the interior lines of multi-line
