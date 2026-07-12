@@ -27,12 +27,13 @@ open Lean Lean4Fmt.Doc
     LINES: an explicit `;` joins its neighbors into one group (rendered as one
     line, `t1; t2; t3`); empty separator slots (newlines) split groups. `none`
     on a trailing `;` or a structural surprise. -/
-private def tacticGroups?
+private def seqGroupsCore?
+            (seqKind seq1Kind : Lean.Name)
             (seq : Lean.Syntax)
             : Option (Array (Array Lean.Syntax)) := Id.run do
-  if seq.getKind != ``Lean.Parser.Tactic.tacticSeq then return none
+  if seq.getKind != seqKind then return none
   let s1 := (seq.getArgs[0]?).getD .missing
-  if s1.getKind != ``Lean.Parser.Tactic.tacticSeq1Indented then return none
+  if s1.getKind != seq1Kind then return none
   let some inner := s1.getArgs[0]? | return none
   let mut groups : Array (Array Lean.Syntax) := #[]
   let mut cur : Array Lean.Syntax := #[]
@@ -55,6 +56,12 @@ private def tacticGroups?
   if !cur.isEmpty then groups := groups.push cur
   if groups.isEmpty then return none
   return some groups
+
+private def tacticGroups? (seq : Lean.Syntax) : Option (Array (Array Lean.Syntax)) :=
+  seqGroupsCore? ``Lean.Parser.Tactic.tacticSeq ``Lean.Parser.Tactic.tacticSeq1Indented seq
+
+private def convGroups? (seq : Lean.Syntax) : Option (Array (Array Lean.Syntax)) :=
+  seqGroupsCore? `Lean.Parser.Tactic.Conv.convSeq `Lean.Parser.Tactic.Conv.convSeq1Indented seq
 
 /-- One `;`-joined run as a single line: items token-for-token joined by
     `"; "`. `none` when an item is multi-line, carries an interior comment, or
@@ -119,8 +126,9 @@ private def seqGroupsDoc?
 private def armSeqDoc?
             (walk : Lean4Fmt.Emit.Walk)
             (seq : Lean.Syntax)
+            (conv : Bool := false)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
-  let some groups := tacticGroups? seq | return none
+  let some groups := (if conv then convGroups? seq else tacticGroups? seq) | return none
   if groups.size == 1 then
     let lead := (Lean4Fmt.Syntax.leading? groups[0]![0]!).getD ""
     let plainLead := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
@@ -131,6 +139,28 @@ private def armSeqDoc?
   match ← seqGroupsDoc? walk groups true with
   | some body => return some (.nest 2 body)
   | none => return none
+
+/-- A head-block tactic (`next h => …`, `case foo => …`, `all_goals …`,
+    `repeat …`, `conv at x => …`): head tokens single-line joined, the body
+    sequence via the branch layout (inline when a single clean flat group
+    fits; else one line per group at +2). The body's inter-group comments ride
+    the seam loop; comments in the HEAD have no home → `none`. -/
+private def headBlockDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            (conv : Bool := false)
+            : Lean4Fmt.Emit.EmitM (Option Doc) := do
+  let a := stx.getArgs
+  if a.size < 2 then return none
+  let mut head := ""
+  for c in a.extract 0 (a.size - 1) do
+    if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then return none
+    let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+    if t.any (· == '\n') then return none
+    if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
+  if head.isEmpty then return none
+  let some bD ← armSeqDoc? walk a[a.size - 1]! conv | return none
+  return some (.text head ++ bD)
 
 /-- Emit a Tactic-category construct: the `by` block (one tactic per line at
     +2), and the ported tactic interiors — `exact`/`apply`/`refine` (term
@@ -238,6 +268,31 @@ def emit
       let some bD ← armSeqDoc? walk seq | return (← Lean4Fmt.Emit.verbatim stx)
       d := d ++ .hardline ++ .text (lhsT ++ " =>") ++ bD
     return d
+  else if kind == `Lean.Parser.Tactic.«tacticNext_=>_» || kind == ``Lean.Parser.Tactic.case
+      || kind == ``Lean.Parser.Tactic.allGoals || kind == `Lean.Parser.Tactic.tacticRepeat_ then
+    match ← headBlockDoc? walk stx with
+    | some d => return d
+    | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if kind == `Lean.Parser.Tactic.Conv.conv then
+    match ← headBlockDoc? walk stx (conv := true) with
+    | some d => return d
+    | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if kind == `Lean.calcTactic then
+    -- basic calc: `calc` + steps, each step token-exact single-line, aligned
+    -- under the first step (indent 5 = "calc ")
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
+    let steps := a[1]!.getArgs
+    let mut ds : Array Doc := #[]
+    for st in steps do
+      let t := (Lean4Fmt.Emit.bareSrc st).trimAscii.toString
+      if t.isEmpty || t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+      ds := ds.push (.text t)
+    if ds.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut d : Doc := .text "calc " ++ ds[0]!
+    for i in [1:ds.size] do
+      d := d ++ .nest 5 (.hardline ++ ds[i]!)
+    return d
   else if kind == `Lean.cdot then
     -- bullet: [cdotTk, tacticSeq] — first group rides the bullet line
     -- (`· intro l; exact h`), the rest one line per group at +2 under it
@@ -266,7 +321,13 @@ def emit
       || kind == ``Lean.Parser.Tactic.constructor || kind == ``Lean.Parser.Tactic.tacticTrivial
       || kind == ``Lean.Parser.Tactic.contradiction || kind == ``Lean.Parser.Tactic.assumption
       || kind == ``Lean.Parser.Tactic.tacticAnd_intros || kind == ``Lean.Parser.Tactic.simpAll
-      || kind == ``Lean.Parser.Tactic.intro || kind == ``Lean.Parser.Tactic.intros then
+      || kind == ``Lean.Parser.Tactic.intro || kind == ``Lean.Parser.Tactic.intros
+      || kind == ``Lean.Parser.Tactic.split || kind == `Lean.Parser.Tactic.obtain
+      || kind == `Lean.Parser.Tactic.rcases || kind == ``Lean.Parser.Tactic.show
+      || kind == `Lean.Parser.Tactic.subst || kind == `Lean.Parser.Tactic.«tacticExists_,,»
+      || kind == ``Lean.Parser.Tactic.change || kind == `«tacticBy_cases_:_»
+      || kind == `Lean.Parser.Tactic.tacticSuffices_
+      || kind == `Lean.Parser.Tactic.«tactic_<;>_» then
     -- token-line tactics: single line, token-for-token, single-spaced
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
     let mut line := ""

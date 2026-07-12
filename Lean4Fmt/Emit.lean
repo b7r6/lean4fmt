@@ -82,7 +82,23 @@ partial def walk
          || kind == ``Lean.Parser.Tactic.simpAll
          || kind == ``Lean.Parser.Tactic.intro
          || kind == ``Lean.Parser.Tactic.intros
-         || kind == ``Lean.Parser.Tactic.simp then
+         || kind == ``Lean.Parser.Tactic.simp
+         || kind == `Lean.Parser.Tactic.«tacticNext_=>_»
+         || kind == ``Lean.Parser.Tactic.case
+         || kind == ``Lean.Parser.Tactic.allGoals
+         || kind == `Lean.Parser.Tactic.tacticRepeat_
+         || kind == `Lean.Parser.Tactic.Conv.conv
+         || kind == `Lean.calcTactic
+         || kind == ``Lean.Parser.Tactic.split
+         || kind == `Lean.Parser.Tactic.obtain
+         || kind == `Lean.Parser.Tactic.rcases
+         || kind == ``Lean.Parser.Tactic.show
+         || kind == `Lean.Parser.Tactic.subst
+         || kind == `Lean.Parser.Tactic.«tacticExists_,,»
+         || kind == ``Lean.Parser.Tactic.change
+         || kind == `«tacticBy_cases_:_»
+         || kind == `Lean.Parser.Tactic.tacticSuffices_
+         || kind == `Lean.Parser.Tactic.«tactic_<;>_» then
       Tactic.emit walk stx
     -- expression constructs → Term (flat, comment-guarded; else verbatim)
     else if Lean4Fmt.Syntax.isBinOp kind
