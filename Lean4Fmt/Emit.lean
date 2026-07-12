@@ -53,7 +53,15 @@ partial def walk
          || kind == ``Lean.Parser.Term.doIf
          || kind == ``Lean.Parser.Term.doMatch then
       DoNotation.emit walk stx
-    else if kind == ``Lean.Parser.Term.byTactic then Tactic.emit walk stx
+    else if kind == ``Lean.Parser.Term.byTactic
+         || kind == ``Lean.Parser.Tactic.exact
+         || kind == ``Lean.Parser.Tactic.apply
+         || kind == ``Lean.Parser.Tactic.refine
+         || kind == ``Lean.Parser.Tactic.rwSeq
+         || kind == ``Lean.Parser.Tactic.unfold
+         || kind == ``Lean.Parser.Tactic.induction
+         || kind == ``Lean.Parser.Tactic.cases then
+      Tactic.emit walk stx
     -- expression constructs → Term (flat, comment-guarded; else verbatim)
     else if Lean4Fmt.Syntax.isBinOp kind
          || kind == ``Lean.Parser.Term.arrow
