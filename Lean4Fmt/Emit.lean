@@ -55,6 +55,7 @@ partial def walk
     else if kind == ``Lean.Parser.Term.byTactic then Tactic.emit walk stx
     -- expression constructs → Term (flat, comment-guarded; else verbatim)
     else if Lean4Fmt.Syntax.isBinOp kind
+         || kind == ``Lean.Parser.Term.arrow
          || kind == ``Lean.Parser.Term.app
          || kind == ``Lean.Parser.Term.paren
          || kind == ``Lean.Parser.Term.proj

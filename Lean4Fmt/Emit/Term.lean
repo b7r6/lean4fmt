@@ -68,8 +68,10 @@ partial def emit
   | .atom _ v => return .text v
   | .ident _ _ n _ => return .text n.toString
   | .node _ kind args =>
-    -- binary operator: lhs ␣ op ␣ rhs
-    if Lean4Fmt.Syntax.isBinOp kind && args.size == 3 then
+    -- binary operator: lhs ␣ op ␣ rhs. `Term.arrow` is the same 3-slot shape
+    -- (the atom carries the source spelling — `→` or `->` — and the token gate
+    -- cares, so it rides through the walk as-is).
+    if (Lean4Fmt.Syntax.isBinOp kind || kind == ``Lean.Parser.Term.arrow) && args.size == 3 then
       -- `lhs op rhs` — width-aware: flat if it fits, else break BEFORE the operator
       -- (the operator leads the continuation line, indented by continuationIndent).
       let lhs ← walk args[0]!

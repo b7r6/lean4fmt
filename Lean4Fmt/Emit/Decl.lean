@@ -109,13 +109,49 @@ private def commentBlock?
       let dedented := ls.map (fun l => if l.length ≥ base then String.ofList (l.toList.drop base) else l)
       return some (String.intercalate "\n" dedented)
 
+/-- A binder as a single active line: bracket atoms from source, the interior
+    segments trimmed and single-spaced (`(x  :  Nat)` → `(x : Nat)`). Only the
+    bracketed binder kinds; `none` (caller falls back to per-binder verbatim)
+    on anything else, a multi-line piece, or a comment (a line comment forces a
+    newline into its segment, so the '\n' guard covers it). -/
+private def binderText?
+            (b : Lean.Syntax)
+            : Option String := Id.run do
+  let k := b.getKind
+  if k != ``Lean.Parser.Term.explicitBinder && k != ``Lean.Parser.Term.implicitBinder
+      && k != ``Lean.Parser.Term.strictImplicitBinder && k != ``Lean.Parser.Term.instBinder then
+    return none
+  let a := b.getArgs
+  if a.size < 3 then return none
+  let l := (bareSrc a[0]!).trimAscii.toString
+  let r := (bareSrc a[a.size-1]!).trimAscii.toString
+  if l.isEmpty || r.isEmpty then return none
+  let mut interior := ""
+  for c in a.extract 1 (a.size - 1) do
+    let t := (bareSrc c).trimAscii.toString
+    if t.any (· == '\n') then return none
+    if !t.isEmpty then interior := if interior.isEmpty then t else interior ++ " " ++ t
+  if interior.isEmpty then return none
+  return some (l ++ interior ++ r)
+
+/-- A binder doc: active single-line text when `binderText?` can hold it,
+    verbatim otherwise. -/
+private def binderDoc
+            (b : Lean.Syntax)
+            : EmitM Doc := do
+  match binderText? b with
+  | some t => pure (.text t)
+  | none => verbatim b
+
 /-- Signature return-type info: `none` if there is no type spec, else
     `(termDoc, colonTypeDoc, flatWidth, multiline?)` where `termDoc` is the type
-    term alone (no colon) and `colonTypeDoc` is the whole `: τ` byte-exact (with
-    the colon). Callers use `termDoc` (adding their own `: `) when it is single
-    line, and `colonTypeDoc` when it is multi-line or an unexpected shape (so the
-    colon is never lost). -/
+    term alone (no colon) — WALKED, so arrow chains and applications lay out
+    actively and width-aware — and `colonTypeDoc` is the whole `: τ` byte-exact
+    (with the colon). Callers use `termDoc` (adding their own `: `) when it is
+    clean, and `colonTypeDoc` when the term carries a comment or a multi-line
+    opaque block (so the colon and the bytes are never lost). -/
 private def typeInfo
+            (walk : Lean4Fmt.Emit.Walk)
             (sig : Lean.Syntax)
             : EmitM (Option (Doc × Doc × Nat × Bool)) := do
   let a := sig.getArgs
@@ -123,14 +159,21 @@ private def typeInfo
     if x.getKind == ``Lean.Parser.Term.typeSpec then some x else x.getArgs[0]?)
   match tsNode with
   | some ts =>
-    if ts.getKind == ``Lean.Parser.Term.typeSpec then
-      let term ← verbatim (ts.getArgs[1]?.getD .missing)
+    if ts.getKind == ``Lean.Parser.Term.typeSpec
+        && !Lean4Fmt.Syntax.subtreeHasLineComment ts then
+      let term ← walk (ts.getArgs[1]?.getD .missing)
       let colonType ← verbatim ts
-      return some (term, colonType, (Lean4Fmt.Doc.flatWidth term).getD 0,
-                   Lean4Fmt.Doc.hasMultilineVerbatim term)
+      let w := (← read).layout.lineWidth
+      -- a type too wide to EVER fit flat would explode into the all-or-nothing
+      -- group layouts (a 20-element byte list, one element per line) — keep the
+      -- author's hand-packed span for those until a fill mode exists (§5)
+      let tooWide := (Lean4Fmt.Doc.flatWidth term).getD (w + 1) > w
+      if Lean4Fmt.Doc.hasMultilineVerbatim term || tooWide then
+        return some (colonType, colonType, (Lean4Fmt.Doc.flatWidth colonType).getD 0, true)
+      return some (term, colonType, (Lean4Fmt.Doc.flatWidth term).getD 0, false)
     else
       let ct ← verbatim ts
-      return some (ct, ct, (Lean4Fmt.Doc.flatWidth ct).getD 0, true)  -- unexpected: use whole span
+      return some (ct, ct, (Lean4Fmt.Doc.flatWidth ct).getD 0, true)  -- comment/unexpected: whole span
   | none => return none
 
 /-- Reflow an `optDeclSig`/`declSig` = [binders, typeSpec?] under the binder-layout
@@ -150,12 +193,13 @@ private def typeInfo
     opaque block in a nest could drift); it is reproduced byte-exact with its
     colon. -/
 private def sigDoc
+            (walk : Lean4Fmt.Emit.Walk)
             (nameCol prefixWidth reserve : Nat)
             (sig : Lean.Syntax)
             : EmitM Doc := do
   let a := sig.getArgs
   let binders := (a[0]?.map (·.getArgs)).getD #[]
-  let ti ← typeInfo sig
+  let ti ← typeInfo walk sig
   let mode := (← read).breaking.binders
   let cont := (← read).layout.continuationIndent
   let w := (← read).layout.lineWidth
@@ -168,7 +212,7 @@ private def sigDoc
       match commentBlock? ((Lean4Fmt.Syntax.leading? b).getD "") with
       | some cmt => d := d ++ .hardline ++ .verbatim cmt 0
       | none => pure ()
-      d := d ++ .hardline ++ (← verbatim b)
+      d := d ++ .hardline ++ (← binderDoc b)
     match ti with
     | some (term, colonType, _, multi) =>
       if multi then d := d ++ .hardline ++ colonType         -- multi-line type: own line, byte-exact
@@ -179,7 +223,7 @@ private def sigDoc
     let mut d : Doc := .nil
     let mut first := true
     for b in binders do
-      let bd ← verbatim b
+      let bd ← binderDoc b
       d := d ++ (if first then .space else .group (.line)) ++ bd
       first := false
     match ti with
@@ -191,7 +235,7 @@ private def sigDoc
     let mut bdoc : Doc := .nil
     let mut bwidth := 0
     for b in binders do
-      let bd ← verbatim b
+      let bd ← binderDoc b
       bdoc := bdoc ++ .space ++ bd
       bwidth := bwidth + 1 + (Lean4Fmt.Doc.flatWidth bd).getD 0
     match ti with
@@ -340,10 +384,10 @@ private def defnDoc
   let mut bInline : Doc := .nil
   let mut bW := 0
   for b in binders do
-    let bd ← verbatim b
+    let bd ← binderDoc b
     bInline := bInline ++ .space ++ bd
     bW := bW + 1 + (Lean4Fmt.Doc.flatWidth bd).getD 0
-  let ti ← match sigStx with | some s => typeInfo s | none => pure none
+  let ti ← match sigStx with | some s => typeInfo walk s | none => pure none
   let typeOK := match ti with | some (_, _, _, multi) => !multi | none => true
   let typeW := match ti with | some (_, _, tw, false) => 3 + tw | _ => 0
   -- Equation-style value: the signature stays inline when it fits (matching the
@@ -360,7 +404,7 @@ private def defnDoc
         let typeInline : Doc := match ti with | some (term, _, _, false) => .text " : " ++ term | _ => .nil
         pure (bInline ++ typeInline)
       else
-        match sigStx with | some s => sigDoc nameCol prefixWidth 0 s | none => pure .nil
+        match sigStx with | some s => sigDoc walk nameCol prefixWidth 0 s | none => pure .nil
     return .text kw ++ .space ++ .text declId ++ sigDocFinal ++ .nest 2 (.hardline ++ arms)
   | _ => pure ()
   let vFlat := vf.flatWidth
@@ -385,7 +429,7 @@ private def defnDoc
         else .text " :=" ++ .group (.nest 2 (.line ++ d))
       | .eqns _ => .nil     -- unreachable: eqns returned above
     let reserve := (Lean4Fmt.Doc.firstLineWidth valBroken).1
-    let sig ← match sigStx with | some s => sigDoc nameCol prefixWidth reserve s | none => pure .nil
+    let sig ← match sigStx with | some s => sigDoc walk nameCol prefixWidth reserve s | none => pure .nil
     return .text kw ++ .space ++ .text declId ++ sig ++ valBroken
 
 /-- True when a line comment hides in the modifiers REGION: in trivia between the
