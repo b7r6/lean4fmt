@@ -18,6 +18,11 @@
         flat mode appends ONE newline-free string of length exactly n and
         advances the column by exactly n. This is what makes `group`'s fit
         decision (and goFill's packing) an oracle rather than a heuristic.
+    T3  leadingSep?_content — the seam kit is content-exact: when a vertical
+        loop owns a form's leading trivia, the separator doc it emits carries
+        EXACTLY the trivia's non-whitespace characters (every comment, in
+        order); when a partial line carries content no seam owns, the answer
+        is `none` (verbatim), never a drop.
     T4  wr_out         — the writer's extension is exactly the written content
         (never an indent with nothing after it).
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -26,6 +31,7 @@
 import Lean4Fmt.Doc.Core
 import Lean4Fmt.Doc.Content
 import Lean4Fmt.Doc.Render
+import Lean4Fmt.Doc.Seam
 
 namespace Lean4Fmt.Doc.Proofs
 
@@ -757,5 +763,79 @@ theorem go_flat_exact (width maxPend : Nat) (d : Doc) (indent : Nat) (n : Nat)
       ∧ s.length = n ∧ '\n' ∉ s.toList :=
   ⟨flatRender d, go_flat width maxPend d indent n st hw hp,
    flatRender_length d n hw, flatRender_noNl d n wf hw⟩
+
+-- ── T3: seam content preservation ───────────────────────────────────────────
+
+@[simp] theorem content_append (a b : Doc) : content (a ++ b) = content a ++ content b := rfl
+
+theorem nonWsL_nil_of_wsLine (l : List Char) (h : wsLine l) : nonWsL l = [] := by
+  simp only [nonWsL, List.filter_eq_nil_iff]
+  intro a ha
+  have := List.all_eq_true.mp h a ha
+  simp only [Bool.or_eq_true, beq_iff_eq] at this
+  rcases this with rfl | rfl <;> decide
+
+@[simp] theorem content_seamSep (b : Nat) : content (seamSep b) = [] := by
+  unfold seamSep; split <;> simp [content]
+
+/-- The seam's interior emission carries exactly the lines' content: blank
+    lines denote nothing; each comment line's dedent (spaces only) and
+    trailing trim (whitespace only) are content-invariant. -/
+theorem seamLines_content (base : Nat) (blanks : Nat) (ls : List (List Char)) :
+    content (seamLines base blanks ls) = (ls.map nonWsL).flatten := by
+  induction ls generalizing blanks with
+  | nil => simp [seamLines]
+  | cons l ls ih =>
+    simp only [seamLines, List.map_cons, List.flatten_cons]
+    split
+    · next h => rw [ih, nonWsL_nil_of_wsLine l h, List.nil_append]
+    · simp only [content_append, content_seamSep, List.nil_append, content]
+      rw [ih, nonWs_ofList, nonWsL_trimEndWs, nonWsL_dedent]
+
+theorem flatten_map_dropLast (f : List Char → List Char) (ys : List (List Char))
+    (hy : ys ≠ []) :
+    (ys.map f).flatten = (ys.dropLast.map f).flatten ++ f (ys.getLast hy) := by
+  calc (ys.map f).flatten
+      = (((ys.dropLast ++ [ys.getLast hy]).map f)).flatten := by
+        rw [List.dropLast_concat_getLast hy]
+    _ = (ys.dropLast.map f).flatten ++ f (ys.getLast hy) := by
+        simp [List.map_append, List.flatten_append]
+
+/-- **T3 — seam content preservation.** When the seam kit owns a leading
+    trivia, the emitted separator doc carries EXACTLY the trivia's
+    non-whitespace characters: every comment survives, in order, nothing is
+    invented. (With `render_content`, the rendered seam bytes carry exactly
+    the trivia's comment content.) -/
+theorem leadingSep?_content (lead : String) (d : Doc)
+    (h : leadingSep? lead = some d) : content d = nonWs lead := by
+  unfold leadingSep? at h
+  split at h
+  · exact absurd h (by simp)
+  split at h
+  · exact absurd h (by simp)
+  next hh hl =>
+  simp only [Option.some.injEq] at h
+  subst h
+  rw [seamLines_content]
+  simp only [Bool.not_eq_eq_eq_not, Bool.not_true, Bool.not_eq_false] at hh hl
+  have hchain := splitLines_nonWs lead.toList
+  cases hls : splitLines lead.toList with
+  | nil => exact absurd hls (splitLines_ne_nil lead.toList)
+  | cons l0 rest =>
+    rw [hls] at hchain hh hl
+    simp only [List.drop_succ_cons, List.drop_zero]
+    simp only [List.headD_cons] at hh
+    simp only [List.map_cons, List.flatten_cons, nonWsL_nil_of_wsLine l0 hh,
+               List.nil_append] at hchain
+    cases rest with
+    | nil => simpa [nonWs] using hchain
+    | cons r1 rs =>
+      have hne : (r1 :: rs) ≠ [] := by simp
+      have hlast : (l0 :: r1 :: rs).getLastD [] = (r1 :: rs).getLast hne := by
+        simp [List.getLastD_eq_getLast?, List.getLast?_eq_getLast]
+      rw [hlast] at hl
+      rw [flatten_map_dropLast nonWsL (r1 :: rs) hne, nonWsL_nil_of_wsLine _ hl,
+          List.append_nil] at hchain
+      simpa [nonWs] using hchain
 
 end Lean4Fmt.Doc.Proofs

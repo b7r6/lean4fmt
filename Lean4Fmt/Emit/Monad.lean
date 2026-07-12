@@ -78,24 +78,8 @@ def passthrough
     capture — no seam for it; the caller goes verbatim). -/
 def leadingSep?
     (lead : String)
-    : Option Doc := Id.run do
-  let ls := lead.splitOn "\n"
-  let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
-  if !isWs (ls.headD "") then return none
-  let full := (ls.drop 1).dropLast
-  let content := full.filter (fun l => !isWs l)
-  let indentOf (l : String) : Nat := (l.toList.takeWhile (· == ' ')).length
-  let base := content.foldl (fun m l => Nat.min m (indentOf l)) 1000000
-  let mut d : Doc := .nil
-  let mut blanks := 0
-  for l in full do
-    if isWs l then blanks := blanks + 1
-    else
-      let ded := if l.length ≥ base then String.ofList (l.toList.drop base) else l
-      d := d ++ (if blanks > 0 then .blank blanks else .hardline)
-        ++ .textRaw ded.trimAsciiEnd.toString
-      blanks := 0
-  return some (d ++ (if blanks > 0 then .blank blanks else .hardline))
+    : Option Doc :=
+  Lean4Fmt.Doc.leadingSep? lead
 
 /-- §7 matchArms: the aligned form `| pat => body` with the arrow column padded
     across a whole arm set — offered via `alignOr`, so the delta guardrail and
