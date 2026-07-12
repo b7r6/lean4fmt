@@ -35,14 +35,41 @@ def mathlib
   blankLines := { straylight.blankLines with policy := .preserve }
 }
 
-/-- Placeholder — the `aniva` community style (§14.2). Currently = Straylight. -/
-def aniva : Style := straylight
+/-- The `aniva` style (Pantograph, §14.2): inline signatures, break-after
+    colon, no body blank, no alignment grids, blanks preserved, binder
+    interiors byte-exact (`s: String` stays). -/
+def aniva
+    : Style := {
+  layout     := { lineWidth := 120, indent := 2, continuationIndent := 4 }
+  breaking   := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,
+                  bodyOwnLine := false, compactDo := true, preserveLineBreaks := true }
+  alignment  := { structFields := .never, matchArms := .never, recordFields := .never,
+                  trailingComments := .never }
+  blankLines := { policy := .preserve }
+  spacing    := { preserveBinders := true }
+}
+
+/-- The `purtell` style (lithe): inline signatures, attributes on the def
+    line, EVERY body on its own line (no blank), no alignment grids, blanks
+    preserved. -/
+def purtell
+    : Style := {
+  layout     := { lineWidth := 120, indent := 2, continuationIndent := 4 }
+  breaking   := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := false,
+                  bodyOwnLine := false, compactDo := true,
+                  preserveLineBreaks := true }
+  alignment  := { structFields := .never, matchArms := .never, recordFields := .never,
+                  trailingComments := .never }
+  blankLines := { policy := .preserve }
+  spacing    := { preserveBinders := true }
+}
 
 /-- Look up a preset by name. -/
 def byName? : String → Option Style
   | "straylight" => some straylight
   | "mathlib"    => some mathlib
   | "aniva"      => some aniva
+  | "purtell"    => some purtell
   | _            => none
 
 /-- The default preset. -/

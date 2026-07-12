@@ -396,10 +396,20 @@ partial def emit
         let bodyDoc ← walk body
         -- a `do` body glues to the `=>` (its statements bring their own hardline);
         -- anything else is width-aware after the `=>`
+        let srcBroken := ((Lean4Fmt.Syntax.leading? body).getD "").any (· == '\n')
+        let preserveLB := (← read).breaking.preserveLineBreaks
         let bodyPart : Doc := if body.getKind == ``Lean.Parser.Term.do
           then .text " " ++ bodyDoc
+          else if preserveLB then
+            -- the author's `=>`-line decision is load-bearing
+            if srcBroken then Doc.nest 2 (Doc.hardline ++ bodyDoc)
+            else Doc.text " " ++ bodyDoc
           else .group (.nest 2 (.line ++ bodyDoc))
-        let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
+        let armSrc := (bareSrc alt).trimAscii.toString
+        let armDoc :=
+          if preserveLB && !armSrc.isEmpty && !armSrc.any (· == '\n') then
+            Doc.text armSrc
+          else .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
         armsDoc := armsDoc ++ sep ++ armDoc ++ trailDoc
         armsPlain := armsPlain ++ (if i == 0 then Doc.nil else .hardline) ++ armDoc
         let inlineOk := body.getKind != ``Lean.Parser.Term.do

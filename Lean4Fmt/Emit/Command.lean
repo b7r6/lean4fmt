@@ -26,7 +26,9 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
     declaration. -/
 private def ctorDoc?
             (c : Lean.Syntax)
+            (preserve : Bool)
             : Option (Doc × String) := Id.run do
+  let ctor := c
   if c.getKind != ``Lean.Parser.Command.ctor then return none
   let a := c.getArgs
   if a.size != 5 then return none
@@ -48,9 +50,13 @@ private def ctorDoc?
       pure (some t)
     | [] => pure (none : Option String)
     | _ => return none
-  let line := "| " ++ (if modsT.isEmpty then "" else modsT ++ " ") ++ nameT
+  let joined := "| " ++ (if modsT.isEmpty then "" else modsT ++ " ") ++ nameT
     ++ (parts.foldl (fun s p => s ++ " " ++ p) "")
     ++ (match tyT with | some t => " : " ++ t | none => "")
+  -- exact tail: the ctor bytes AFTER the doc comment (docD carries the doc)
+  let exact := (Lean4Fmt.Emit.bareSrc (Lean.mkNullNode (a.extract 1 a.size))).trimAscii.toString
+  let line := if preserve && !exact.isEmpty && !exact.any (· == '\n')
+      then "| " ++ exact else joined
   -- the doc comment is byte-exact on its own line above (it may be multi-line;
   -- it sits at a hardline position, literal emission is the stable choice)
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
@@ -151,6 +157,7 @@ def inductiveDoc?
     (defn : Lean.Syntax)
     (alignMode : Lean4Fmt.Style.AlignMode)
     (alignDelta : Nat)
+    (preserve : Bool := false)
     : Option Doc := Id.run do
   let a := defn.getArgs
   if a.size != 7 then return none
@@ -205,7 +212,13 @@ def inductiveDoc?
     let lead := (Lean4Fmt.Syntax.leading? c).getD ""
     let some sep := leadingSep? lead | return none
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
-    let some (docD, line) := ctorDoc? c | return none
+    let some (docD, line) := ctorDoc? c preserve | return none
+    -- preserve: the trailing comment's hand padding is part of the line
+    let rawTrail := (((Lean4Fmt.Syntax.trailing? c).getD "").trimAsciiEnd).toString
+    let (line, trailT) :=
+      if preserve && owned && !trailT.isEmpty && !rawTrail.any (· == '\n') then
+        (line ++ rawTrail, "")
+      else (line, trailT)
     items := items.push
       { sep, plainSep, prefixDoc := docD, hasPrefix := !(docD matches Doc.nil),
         line, trailT := if owned then trailT else "" }
@@ -220,6 +233,7 @@ def inductiveDoc?
     surprise. -/
 private def fieldDoc?
             (f : Lean.Syntax)
+            (preserve : Bool)
             : Option (Doc × String × String × String) := Id.run do
   if f.getKind != ``Lean.Parser.Command.structSimpleBinder then return none
   let a := f.getArgs
@@ -252,7 +266,11 @@ private def fieldDoc?
   let nameSeg := modsT ++ nameT ++ (parts.foldl (fun s p => s ++ " " ++ p) "")
   let restSeg := (match tyT with | some t => ": " ++ t | none => "")
     ++ (if defT.isEmpty then "" else (if tyT.isSome then " " else "") ++ defT)
-  let line := nameSeg ++ (if restSeg.isEmpty then "" else " " ++ restSeg)
+  let joined := nameSeg ++ (if restSeg.isEmpty then "" else " " ++ restSeg)
+  -- exact tail: the field bytes from the name onward (doc rides docD)
+  let exact := (Lean4Fmt.Emit.bareSrc (Lean.mkNullNode (a.extract 1 a.size))).trimAscii.toString
+  let line := if preserve && modsT.isEmpty && !exact.isEmpty && !exact.any (· == '\n')
+      then exact else joined
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
   return some (docD, nameSeg, restSeg, line)
 
@@ -267,6 +285,7 @@ def structureDoc?
     (alignMode : Lean4Fmt.Style.AlignMode)
     (fieldColMode : Lean4Fmt.Style.AlignMode)
     (alignDelta : Nat)
+    (preserve : Bool := false)
     : Option Doc := Id.run do
   let a := defn.getArgs
   if a.size != 6 then return none
@@ -325,7 +344,12 @@ def structureDoc?
     let lead := (Lean4Fmt.Syntax.leading? f).getD ""
     let some sep := leadingSep? lead | return none
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
-    let some (docD, nameSeg, restSeg, line) := fieldDoc? f | return none
+    let some (docD, nameSeg, restSeg, line) := fieldDoc? f preserve | return none
+    let rawTrail := (((Lean4Fmt.Syntax.trailing? f).getD "").trimAsciiEnd).toString
+    let (line, trailT) :=
+      if preserve && owned && !trailT.isEmpty && !rawTrail.any (· == '\n') then
+        (line ++ rawTrail, "")
+      else (line, trailT)
     items := items.push
       { sep, plainSep, prefixDoc := docD, hasPrefix := !(docD matches Doc.nil),
         line, nameSeg, restSeg := restSeg, trailT := if owned then trailT else "" }

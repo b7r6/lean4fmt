@@ -34,6 +34,13 @@ def trailing?
   | .original _ _ trailing _ => some (Substring.Raw.toString trailing)
   | _ => none
 
+/-- The trailing trivia of the LAST token in the subtree (robust against
+    trailing empty null slots, which defeat `getTailInfo`). -/
+partial def lastTokenTrailing? (stx : Lean.Syntax) : Option String :=
+  match trailing? stx with
+  | some t => some t
+  | none => stx.getArgs.reverse.findSome? lastTokenTrailing?
+
 /-- Does a trivia string contain a line comment `-- …`? (block comments `/- -/`
     are safe; only line comments eat the rest of the line — §0.4). -/
 def hasLineComment (s : String) : Bool := (s.splitOn "--").length > 1

@@ -109,8 +109,10 @@ private def branchDoc?
   if ss.size == 1 then
     let lead := (Lean4Fmt.Syntax.leading? ss[0]!).getD ""
     let plainLead := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
+    let srcInline := !lead.any (· == '\n')
     let trailT := ((Lean4Fmt.Syntax.trailing? ss[0]!).getD "").trimAscii.toString
-    if plainLead && (lastOwned || trailT.isEmpty) then
+    if plainLead && (lastOwned || trailT.isEmpty)
+        && (!(← read).breaking.preserveLineBreaks || srcInline) then
       let sDoc ← walk ss[0]!
       if (Lean4Fmt.Doc.flatWidth sDoc).isSome && !Lean4Fmt.Doc.hasMultilineVerbatim sDoc then
         return some (.group (.nest 2 (.line ++ sDoc)))
@@ -127,6 +129,13 @@ def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
     : Lean4Fmt.Emit.EmitM Doc := do
+  -- preserveLineBreaks: a single-line do-statement is byte-exact (the
+  -- author's `let x: T ← …` spacing survives); the do BLOCK itself and
+  -- multi-line statements stay structural
+  if (← read).breaking.preserveLineBreaks && stx.getKind != ``Lean.Parser.Term.do then
+    let t := Lean4Fmt.Emit.bareSrc stx
+    if !t.isEmpty && !t.any (· == '\n') then return .text t
+
   let kind := stx.getKind
   let a := stx.getArgs
   if kind == ``Lean.Parser.Term.doLet || kind == ``Lean.Parser.Term.doLetArrow then
@@ -246,7 +255,13 @@ def emit
       if Lean4Fmt.Doc.hasMultilineVerbatim patDoc then return (← Lean4Fmt.Emit.verbatim stx)
       let some bD ← branchDoc? walk aa[3]! (i + 1 == alts.size)
         | return (← Lean4Fmt.Emit.verbatim stx)
-      d := d ++ .hardline ++ .text "| " ++ patDoc ++ .text " =>" ++ bD
+      let armSrc := (Lean4Fmt.Emit.bareSrc alts[i]).trimAscii.toString
+      let armD : Doc :=
+        if (← read).breaking.preserveLineBreaks && !armSrc.isEmpty
+            && !armSrc.any (· == '\n') then
+          .text armSrc
+        else .text "| " ++ patDoc ++ .text " =>" ++ bD
+      d := d ++ .hardline ++ armD
     return d
   else if kind != ``Lean.Parser.Term.do then
     return (← Lean4Fmt.Emit.verbatim stx)

@@ -50,6 +50,10 @@ partial def walk
          || kind == ``Lean.Parser.Command.eval
          || kind == ``Lean.Parser.Command.in then
       Command.emit walk stx
+    else if (← read).breaking.preserveLineBreaks && kind == ``Lean.Parser.Term.do
+        && !(Lean4Fmt.Emit.bareSrc stx).any (· == '\n')
+        && !(Lean4Fmt.Emit.bareSrc stx).isEmpty then
+      pure (.text (Lean4Fmt.Emit.bareSrc stx))
     else if kind == ``Lean.Parser.Term.do
          || kind == ``Lean.Parser.Term.doLet
          || kind == ``Lean.Parser.Term.doLetArrow
@@ -120,7 +124,19 @@ partial def walk
          || kind == `Lean.Parser.Tactic.generalize
          || kind == `Lean.Parser.Term.byTactic' then
       Tactic.emit walk stx
-    -- expression constructs → Term (flat, comment-guarded; else verbatim)
+    -- expression constructs → Term (flat, comment-guarded; else verbatim).
+    -- preserveLineBreaks: TERMS ride byte-exact wholesale — single-line via
+    -- the active-text default, multi-line via verbatim. The author's break
+    -- decisions inside expressions are load-bearing; structure (decls, do,
+    -- tactics, seams) stays active.
+    else if (← read).breaking.preserveLineBreaks
+        && (kind == ``Lean.Parser.Term.match || Lean4Fmt.Syntax.isBinOp kind
+            || kind.toString.startsWith "Lean.Parser.Term"
+            || kind.toString.startsWith "term"
+            || kind.toString.startsWith "«term") then
+      let t := Lean4Fmt.Emit.bareSrc stx
+      if !t.isEmpty && !t.any (· == '\n') then pure (.text t)
+      else verbatim stx
     else if Lean4Fmt.Syntax.isBinOp kind
          || kind == ``Lean.Parser.Term.arrow
          || kind == ``Lean.Parser.Term.app

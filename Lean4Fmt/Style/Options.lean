@@ -55,6 +55,10 @@ structure Breaking where
   binders          : BinderLayout := .oneLine
   attributesOwnLine : Bool := false   -- `@[…]` on its own line above the keyword
   bodyOwnLine      : Bool := false   -- broken decls: `:=` ends the sig, blank, body at indent
+  bodyAlwaysBreak  : Bool := false   -- body on its own line even when it fits inline (purtell)
+  /-- Author line breaks are load-bearing: a construct written multi-line
+      stays multi-line (no width-collapse); single-line stays byte-exact. -/
+  preserveLineBreaks : Bool := false
   compactDo        : Bool := true
   elseIfChain      : Bool := true
   deriving Repr, Inhabited
@@ -88,6 +92,9 @@ structure Spacing where
   aroundOperators : Bool := true
   insideBrackets  : Bool := true
   afterComma      : Bool := true
+  /-- Reproduce binder interiors byte-exact (`(s: String)` stays) instead of
+      single-space token normalization (`(s : String)`). -/
+  preserveBinders : Bool := false
   deriving Repr, Inhabited
 
 structure Imports where

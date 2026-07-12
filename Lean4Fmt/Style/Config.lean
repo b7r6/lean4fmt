@@ -104,6 +104,8 @@ def applyEntry (s : Style) (e : ConfigEntry) : Except String Style := do
     | none => throw s!"line {e.line}: `{e.key}` expects oneLine/onePerLine/fill"
   | "breaking.attributesOwnLine" => pure { s with breaking.attributesOwnLine := ← asBool e }
   | "breaking.bodyOwnLine" => pure { s with breaking.bodyOwnLine := ← asBool e }
+  | "breaking.bodyAlwaysBreak" => pure { s with breaking.bodyAlwaysBreak := ← asBool e }
+  | "breaking.preserveLineBreaks" => pure { s with breaking.preserveLineBreaks := ← asBool e }
   | "breaking.compactDo" => pure { s with breaking.compactDo := ← asBool e }
   | "breaking.elseIfChain" => pure { s with breaking.elseIfChain := ← asBool e }
   | "alignment.structFields" => pure { s with alignment.structFields := ← asAlign e }
@@ -131,6 +133,7 @@ def applyEntry (s : Style) (e : ConfigEntry) : Except String Style := do
   | "spacing.aroundOperators" => pure { s with spacing.aroundOperators := ← asBool e }
   | "spacing.insideBrackets" => pure { s with spacing.insideBrackets := ← asBool e }
   | "spacing.afterComma" => pure { s with spacing.afterComma := ← asBool e }
+  | "spacing.preserveBinders" => pure { s with spacing.preserveBinders := ← asBool e }
   | "imports.group" => pure { s with imports.group := ← asBool e }
   | "imports.sort" => pure { s with imports.sort := ← asBool e }
   | "comments.spaceAfterDashes" => pure { s with comments.spaceAfterDashes := ← asBool e }

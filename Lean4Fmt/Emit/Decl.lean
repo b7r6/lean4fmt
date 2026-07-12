@@ -136,6 +136,7 @@ private def commentBlock?
     newline into its segment, so the '\n' guard covers it). -/
 private def binderText?
             (b : Lean.Syntax)
+            (preserve : Bool := false)
             : Option String := Id.run do
   let k := b.getKind
   if k != ``Lean.Parser.Term.explicitBinder && k != ``Lean.Parser.Term.implicitBinder
@@ -146,6 +147,11 @@ private def binderText?
   let l := (bareSrc a[0]!).trimAscii.toString
   let r := (bareSrc a[a.size-1]!).trimAscii.toString
   if l.isEmpty || r.isEmpty then return none
+  if preserve then
+    -- byte-exact interior (the author's `s: String` survives)
+    let t := (bareSrc b).trimAscii.toString
+    if t.isEmpty || t.any (· == '\n') then return none
+    return some t
   let mut interior := ""
   for c in a.extract 1 (a.size - 1) do
     let t := (bareSrc c).trimAscii.toString
@@ -159,7 +165,7 @@ private def binderText?
 private def binderDoc
             (b : Lean.Syntax)
             : EmitM Doc := do
-  match binderText? b with
+  match binderText? b (← read).spacing.preserveBinders with
   | some t => pure (.text t)
   | none => verbatim b
 
@@ -441,10 +447,22 @@ private def valForm
       let bodyDoc ← walk body
       -- a `do` body glues to the `=>` (its statements bring their own hardline);
       -- anything else is width-aware after the `=>`
+      let srcBroken := ((Lean4Fmt.Syntax.leading? body).getD "").any (· == '\n')
+      let preserveLB := (← read).breaking.preserveLineBreaks
       let bodyPart : Doc := if body.getKind == ``Lean.Parser.Term.do
         then .text " " ++ bodyDoc
+        else if preserveLB then
+          if srcBroken then Doc.nest 2 (Doc.hardline ++ bodyDoc)
+          else Doc.text " " ++ bodyDoc
         else .group (.nest 2 (.line ++ bodyDoc))
-      let armDoc := .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
+      -- preserve mode: a single-line arm is byte-exact (hand-padded `=>`
+      -- columns survive)
+      let armSrc := (bareSrc alt).trimAscii.toString
+      let armDoc :=
+        if preserveLB && !armSrc.isEmpty
+            && !armSrc.any (· == '\n') then
+          Doc.text armSrc
+        else .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
       armsDoc := armsDoc ++ sep ++ armDoc ++ trailDoc
       armsPlain := armsPlain ++ (if i == 0 then Doc.nil else .hardline) ++ armDoc
       let inlineOk := body.getKind != ``Lean.Parser.Term.do
@@ -505,6 +523,28 @@ private def defnDoc
   let ti ← match sigStx with | some s => typeInfo walk s | none => pure none
   let typeOK := match ti with | some (_, _, _, multi) => !multi | none => true
   let typeW := match ti with | some (_, _, tw, false) => 3 + tw | _ => 0
+  -- preserve mode: a single-line signature rides byte-exact (authors are
+  -- inconsistent about `): T` vs `) : T` — no synthesized rule round-trips);
+  -- the declId↔sig gap comes from the source too (`name: T` stays glued)
+  let preserve := (← read).spacing.preserveBinders
+  let preserveLB := (← read).breaking.preserveLineBreaks
+  let sigGap := if ((a[1]?.bind Lean4Fmt.Syntax.trailing?).getD " ").isEmpty then "" else " "
+  let sigExact? : Option String := Id.run do
+    if !preserve then return none
+    let some ss := sigStx | return some ""
+    let t := (bareSrc ss).trimAscii.toString
+    if t.isEmpty then return some ""
+    if t.any (· == '\n') then return none
+    if Lean4Fmt.Syntax.countSubtreeLineComments ss > 0 then return none
+    return some t
+  -- preserve + multi-line signature: the author's sig breaks are not held by
+  -- the active layout — whole-decl byte-exact
+  if preserve && sigExact?.isNone then return (← verbatim defn)
+  let (sigInline, sigW, typeW, typeOK) := match sigExact? with
+    | some t =>
+      if t.isEmpty then ((.nil : Doc), 0, 0, true)
+      else ((.text (sigGap ++ t) : Doc), sigGap.length + t.length, 0, true)
+    | none => (bInline, bW, typeW, typeOK)
   -- Equation-style value: the signature stays inline when it fits (matching the
   -- source shape), else breaks per the binder knob; the arms then hang on their
   -- own lines at indent 2. There is never a one-liner form for eqns.
@@ -515,37 +555,63 @@ private def defnDoc
     -- non-idempotent. Fall back to whole-`defn` verbatim (modifiers still active).
     if Lean4Fmt.Doc.hasMultilineVerbatim arms then return (← verbatim defn)
     let sigDocFinal ←
-      if typeOK && prefixWidth + bW + typeW ≤ w then
-        let typeInline : Doc := match ti with | some (term, _, _, false) => .text " : " ++ term | _ => .nil
-        pure (bInline ++ typeInline)
+      if typeOK && prefixWidth + sigW + typeW ≤ w then
+        let typeInline : Doc :=
+          if sigExact?.isSome then .nil
+          else match ti with | some (term, _, _, false) => .text " : " ++ term | _ => .nil
+        pure (sigInline ++ typeInline)
       else
         match sigStx with | some s => sigDoc walk nameCol prefixWidth 0 s | none => pure .nil
     return .text kw ++ .space ++ .text declId ++ sigDocFinal ++ .nest 2 arms
   | _ => pure ()
   let vFlat := vf.flatWidth
-  let noComment := !Lean4Fmt.Syntax.subtreeHasLineComment defn
-  let total := prefixWidth + bW + typeW + (vFlat.getD 1000000)
+  -- preserve: the gap before `:=` comes from the source (`TestSeq:= runTest`
+  -- keeps its glued form); spaces only — anything else falls to the default
+  let eqGapL :=
+    if preserveLB then
+      let g := ((sigStx.bind Lean4Fmt.Syntax.lastTokenTrailing?).getD
+        (((a[1]?.bind Lean4Fmt.Syntax.trailing?)).getD " "))
+      if g.toList.all (· == ' ') then g else " "
+    else " "
+  let noComment := !Lean4Fmt.Syntax.interiorHasLineComment defn
+  let total := prefixWidth + sigW + typeW + (vFlat.getD 1000000)
   -- inline form of the value (` := body`, or the span reproduced flat)
   let valInline : Doc := match vf with
-    | .span d => .space ++ .flatten d
-    | .body d _ => .text " := " ++ .flatten d
+    | .span d => .text eqGapL ++ .flatten d
+    | .body d _ => .text (eqGapL ++ ":= ") ++ .flatten d
     | .eqns _ => .nil     -- unreachable: eqns returned above
-  if noComment && vFlat.isSome && typeOK && total ≤ w then
-    let typeInline : Doc := match ti with | some (term, _, _, false) => .text " : " ++ term | _ => .nil
-    return .text kw ++ .space ++ .text declId ++ bInline ++ typeInline ++ valInline
+  let alwaysBreak := (← read).breaking.bodyAlwaysBreak
+  -- source's `:=`-line decision (preserveLineBreaks: it is load-bearing)
+  let srcValBroken := ((a[3]?.bind (·.getArgs[1]?)).map
+    (fun v => ((Lean4Fmt.Syntax.leading? v).getD "").any (· == '\n'))).getD false
+  let inlineOk :=
+    if preserveLB then noComment && vFlat.isSome && typeOK && !srcValBroken && !alwaysBreak
+    else noComment && vFlat.isSome && typeOK && total ≤ w && !alwaysBreak
+  if inlineOk then
+    let typeInline : Doc :=
+      if sigExact?.isSome then .nil
+      else match ti with | some (term, _, _, false) => .text " : " ++ term | _ => .nil
+    return .text kw ++ .space ++ .text declId ++ sigInline ++ typeInline ++ valInline
   else
     -- broken value placement per the bodyOwnLine knob (skipped for span / glued do)
     let bodyOwnLine := (← read).breaking.bodyOwnLine
     let valBroken : Doc := match vf with
-      | .span d => .space ++ d
+      | .span d => .text eqGapL ++ d
       | .body d glue =>
         if glue then
-          .text " := " ++ (if bodyOwnLine then glueBodyBlank d else d)
-        else if bodyOwnLine then .text " :=" ++ .nest 2 (.blank 1 ++ d)
-        else .text " :=" ++ .group (.nest 2 (.line ++ d))
+          .text (eqGapL ++ ":= ") ++ (if bodyOwnLine then glueBodyBlank d else d)
+        else if bodyOwnLine then .text (eqGapL ++ ":=") ++ .nest 2 (.blank 1 ++ d)
+        else if alwaysBreak || preserveLB then
+          .text (eqGapL ++ ":=") ++ .nest 2 (.hardline ++ d)
+        else .text (eqGapL ++ ":=") ++ .group (.nest 2 (.line ++ d))
       | .eqns _ => .nil     -- unreachable: eqns returned above
     let reserve := (Lean4Fmt.Doc.firstLineWidth valBroken).1
-    let sig ← match sigStx with | some s => sigDoc walk nameCol prefixWidth reserve s | none => pure .nil
+    let sig ← match sigExact? with
+      | some _ =>
+        if preserveLB || prefixWidth + sigW + reserve ≤ w then pure sigInline
+        else match sigStx with | some s => sigDoc walk nameCol prefixWidth reserve s | none => pure .nil
+      | none =>
+        match sigStx with | some s => sigDoc walk nameCol prefixWidth reserve s | none => pure .nil
     return .text kw ++ .space ++ .text declId ++ sig ++ valBroken
 
 /-- One `where`-instance field `name (binders)* := value` — the lval and
@@ -558,6 +624,11 @@ private def whereFieldDoc?
             (f : Lean.Syntax)
             : EmitM (Option Doc) := do
   if f.getKind != ``Lean.Parser.Term.structInstField then return none
+  if (← read).breaking.preserveLineBreaks then
+    let t := (bareSrc f).trimAscii.toString
+    if !t.isEmpty && !t.any (· == '\n')
+        && !Lean4Fmt.Syntax.interiorHasLineComment f then
+      return some (.text t)
   let fa := f.getArgs
   if fa.size != 2 then return none
   let lvalT := (bareSrc fa[0]!).trimAscii.toString
@@ -590,18 +661,23 @@ private def headValDoc?
             : EmitM (Option Doc) := do
   let w := (← read).layout.lineWidth
   let bodyOwnLine := (← read).breaking.bodyOwnLine
+  let alwaysBreak := (← read).breaking.bodyAlwaysBreak
   match spanBodyBlank bodyOwnLine declVal (← valForm walk declVal) with
   | .span d => return some (.text head ++ .space ++ d)
   | .body d glue =>
     match Lean4Fmt.Doc.flatWidth d with
     | some fw =>
-      if head.length + 4 + fw ≤ w then
+      if head.length + 4 + fw ≤ w && !alwaysBreak && !glue then
+        return some (.text head ++ .text " := " ++ .flatten d)
+      else if glue && head.length + 4 + fw ≤ w && !alwaysBreak then
         return some (.text head ++ .text " := " ++ .flatten d)
       else if glue then
         return some (.text head ++ .text " := "
           ++ (if bodyOwnLine then glueBodyBlank d else d))
       else if bodyOwnLine then
         return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
+      else if alwaysBreak then
+        return some (.text head ++ .text " :=" ++ .nest 2 (.hardline ++ d))
       else return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ d)))
     | none =>
       if glue then
@@ -609,6 +685,8 @@ private def headValDoc?
           ++ (if bodyOwnLine then glueBodyBlank d else d))
       else if bodyOwnLine then
         return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
+      else if alwaysBreak then
+        return some (.text head ++ .text " :=" ++ .nest 2 (.hardline ++ d))
       else return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ d)))
   | .eqns _ => return none
 
@@ -702,7 +780,7 @@ private def instanceDoc?
   if !idT.isEmpty then head := head ++ " " ++ idT
   let sig := a[4]!.getArgs
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
-    match binderText? b with
+    match binderText? b (← read).spacing.preserveBinders with
     | some t => head := head ++ " " ++ t
     | none =>
       let t := (bareSrc b).trimAscii.toString
@@ -767,6 +845,19 @@ def emit
     : Lean4Fmt.Emit.EmitM Doc := do
   let a := stx.getArgs
   let some defn := a[1]? | return (← verbatim stx)
+  let preserveLB := (← read).breaking.preserveLineBreaks
+  let attrsOwnLineKnob := (← read).breaking.attributesOwnLine
+  -- preserve: the attrs↔keyword break comes from the source (the newline
+  -- lives in the MODIFIERS node's trailing trivia)
+  -- preserve: the attrs↔keyword break comes from the source. The break sits
+  -- before whatever FOLLOWS the attributes — a visibility modifier
+  -- (`protected`, inside the modifiers node) or the declaration keyword.
+  let attrsOwnLine :=
+    if preserveLB then
+      let afterAttr? := (a[0]?.map (·.getArgs.toList.drop 2)).getD [] |>.findSome?
+        (fun c => if (bareSrc c).isEmpty then none else Lean4Fmt.Syntax.leading? c)
+      ((afterAttr?.getD ((Lean4Fmt.Syntax.leading? defn).getD ""))).any (· == '\n')
+    else attrsOwnLineKnob
   let dargs := defn.getArgs
   let valKind := dargs[3]?.map (·.getKind)
   let isEqns := valKind == some ``Lean.Parser.Command.declValEqns
@@ -776,7 +867,6 @@ def emit
       return (← verbatim stx)
     match ← instanceDoc? walk defn with
     | some d =>
-      let attrsOwnLine := (← read).breaking.attributesOwnLine
       let (modsDoc, _) := match a[0]? with
         | some m => modifiersDoc attrsOwnLine m
         | none => (.nil, 0)
@@ -794,11 +884,10 @@ def emit
       return (← verbatim stx)
     let al := (← read).alignment
     let inner? := if defn.getKind == ``Lean.Parser.Command.inductive
-      then Command.inductiveDoc? defn al.trailingComments al.maxDelta
-      else Command.structureDoc? defn al.trailingComments al.structFields al.maxDelta
+      then Command.inductiveDoc? defn al.trailingComments al.maxDelta preserveLB
+      else Command.structureDoc? defn al.trailingComments al.structFields al.maxDelta preserveLB
     match inner? with
     | some d =>
-      let attrsOwnLine := (← read).breaking.attributesOwnLine
       let (modsDoc, _) := match a[0]? with
         | some m => modifiersDoc attrsOwnLine m
         | none => (.nil, 0)
@@ -810,7 +899,6 @@ def emit
       return (← verbatim stx)
     match ← exampleDoc? walk defn with
     | some d =>
-      let attrsOwnLine := (← read).breaking.attributesOwnLine
       let (modsDoc, _) := match a[0]? with
         | some m => modifiersDoc attrsOwnLine m
         | none => (.nil, 0)
@@ -822,7 +910,6 @@ def emit
       return (← verbatim stx)
     match ← defWhereDoc? walk defn with
     | some d =>
-      let attrsOwnLine := (← read).breaking.attributesOwnLine
       let (modsDoc, _) := match a[0]? with
         | some m => modifiersDoc attrsOwnLine m
         | none => (.nil, 0)
@@ -834,9 +921,18 @@ def emit
     return (← verbatim stx)     -- comment/where/termination-bearing eqns: whole-decl verbatim
   if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
     return (← verbatim stx)     -- comment hiding in the modifiers region: whole-decl verbatim
-  let attrsOwnLine := (← read).breaking.attributesOwnLine
   let (modsDoc, modsWidth) := match a[0]? with
-    | some m => modifiersDoc attrsOwnLine m
+    | some m =>
+      if preserveLB && !(bareSrc m).trimAscii.toString.isEmpty then
+        -- byte-exact modifiers region; the break before the keyword comes
+        -- from the source (covers `@[a] protected⏎def` and every other split)
+        let mSrc := (bareSrc m).trimAscii.toString
+        let kwGap := ((Lean4Fmt.Syntax.leading? defn).getD " ")
+        let sepD : Doc := if kwGap.any (· == '\n') then .hardline else .text " "
+        if mSrc.any (· == '\n') then (Doc.verbatim mSrc 0 ++ sepD, 0)
+        else (Doc.text mSrc ++ sepD,
+              if kwGap.any (· == '\n') then 0 else mSrc.length + 1)
+      else modifiersDoc attrsOwnLine m
     | none => (.nil, 0)
   return modsDoc ++ (← defnDoc walk modsWidth defn)
 

@@ -21,7 +21,7 @@ inductive Mode
 structure Options where
   mode   : Mode := .format
   preset : String := "straylight"
-  width  : Nat := 100
+  width  : Option Nat := none   -- explicit --width overrides the preset
   /-- Fall back to the interleaved elaborating frontend when the cheap parse
       can't handle a file (same-file notation/macros). Measured warm marginal
       cost is 5–20ms/file on the continuity corpus — hence the default; `--elab
@@ -49,7 +49,7 @@ def parse
     | "--stats" :: r => o := { o with mode := .stats }; rest := r
     | "--write" :: r => o := { o with mode := .write }; rest := r
     | "-w" :: r => o := { o with mode := .write }; rest := r
-    | "--width" :: n :: r => o := { o with width := n.toNat! }; rest := r
+    | "--width" :: n :: r => o := { o with width := some n.toNat! }; rest := r
     | "--style" :: s :: r => o := { o with preset := s }; rest := r
     | "--log-level" :: l :: r => o := { o with logLevel := l }; rest := r
     | "--elab" :: v :: r => o := { o with elabFallback := v != "off" }; rest := r

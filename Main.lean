@@ -32,27 +32,30 @@ opaque initEnv : IO Unit
     non-`unsafe` `main` can invoke the unsafe frontend. -/
 unsafe def runJobsImpl
            (files : List String)
-           (width : Nat)
+           (width : Option Nat)
            (preset : String)
            (elabFallback : Bool)
            (retry : Bool)
            (logLevel : String)
            : IO (Array Driver.Result) := do
   let base := (Style.byName? preset).getD Style.straylight
-  let style := { base with layout := { base.layout with lineWidth := width } }
+  let style := match width with
+    | some w => { base with layout := { base.layout with lineWidth := w } }
+    | none => base
   let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
   let retryCfg ← do
     if retry then
       let exe ← IO.appPath
       pure (some (exe.toString,
-        #["--width", toString width, "--style", preset, "--log-level", logLevel]
+        (match width with | some w => #["--width", toString w] | none => #[])
+          ++ #["--style", preset, "--log-level", logLevel]
           ++ (if elabFallback then #[] else #["--elab", "off"])))
     else pure none
   Driver.runAll style expanded elabFallback retryCfg
 
 @[implemented_by runJobsImpl]
 opaque runJobs
-    (files : List String) (width : Nat) (preset : String) (elabFallback : Bool) (retry : Bool)
+    (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool)
     (logLevel : String)
     : IO (Array Driver.Result)
 
@@ -62,13 +65,15 @@ opaque runJobs
     nothing can parse counts fully verbatim — passthrough is what it gets. -/
 unsafe def runStatsImpl
            (files : List String)
-           (width : Nat)
+           (width : Option Nat)
            (preset : String)
            (elabFallback : Bool)
            (retry : Bool)
            : IO (Array (Nat × Nat × Nat × String)) := do
   let base := (Style.byName? preset).getD Style.straylight
-  let style := { base with layout := { base.layout with lineWidth := width } }
+  let style := match width with
+    | some w => { base with layout := { base.layout with lineWidth := w } }
+    | none => base
   let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
   let env ← Frontend.batchEnv expanded
   let exe ← IO.appPath
@@ -83,8 +88,9 @@ unsafe def runStatsImpl
         if !retry then pure none else
         let r ← IO.Process.output
           { cmd := exe.toString,
-            args := #["--stats", "--no-retry", "--width", toString width,
-                      "--style", preset, p.toString] }
+            args := #["--stats", "--no-retry"]
+              ++ (match width with | some w => #["--width", toString w] | none => #[])
+              ++ #["--style", preset, p.toString] }
         match ((r.stdout.splitOn "\n").headD "").splitOn " " with
         | [a, v, t, _] =>
           pure (match a.toNat?, v.toNat?, t.toNat? with
@@ -98,7 +104,7 @@ unsafe def runStatsImpl
 
 @[implemented_by runStatsImpl]
 opaque runStats
-    (files : List String) (width : Nat) (preset : String) (elabFallback : Bool) (retry : Bool)
+    (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool)
     : IO (Array (Nat × Nat × Nat × String))
 
 def main

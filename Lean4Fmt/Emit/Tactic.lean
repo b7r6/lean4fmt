@@ -132,7 +132,8 @@ private def armSeqDoc?
   if groups.size == 1 then
     let lead := (Lean4Fmt.Syntax.leading? groups[0]![0]!).getD ""
     let plainLead := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
-    if plainLead then
+    let srcInline := !lead.any (· == '\n')
+    if plainLead && (!(← read).breaking.preserveLineBreaks || srcInline) then
       let some tDoc ← groupDoc? walk groups[0]! | return none
       if (Lean4Fmt.Doc.flatWidth tDoc).isSome && !Lean4Fmt.Doc.hasMultilineVerbatim tDoc then
         return some (.group (.nest 2 (.line ++ tDoc)))
@@ -382,6 +383,11 @@ def emit
     match ← headBlockDoc? walk stx (conv := true) with
     | some d => return d
     | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if kind == `Lean.calcTactic
+      && (← read).breaking.preserveLineBreaks
+      && (Lean4Fmt.Emit.bareSrc stx).any (· == '\n') then
+    -- preserve: the author's step alignment is load-bearing
+    return (← Lean4Fmt.Emit.verbatim stx)
   else if kind == `Lean.calcTactic then
     -- basic calc: `calc` + steps, each step token-exact single-line, aligned
     -- under the first step (indent 5 = "calc ")
