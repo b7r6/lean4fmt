@@ -40,14 +40,16 @@ inductive Doc where
   | nest       (n : Int) (d : Doc)          -- shift break-indent of `d` by n
   | align      (d : Doc)                    -- set break-indent to the current column
   -- extensions
-  | alignTable (spec : ColSpec) (rows : Array (Array Doc))   -- §7
+  -- container payloads are LISTS (not arrays) so the Doc walkers get
+  -- structural nested recursion — total by construction, provable in Proofs
+  | alignTable (spec : ColSpec) (rows : List (List Doc))   -- §7
   -- §7 with composition: the padded table WHEN the run's column delta is under
   -- spec.maxDelta AND every padded row fits the line width — otherwise the
   -- ordinary fallback layout ("a cell that must wrap opts out of the grid").
-  | alignOr    (spec : ColSpec) (rows : Array (Array Doc)) (fallback : Doc)
+  | alignOr    (spec : ColSpec) (rows : List (List Doc)) (fallback : Doc)
   -- §5: pack flat items separated by single spaces, wrapping at the width
   -- (literal pools — byte tables, opcode lists). Items must be flat-capable.
-  | fillSep    (items : Array Doc)
+  | fillSep    (items : List Doc)
   | blank      (req : BlankReq)                              -- §8
   | flatten    (d : Doc)                                     -- force flat
   | textRaw    (s : String)                                  -- verbatim comment (may contain '\n')

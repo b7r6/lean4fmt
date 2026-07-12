@@ -34,8 +34,8 @@ private def commaGroup
   -- literal pools (§5 fill): many short flat items — byte tables, opcode
   -- lists — pack and wrap at the width instead of exploding one per line
   if ds.size ≥ 8 && ds.all (fun d => ((Lean4Fmt.Doc.flatWidth d).getD 1000) ≤ 12) then
-    let items := (Array.range ds.size).map (fun i =>
-      ds[i]! ++ (if i + 1 == ds.size then Doc.nil else Doc.text ","))
+    let items := ((Array.range ds.size).map (fun i =>
+      ds[i]! ++ (if i + 1 == ds.size then Doc.nil else Doc.text ","))).toList
     return .text l ++ .nest 2 (Doc.fillSep items) ++ .text r
   return Lean4Fmt.Doc.commaList l r ds
 
@@ -233,7 +233,7 @@ partial def emit
       -- wins when it fits (the renderer prefers a flat-capable fallback).
       let al := (← read).alignment
       if al.recordFields != Lean4Fmt.Style.AlignMode.never && fields.size ≥ 2 then
-        let mut rows : Array (Array Doc) := #[]
+        let mut rows : List (List Doc) := []
         let mut ok := true
         for h : i in [0:fields.size] do
           let fa := fields[i]!.getArgs
@@ -246,9 +246,9 @@ partial def emit
             let vDoc ← walk v
             if (Lean4Fmt.Doc.flatWidth vDoc).isNone then ok := false
             let last := i + 1 == fields.size
-            rows := rows.push
-              #[Doc.text ((if i == 0 then "{ " else "  ") ++ lvalT), Doc.text ":=",
-                vDoc ++ Doc.text (if last then " }" else ",")]
+            rows := rows ++
+              [[Doc.text ((if i == 0 then "{ " else "  ") ++ lvalT), Doc.text ":=",
+                vDoc ++ Doc.text (if last then " }" else ",")]]
           | none => ok := false
         if ok then
           let cap := if al.recordFields == Lean4Fmt.Style.AlignMode.always

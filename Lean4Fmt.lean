@@ -32,3 +32,4 @@ import Lean4Fmt.Frontend
 import Lean4Fmt.Driver
 import Lean4Fmt.Cli
 import Lean4Fmt.Emitter
+import Lean4Fmt.Proofs

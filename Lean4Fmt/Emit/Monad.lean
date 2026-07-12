@@ -110,12 +110,12 @@ def armsAligned
     (fallback : Doc)
     : Doc := Id.run do
   if mode == Lean4Fmt.Style.AlignMode.never || arms.size < 2 then return fallback
-  let mut rows : Array (Array Doc) := #[]
+  let mut rows : List (List Doc) := []
   for (p, b?) in arms do
     let some b := b? | return fallback
     if (Lean4Fmt.Doc.flatWidth p).isNone || (Lean4Fmt.Doc.flatWidth b).isNone then
       return fallback
-    rows := rows.push #[Doc.text "| " ++ p, Doc.text "=>", b]
+    rows := rows ++ [[Doc.text "| " ++ p, Doc.text "=>", b]]
   let cap := if mode == Lean4Fmt.Style.AlignMode.always then 1000000 else maxDelta
   return Doc.alignOr { sep := " ", maxDelta := cap } rows fallback
 

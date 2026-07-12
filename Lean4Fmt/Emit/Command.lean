@@ -118,13 +118,13 @@ private def assemble
       -- [code, comment] rows otherwise. A row without a trailing comment is
       -- shorter — its last populated column goes unpadded, so no trailing
       -- whitespace is ever produced.
-      let rows := run.map (fun it =>
+      let rows := run.toList.map (fun it =>
         if colOn && !it.nameSeg.isEmpty then
-          if it.trailT.isEmpty then #[Doc.text it.nameSeg, Doc.text it.restSeg]
-          else #[Doc.text it.nameSeg, Doc.text it.restSeg, Doc.text it.trailT]
+          if it.trailT.isEmpty then [Doc.text it.nameSeg, Doc.text it.restSeg]
+          else [Doc.text it.nameSeg, Doc.text it.restSeg, Doc.text it.trailT]
         else
-          if it.trailT.isEmpty then #[Doc.text it.line]
-          else #[Doc.text it.line, Doc.text it.trailT])
+          if it.trailT.isEmpty then [Doc.text it.line]
+          else [Doc.text it.line, Doc.text it.trailT])
       return o ++ run[0]!.sep
         ++ Doc.alignOr { sep := " ", maxDelta := cap } rows fallback
     return o ++ fallback  -- unreachable (size < 2 returned above)
