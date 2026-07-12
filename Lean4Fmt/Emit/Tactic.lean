@@ -140,6 +140,68 @@ private def armSeqDoc?
   | some body => return some (.nest 2 body)
   | none => return none
 
+/-- Items of a bracket-list slice (`a, b, c` between `[` and `]`): comma atoms
+    skipped, one level of null nesting flattened; `none` on a multi-line item. -/
+private def listItems?
+            (slice : Array Lean.Syntax)
+            : Option (Array Doc) := Id.run do
+  let mut items : Array Doc := #[]
+  for c in slice do
+    if c.isAtom then continue
+    let subs := if c.getKind == Lean.nullKind then c.getArgs else #[c]
+    for d in subs do
+      if d.isAtom then continue
+      let t := (Lean4Fmt.Emit.bareSrc d).trimAscii.toString
+      if t.isEmpty || t.any (· == '\n') then return none
+      items := items.push (.text t)
+  if items.isEmpty then return none
+  return some items
+
+/-- Generic token-line tactic: tokens single-spaced on ONE line, except
+    bracket lists (`[a, b, c]` — simp lemmas, rw rules) which render as
+    width-aware commaLists, so a long list BREAKS instead of forcing the whole
+    tactic (and its enclosing body) verbatim. `none` on a multi-line piece
+    outside a bracket list. -/
+private partial def lineWords?
+            (stx : Lean.Syntax)
+            : Option (Array Doc) := Id.run do
+  let a := stx.getArgs
+  let mut out : Array Doc := #[]
+  let mut i := 0
+  while i < a.size do
+    let c := a[i]!
+    if c.isAtom && (Lean4Fmt.Emit.bareSrc c).trimAscii.toString == "[" then
+      let mut close : Option Nat := none
+      let mut j := i + 1
+      while j < a.size do
+        if a[j]!.isAtom && (Lean4Fmt.Emit.bareSrc a[j]!).trimAscii.toString == "]" then
+          close := some j
+          break
+        j := j + 1
+      let some jc := close | return none
+      let some items := listItems? (a.extract (i + 1) jc) | return none
+      out := out.push (Lean4Fmt.Doc.commaList "[" "]" items)
+      i := jc + 1
+      continue
+    let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+    if t.isEmpty then
+      i := i + 1
+      continue
+    let hasBracket := c.getArgs.any fun x =>
+      x.isAtom && (Lean4Fmt.Emit.bareSrc x).trimAscii.toString == "["
+    if !t.any (· == '\n') && !hasBracket then
+      out := out.push (.text t)
+    else
+      match lineWords? c with
+      | some ws => out := out ++ ws
+      | none => return none
+    i := i + 1
+  return some out
+
+/-- Join line words with single spaces. -/
+private def joinWords (ws : Array Doc) : Doc :=
+  ws.foldl (fun d w => match d with | .nil => w | _ => d ++ .text " " ++ w) .nil
+
 /-- A head-block tactic (`next h => …`, `case foo => …`, `all_goals …`,
     `repeat …`, `conv at x => …`): head tokens single-line joined, the body
     sequence via the branch layout (inline when a single clean flat group
@@ -203,28 +265,71 @@ def emit
     if locT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let locD : Doc := if locT.isEmpty then .nil else .text (" " ++ locT)
     return .text "rw " ++ Lean4Fmt.Doc.commaList "[" "]" ds ++ locD
-  else if kind == ``Lean.Parser.Tactic.tacticHave__ then
-    -- ["have", letConfig, letDecl] — the doLet shape minus `mut`; the letDecl
-    -- walks through the existing 5-slot machinery
+  else if kind == ``Lean.Parser.Tactic.tacticHave__
+      || kind == `Lean.Parser.Tactic.tacticLet__ then
+    -- ["have"/"let", letConfig, letDecl] — the doLet shape minus `mut`; the
+    -- letDecl walks through the existing 5-slot machinery
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
     if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
+    let kwT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
     let cfgT := (Lean4Fmt.Emit.bareSrc a[1]!).trimAscii.toString
     if cfgT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let dDoc ← walk a[2]!
     if Lean4Fmt.Doc.hasMultilineVerbatim dDoc then return (← Lean4Fmt.Emit.verbatim stx)
-    return .text "have " ++ (if cfgT.isEmpty then Doc.nil else .text (cfgT ++ " ")) ++ dDoc
-  else if kind == ``Lean.Parser.Tactic.simp then
-    -- [kw, config, discharger?, only?, [lemmas]?, location?] — token-for-token
-    -- on one line (the lemma list rides as text; active list layout is a
-    -- follow-on)
+    return .text (kwT ++ " ") ++ (if cfgT.isEmpty then Doc.nil else .text (cfgT ++ " ")) ++ dDoc
+  else if kind == ``Lean.Parser.Tactic.simp || kind == ``Lean.Parser.Tactic.simpAll
+      || kind == `Lean.Parser.Tactic.dsimp || kind == `Lean.Parser.Tactic.simpa
+      || kind == `Lean.Parser.Tactic.tacticRwa__ then
+    -- simp family + rwa: tokens on one line, bracket lists as width-aware
+    -- commaLists (a long lemma list breaks instead of going verbatim)
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    let mut line := ""
-    for c in a do
+    match lineWords? stx with
+    | some ws => if ws.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+                 else return joinWords ws
+    | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if kind == `Lean.Parser.Tactic.first then
+    -- single-line `first | a | b` rides the token line; the block form is
+    -- `first` + one `| <body>` per alternative at the same indent
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    if !(Lean4Fmt.Emit.bareSrc stx).any (· == '\n') then
+      match lineWords? stx with
+      | some ws => if ws.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+                   else return joinWords ws
+      | none => return (← Lean4Fmt.Emit.verbatim stx)
+    if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut d : Doc := .text "first"
+    for g in a[1]!.getArgs do
+      let ga := g.getArgs
+      if ga.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
+      let some bD ← armSeqDoc? walk ga[1]! | return (← Lean4Fmt.Emit.verbatim stx)
+      d := d ++ .hardline ++ .text "|" ++ bD
+    return d
+  else if kind == `Lean.Parser.Tactic.match then
+    -- tactic-match: head `match … with` single-line, arms `| pats =>` + body
+    -- via the branch layout (mirrors induction alternatives)
+    if a.size < 2 then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut head := ""
+    for c in a.extract 0 (a.size - 1) do
+      if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then
+        return (← Lean4Fmt.Emit.verbatim stx)
       let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
       if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-      if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
-    if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-    return .text line
+      if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
+    if head.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    let some altsWrap := a[a.size - 1]!.getArgs[0]? | return (← Lean4Fmt.Emit.verbatim stx)
+    let mut d : Doc := .text head
+    for alt in altsWrap.getArgs do
+      let ala := alt.getArgs
+      if ala.size != 4 then return (← Lean4Fmt.Emit.verbatim stx)
+      if Lean4Fmt.Syntax.interiorHasLineComment alt then return (← Lean4Fmt.Emit.verbatim stx)
+      let mut lhs := ""
+      for c in ala.extract 0 3 do
+        let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+        if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+        if !t.isEmpty then lhs := if lhs.isEmpty then t else lhs ++ " " ++ t
+      let some bD ← armSeqDoc? walk ala[3]! | return (← Lean4Fmt.Emit.verbatim stx)
+      d := d ++ .hardline ++ .text lhs ++ bD
+    return d
   else if kind == ``Lean.Parser.Tactic.unfold then
     -- ["unfold", idents, location?] — plain text, token-for-token
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
@@ -327,7 +432,16 @@ def emit
       || kind == `Lean.Parser.Tactic.subst || kind == `Lean.Parser.Tactic.«tacticExists_,,»
       || kind == ``Lean.Parser.Tactic.change || kind == `«tacticBy_cases_:_»
       || kind == `Lean.Parser.Tactic.tacticSuffices_
-      || kind == `Lean.Parser.Tactic.«tactic_<;>_» then
+      || kind == `Lean.Parser.Tactic.«tactic_<;>_»
+      || kind == `Lean.Parser.Tactic.congr || kind == `Lean.Parser.Tactic.renameI
+      || kind == `Lean.Parser.Tactic.bvDecide || kind == `Lean.Parser.Tactic.left
+      || kind == `Lean.Parser.Tactic.right || kind == `Lean.Parser.Tactic.revert
+      || kind == `Lean.Parser.Tactic.injection
+      || kind == `Lean.Parser.Tactic.tacticInfer_instance
+      || kind == `Lean.Parser.Tactic.tacticExfalso
+      || kind == `Lean.Parser.Tactic.«tacticNomatch_,,»
+      || kind == `Lean.Parser.Tactic.paren
+      || kind == `Lean.Parser.Tactic.generalize then
     -- token-line tactics: single line, token-for-token, single-spaced
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
     let mut line := ""
@@ -337,7 +451,7 @@ def emit
       if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
     if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
     return .text line
-  else if kind != ``Lean.Parser.Term.byTactic then
+  else if kind != ``Lean.Parser.Term.byTactic && kind != `Lean.Parser.Term.byTactic' then
     return (← Lean4Fmt.Emit.verbatim stx)
   else
   if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)

@@ -98,7 +98,27 @@ partial def walk
          || kind == ``Lean.Parser.Tactic.change
          || kind == `«tacticBy_cases_:_»
          || kind == `Lean.Parser.Tactic.tacticSuffices_
-         || kind == `Lean.Parser.Tactic.«tactic_<;>_» then
+         || kind == `Lean.Parser.Tactic.«tactic_<;>_»
+         || kind == ``Lean.Parser.Tactic.simpAll
+         || kind == `Lean.Parser.Tactic.dsimp
+         || kind == `Lean.Parser.Tactic.simpa
+         || kind == `Lean.Parser.Tactic.tacticRwa__
+         || kind == `Lean.Parser.Tactic.first
+         || kind == `Lean.Parser.Tactic.match
+         || kind == `Lean.Parser.Tactic.tacticLet__
+         || kind == `Lean.Parser.Tactic.congr
+         || kind == `Lean.Parser.Tactic.renameI
+         || kind == `Lean.Parser.Tactic.bvDecide
+         || kind == `Lean.Parser.Tactic.left
+         || kind == `Lean.Parser.Tactic.right
+         || kind == `Lean.Parser.Tactic.revert
+         || kind == `Lean.Parser.Tactic.injection
+         || kind == `Lean.Parser.Tactic.tacticInfer_instance
+         || kind == `Lean.Parser.Tactic.tacticExfalso
+         || kind == `Lean.Parser.Tactic.«tacticNomatch_,,»
+         || kind == `Lean.Parser.Tactic.paren
+         || kind == `Lean.Parser.Tactic.generalize
+         || kind == `Lean.Parser.Term.byTactic' then
       Tactic.emit walk stx
     -- expression constructs → Term (flat, comment-guarded; else verbatim)
     else if Lean4Fmt.Syntax.isBinOp kind
