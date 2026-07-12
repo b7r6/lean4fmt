@@ -218,8 +218,15 @@ partial def render
         let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
         (wr st indent (renderRow r), false)) (st, true)).1
     | .alignOr spec rows fallback =>
-      -- padded table when the delta guardrail holds AND every padded row fits
-      -- the width at this indent; the ordinary fallback layout otherwise
+      -- FLAT fallback first when it fits (a record that fits on one line must
+      -- not become a grid); then the padded table when the delta guardrail
+      -- holds AND every padded row fits the width at this indent; the ordinary
+      -- fallback layout otherwise
+      let effCol := if st.pend > 0 then indent else st.col
+      let flatFits : Bool := match flatWidth fallback with
+        | some w => decide (effCol + w ≤ width)
+        | none => false
+      if flatFits then go fallback indent flat st else
       let cellStr (c : Doc) : String := (go c indent true {}).out
       let strRows := rows.map (·.map cellStr)
       let ncol := strRows.foldl (fun m r => Nat.max m r.size) 0
