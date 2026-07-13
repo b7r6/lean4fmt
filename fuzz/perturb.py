@@ -24,7 +24,8 @@ for ln in lines:
     out.append(s)
     # blank INSERTION/removal between decls is a CONTENT mutation under the
     # blank-line pin (0-vs->=1 between one-liners is authorial) -- excluded.
+    # Blank lines inside block comments are comment CONTENT -- excluded.
     # Extra blanks inside an existing blank run stay ws-perturbation:
-    if not s.strip() and random.random() < 0.2:
+    if not s.strip() and not in_block and random.random() < 0.2:
         out.append('')
 print('\n'.join(out), end='')

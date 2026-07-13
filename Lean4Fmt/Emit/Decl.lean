@@ -936,14 +936,21 @@ def emit
     | none => return (← verbatim stx)
   if !isDefShape defn.getKind || !isActiveVal then
     -- sig-only decls (axiom, opaque, variable …) and unported value forms:
-    -- a SINGLE-LINE declaration (modifiers included) rides canonically
-    -- respaced; multi-line stays verbatim (tail)
-    let t := bareSrc stx
+    -- modifiers (docstring on its own line, attrs per the knob) place
+    -- structurally; a SINGLE-LINE decl tail rides canonically respaced.
+    -- Multi-line tails stay verbatim (the remaining task-#7 queue).
+    if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
+      return (← verbatim stx)
+    let t := bareSrc defn
     if !t.isEmpty && !t.any (· == '\n') then
-      match Lean4Fmt.Emit.tokenJoin? stx with
-      | some t' => return .text t'
+      match Lean4Fmt.Emit.tokenJoin? defn with
+      | some t' =>
+        let (modsDoc, _) := match a[0]? with
+          | some m => modifiersDoc attrsOwnLine m
+          | none => (.nil, 0)
+        return modsDoc ++ .text t'
       | none => return (← verbatim stx)
-    return (← verbatim stx)     -- other value forms: reproduce
+    return (← verbatim stx)     -- multi-line tail: reproduce
   if isEqns && !eqnsFormattable (dargs[3]?.getD .missing) then
     return (← verbatim stx)     -- comment/where/termination-bearing eqns: whole-decl verbatim
   if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
