@@ -88,6 +88,37 @@ def tokenJoin? (stx : Lean.Syntax) : Option String := Id.run do
   if out.isEmpty then return none
   return some out
 
+/-- Canonical FLATTENED token text: like `tokenJoin?` but newline gaps become
+    single spaces — the canonical one-line spelling of a multi-line construct.
+    `none` when a gap carries a comment (flattening would eat it or comment
+    out the tail). -/
+def tokenJoinFlat? (stx : Lean.Syntax) : Option String := Id.run do
+  if hasChoice stx then return none
+  let ls := leafTokens stx
+  if ls.isEmpty then return none
+  let mut out := ""
+  let mut prev : Option Lean.Syntax := none
+  for l in ls do
+    let t := bareSrc l
+    if t.isEmpty then continue
+    if t.any (· == '\n') then return none    -- multi-line TOKEN: content
+    match prev with
+    | none => out := t
+    | some p =>
+      let tr? := Lean4Fmt.Syntax.trailing? p
+      let ld? := Lean4Fmt.Syntax.leading? l
+      if tr?.isNone || ld?.isNone then return none
+      let gap := tr?.getD "" ++ ld?.getD ""
+      if !gap.toList.all (·.isWhitespace) then return none
+      let sep := match gapRule (bareSrc p) t with
+        | some true => " "
+        | some false => ""
+        | none => if gap.isEmpty then "" else " "
+      out := out ++ sep ++ t
+    prev := some l
+  if out.isEmpty then return none
+  return some out
+
 /-- Canonical single-line token text: tokenJoin? with a bareSrc fallback —
     the standard spelling for EMITTED head pieces. -/
 def canonTok (stx : Lean.Syntax) : String :=

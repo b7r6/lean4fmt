@@ -74,6 +74,8 @@ private structure Item where
   prefixDoc : Doc
   hasPrefix : Bool
   line      : String
+  /-- Doc-valued line (multi-line types walk); excluded from grids. -/
+  lineDoc   : Option Doc := none
   /-- the `name (binders)` segment of `line`, when the site aligns name columns
       (§7 structFields); empty when the site aligns trailing comments only -/
   nameSeg   : String := ""
@@ -102,7 +104,8 @@ private def assemble
       || colMode == Lean4Fmt.Style.AlignMode.always
     then 1000000 else maxDelta
   let plain (o : Doc) (it : Item) : Doc :=
-    o ++ it.sep ++ it.prefixDoc ++ .text it.line
+    o ++ it.sep ++ it.prefixDoc
+      ++ (match it.lineDoc with | some d => d | none => .text it.line)
       ++ (if it.trailT.isEmpty then Doc.nil else .text (" " ++ it.trailT))
   let flush (o : Doc) (run : Array Item) : Doc := Id.run do
     if run.size < 2 then
@@ -195,7 +198,7 @@ def inductiveDoc?
   if ctors.isEmpty then return none
   -- deriving (its leading trivia placed structurally, so blank groups before
   -- it survive), token-for-token
-  let derT := ((a[6]?.map bareSrc).getD "").trimAscii.toString
+  let derT := (a[6]?.map Lean4Fmt.Emit.canonTok).getD ""
   if derT.any (· == '\n') then return none
   let hasDer := !derT.isEmpty
   let some derSep :=
@@ -234,9 +237,10 @@ def inductiveDoc?
     a parenthesized field group (`structExplicitBinder`), or a structural
     surprise. -/
 private def fieldDoc?
+            (walk : Lean4Fmt.Emit.Walk)
             (f : Lean.Syntax)
             (preserve : Bool)
-            : Option (Doc × String × String × String) := Id.run do
+            : Lean4Fmt.Emit.EmitM (Option (Doc × String × String × String × Option Doc)) := do
   if f.getKind != ``Lean.Parser.Command.structSimpleBinder then return none
   let a := f.getArgs
   if a.size != 4 then return none
@@ -255,16 +259,37 @@ private def fieldDoc?
     let t := Lean4Fmt.Emit.canonTok b
     if t.any (· == '\n') then return none
     parts := parts.push t
+  let mut tyDoc? : Option Doc := none
   let tyT ← do
     match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
     | [ts] =>
-      let t := Lean4Fmt.Emit.canonTok ((ts.getArgs[1]?).getD .missing)
-      if t.isEmpty || t.any (· == '\n') then return none
-      pure (some t)
+      let tyStx := (ts.getArgs[1]?).getD .missing
+      let t := Lean4Fmt.Emit.canonTok tyStx
+      if t.isEmpty then return none
+      if t.any (· == '\n') then
+        -- multi-line field TYPE: FLATTEN when the one-line spelling fits
+        -- (keeps the item grid-able and the passes shape-stable); otherwise
+        -- walk it (forall/arrow chains lay out)
+        let w := (← read).layout.lineWidth
+        match Lean4Fmt.Emit.tokenJoinFlat? tyStx with
+        | some ft =>
+          if ft.length + 12 ≤ w then pure (some ft)
+          else
+            let d ← walk tyStx
+            if Lean4Fmt.Doc.hasMultilineVerbatim d then return none
+            tyDoc? := some d
+            pure (none : Option String)
+        | none =>
+          let d ← walk tyStx
+          if Lean4Fmt.Doc.hasMultilineVerbatim d then return none
+          tyDoc? := some d
+          pure (none : Option String)
+      else pure (some t)
     | [] => pure (none : Option String)
     | _ => return none
   let defT := ((a[3]?.map bareSrc).getD "").trimAscii.toString
   if defT.any (· == '\n') then return none
+  if tyDoc?.isSome && !defT.isEmpty then return none
   let nameSeg := modsT ++ nameT ++ (parts.foldl (fun s p => s ++ " " ++ p) "")
   let restSeg := (match tyT with | some t => ": " ++ t | none => "")
     ++ (if defT.isEmpty then "" else (if tyT.isSome then " " else "") ++ defT)
@@ -273,8 +298,9 @@ private def fieldDoc?
   let exact := (Lean4Fmt.Emit.bareSrc (Lean.mkNullNode (a.extract 1 a.size))).trimAscii.toString
   let line := if preserve && modsT.isEmpty && !exact.isEmpty && !exact.any (· == '\n')
       then exact else joined
+  let lineDoc? := tyDoc?.map (fun d => Doc.text (nameSeg ++ " : ") ++ d)
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
-  return some (docD, nameSeg, restSeg, line)
+  return some (docD, nameSeg, restSeg, line, lineDoc?)
 
 /-- Active layout for a `structure`/`class` declaration (WITHOUT its modifiers —
     `Decl.emit` places those): head on one line
@@ -283,12 +309,13 @@ private def fieldDoc?
     this layout can't hold the input (an explicit `mk ::`, parenthesized field
     groups, comments in seamless zones, multi-line pieces). -/
 def structureDoc?
+    (walk : Lean4Fmt.Emit.Walk)
     (defn : Lean.Syntax)
     (alignMode : Lean4Fmt.Style.AlignMode)
     (fieldColMode : Lean4Fmt.Style.AlignMode)
     (alignDelta : Nat)
     (preserve : Bool := false)
-    : Option Doc := Id.run do
+    : Lean4Fmt.Emit.EmitM (Option Doc) := do
   let a := defn.getArgs
   if a.size != 6 then return none
   let kwT := (bareSrc a[0]!).trimAscii.toString
@@ -312,7 +339,7 @@ def structureDoc?
   if extT.any (· == '\n') then return none
   if !extT.isEmpty then head := head ++ " " ++ extT
   -- deriving, shared with the fieldless form
-  let derT := ((a[5]?.map bareSrc).getD "").trimAscii.toString
+  let derT := (a[5]?.map Lean4Fmt.Emit.canonTok).getD ""
   if derT.any (· == '\n') then return none
   let hasDer := !derT.isEmpty
   let some derSep :=
@@ -346,7 +373,7 @@ def structureDoc?
     let lead := (Lean4Fmt.Syntax.leading? f).getD ""
     let some sep := leadingSep? lead | return none
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
-    let some (docD, nameSeg, restSeg, line) := fieldDoc? f preserve | return none
+    let some (docD, nameSeg, restSeg, line, lineDoc?) ← fieldDoc? walk f preserve | return none
     let rawTrail := (((Lean4Fmt.Syntax.trailing? f).getD "").trimAsciiEnd).toString
     let (line, trailT) :=
       if preserve && owned && !trailT.isEmpty && !rawTrail.any (· == '\n') then
@@ -354,7 +381,8 @@ def structureDoc?
       else (line, trailT)
     items := items.push
       { sep, plainSep, prefixDoc := docD, hasPrefix := !(docD matches Doc.nil),
-        line, nameSeg, restSeg := restSeg, trailT := if owned then trailT else "" }
+        line, lineDoc := lineDoc?, nameSeg, restSeg := restSeg,
+        trailT := if owned then trailT else "" }
   let body := assemble alignMode fieldColMode alignDelta items
   return some (.text head ++ .nest 2 (body ++ derD))
 

@@ -783,14 +783,33 @@ private def instanceDoc?
       let t := (bareSrc b).trimAscii.toString
       if t.isEmpty || t.any (· == '\n') then return none
       head := head ++ " " ++ t
+  -- a MULTI-LINE instance type walks (chains at the continuation); the head
+  -- becomes a Doc and only the `where` form is supported for it
+  let mut headTail : Option Doc := none
   match sig[1]? with
   | some ts =>
-    let t := Lean4Fmt.Emit.canonTok ((ts.getArgs[1]?).getD .missing)
-    if t.isEmpty || t.any (· == '\n') then return none
-    head := head ++ " : " ++ t
+    let tyStx := (ts.getArgs[1]?).getD .missing
+    let t := Lean4Fmt.Emit.canonTok tyStx
+    if t.isEmpty then return none
+    if t.any (· == '\n') then
+      let tyDoc ← walk tyStx
+      if Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then return none
+      let cont := (← read).layout.continuationIndent
+      headTail := some (.text " :" ++ .group (.nest cont (.line ++ tyDoc)))
+    else
+      head := head ++ " : " ++ t
   | none => return none
   let w := (← read).layout.lineWidth
-  if head.length + 6 > w then return none
+  if headTail.isNone && head.length + 6 > w then return none
+  match headTail with
+  | some tail =>
+    -- only `… where` supports the broken head for now
+    let declVal := a[5]!
+    if declVal.getKind != ``Lean.Parser.Command.whereStructInst then return none
+    match ← whereBodyDoc? walk declVal with
+    | some body => return some (.text head ++ tail ++ .text " where" ++ .nest 2 body)
+    | none => return none
+  | none => pure ()
   let declVal := a[5]!
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
     headValDoc? walk head declVal
@@ -880,9 +899,10 @@ def emit
     if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
       return (← verbatim stx)
     let al := (← read).alignment
-    let inner? := if defn.getKind == ``Lean.Parser.Command.inductive
-      then Command.inductiveDoc? defn al.trailingComments al.maxDelta preserveLB
-      else Command.structureDoc? defn al.trailingComments al.structFields al.maxDelta preserveLB
+    let inner? ← if defn.getKind == ``Lean.Parser.Command.inductive
+      then pure (Command.inductiveDoc? defn al.trailingComments al.maxDelta preserveLB)
+      else Command.structureDoc? walk defn al.trailingComments al.structFields
+             al.maxDelta preserveLB
     match inner? with
     | some d =>
       let (modsDoc, _) := match a[0]? with
