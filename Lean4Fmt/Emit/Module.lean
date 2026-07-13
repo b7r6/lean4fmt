@@ -236,6 +236,13 @@ def emit
       acc := acc ++ fileHead ((Lean4Fmt.Syntax.leading? c).getD "") ++ body
     prev := some (c, body)
     pendTrail := Lean4Fmt.Emit.trailingRaw c
+  -- the FINAL trailing (EOF region): whitespace-only canonicalizes to nothing
+  -- (the renderer supplies the final newline); comments stay byte-exact
+  let finalWs := match prev with
+    | some (p, _) => (((Lean4Fmt.Syntax.trailing? p).getD "").toList.all (·.isWhitespace))
+    | none => false
+  if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize && finalWs then
+    return acc
   return acc ++ pendTrail
 
 end Lean4Fmt.Emit.Module

@@ -40,13 +40,13 @@ private def ctorDoc?
   let sig := a[4]!.getArgs
   let mut parts : Array String := #[]
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
-    let t := (bareSrc b).trimAscii.toString
+    let t := Lean4Fmt.Emit.canonTok b
     if t.any (· == '\n') then return none
     parts := parts.push t
   let tyT ← do
     match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
     | [ts] =>
-      let t := (bareSrc ((ts.getArgs[1]?).getD .missing)).trimAscii.toString
+      let t := Lean4Fmt.Emit.canonTok ((ts.getArgs[1]?).getD .missing)
       if t.isEmpty || t.any (· == '\n') then return none
       pure (some t)
     | [] => pure (none : Option String)
@@ -251,13 +251,13 @@ private def fieldDoc?
   let sig := a[2]!.getArgs
   let mut parts : Array String := #[]
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
-    let t := (bareSrc b).trimAscii.toString
+    let t := Lean4Fmt.Emit.canonTok b
     if t.any (· == '\n') then return none
     parts := parts.push t
   let tyT ← do
     match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
     | [ts] =>
-      let t := (bareSrc ((ts.getArgs[1]?).getD .missing)).trimAscii.toString
+      let t := Lean4Fmt.Emit.canonTok ((ts.getArgs[1]?).getD .missing)
       if t.isEmpty || t.any (· == '\n') then return none
       pure (some t)
     | [] => pure (none : Option String)

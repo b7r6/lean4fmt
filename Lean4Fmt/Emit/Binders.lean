@@ -41,7 +41,7 @@ def binderText?
     return some t
   let mut interior := ""
   for c in a.extract 1 (a.size - 1) do
-    let t := (bareSrc c).trimAscii.toString
+    let t := Lean4Fmt.Emit.canonTok c
     if t.any (· == '\n') then return none
     if !t.isEmpty then interior := if interior.isEmpty then t else interior ++ " " ++ t
   if interior.isEmpty then return none

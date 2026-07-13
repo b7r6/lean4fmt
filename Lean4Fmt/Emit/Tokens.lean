@@ -88,4 +88,9 @@ def tokenJoin? (stx : Lean.Syntax) : Option String := Id.run do
   if out.isEmpty then return none
   return some out
 
+/-- Canonical single-line token text: tokenJoin? with a bareSrc fallback —
+    the standard spelling for EMITTED head pieces. -/
+def canonTok (stx : Lean.Syntax) : String :=
+  (tokenJoin? stx).getD ((bareSrc stx).trimAscii.toString)
+
 end Lean4Fmt.Emit

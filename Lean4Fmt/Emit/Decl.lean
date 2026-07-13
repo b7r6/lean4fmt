@@ -710,7 +710,7 @@ private def defWhereDoc?
   let mut head := ""
   for c in dargs.extract 0 3 do
     if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then return none
-    let t := (bareSrc c).trimAscii.toString
+    let t := Lean4Fmt.Emit.canonTok c
     if t.any (· == '\n') then return none
     if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
   if head.isEmpty then return none
@@ -730,7 +730,7 @@ private def exampleDoc?
   let mut head := ""
   for c in dargs.extract 0 2 do
     if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then return none
-    let t := (bareSrc c).trimAscii.toString
+    let t := Lean4Fmt.Emit.canonTok c
     if t.any (· == '\n') then return none
     if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
   if head.isEmpty then return none
@@ -782,7 +782,7 @@ private def instanceDoc?
       head := head ++ " " ++ t
   match sig[1]? with
   | some ts =>
-    let t := (bareSrc ((ts.getArgs[1]?).getD .missing)).trimAscii.toString
+    let t := Lean4Fmt.Emit.canonTok ((ts.getArgs[1]?).getD .missing)
     if t.isEmpty || t.any (· == '\n') then return none
     head := head ++ " : " ++ t
   | none => return none

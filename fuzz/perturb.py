@@ -4,10 +4,17 @@ import random, sys
 random.seed(int(sys.argv[2]))
 lines = open(sys.argv[1]).read().split('\n')
 out = []
-in_block = False  # crude /- -/ and string guards
+in_block = False   # crude /- -/ and string guards
+in_meta = False    # macro_rules/syntax/notation/elab quotations: CONTENT (pin)
+import re
+META = re.compile(r'^(@\[[^]]*\]\s*)?(local\s+|scoped\s+)*(macro_rules|macro\s|syntax\s|notation\s|elab\s|elab_rules)')
 for ln in lines:
     s = ln
-    guard = ('"' in s) or ('/-' in s) or ('-/' in s) or in_block or s.lstrip().startswith('--')
+    if META.match(s): in_meta = True
+    elif in_meta and s and not s[0].isspace() and not s.lstrip().startswith('|'):
+        in_meta = False
+    guard = ('"' in s) or ('/-' in s) or ('-/' in s) or in_block or in_meta \
+        or s.lstrip().startswith('--') or ('|]' in s) or ('[' in s and '|' in s and ']' in s)
     if '/-' in s and '-/' not in s: in_block = True
     if '-/' in s: in_block = False
     r = random.random()
