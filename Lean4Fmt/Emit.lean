@@ -145,6 +145,10 @@ partial def walk
     else if Lean4Fmt.Syntax.isBinOp kind
          || kind == ``Lean.Parser.Term.arrow
          || kind == ``Lean.Parser.Term.forall
+         || kind == `Lean.«term∀__,_»
+         || kind == `Lean.«term∃__,_»
+         || kind == `«term∃_,_»
+         || kind == `«term∀_,_»
          || kind == ``Lean.Parser.Term.app
          || kind == ``Lean.Parser.Term.paren
          || kind == ``Lean.Parser.Term.proj

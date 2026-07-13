@@ -545,6 +545,23 @@ partial def emit
       if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then return (← verbatim stx)
       let cont := (← read).layout.continuationIndent
       return hd ++ .text "," ++ .group (.nest cont (.line ++ bodyDoc))
+    else if kind == `Lean.«term∀__,_» || kind == `Lean.«term∃__,_»
+        || kind == `«term∃_,_» || kind == `«term∀_,_» then
+      -- binder-predicate quantifiers (`∀ x ∈ s, p` / `∃ x ∈ s, p`): head
+      -- tokens canonical (comma glued), body width-aware at the continuation
+      let n := args.size
+      if n < 2 then return (← verbatim stx)
+      let mut head := ""
+      for c in args.extract 0 (n - 1) do
+        let t := Lean4Fmt.Emit.canonTok c
+        if t.any (· == '\n') then return (← verbatim stx)
+        if t == "," then head := head ++ ","
+        else if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
+      if head.isEmpty then return (← verbatim stx)
+      let bodyDoc ← walk args[n - 1]!
+      if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then return (← verbatim stx)
+      let cont := (← read).layout.continuationIndent
+      return .text head ++ .group (.nest cont (.line ++ bodyDoc))
     else if kind == ``Lean.Parser.Term.hole then
       return .text "_"
     else if kind == `str || kind == `num || kind == `scientific || kind == `char then
