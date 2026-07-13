@@ -35,10 +35,27 @@ partial def hasChoice (stx : Lean.Syntax) : Bool :=
   | .node _ k args => k == Lean.choiceKind || args.any hasChoice
   | _ => false
 
+/-- v2 pair rule: `some true` = one space, `some false` = glued, `none` =
+    source-derived (v1). Whitespace-SENSITIVE tokens (`[` for getElem, postfix
+    `!`/`?`, field indices) stay source-derived: Lean's parse depends on their
+    adjacency, so forcing either spelling could change the tree (the gate
+    would catch it as a per-file fallback — correctness holds, coverage pays).
+    clang-format is the shape of the eventual full table. -/
+private def gapRule (prev next : String) : Option Bool :=
+  let identLike (t : String) := t.toList.all fun c =>
+    c.isAlphanum || c == '_' || c == '\'' || c == '.' || c.toNat > 127
+  if prev == "(" || prev == "⟨" || prev == "‹" || prev == "⦃" then some false
+  else if next == ")" || next == "⟩" || next == "›" || next == "⦄"
+      || next == "," || next == ";" then some false
+  else if prev == "," || prev == ";" then some true
+  else if prev == ":=" || next == ":=" || prev == "=>" || next == "=>" then some true
+  else if next == "(" && (identLike prev || prev == ")" ) then some true
+  else none
+
 /-- Canonical single-line respacing of a construct: leaf tokens joined with
-    canonical gaps (ws-gap → one space, zero gap → glued). `none` when a token
-    is multi-line, a gap carries non-whitespace (an inline block comment), or
-    there are no tokens. -/
+    canonical gaps (pair-rule table, else ws-gap → one space / zero gap →
+    glued). `none` when a token is multi-line, a gap carries non-whitespace
+    (an inline block comment), or there are no tokens. -/
 def tokenJoin? (stx : Lean.Syntax) : Option String := Id.run do
   if hasChoice stx then return none
   let ls := leafTokens stx
@@ -62,7 +79,11 @@ def tokenJoin? (stx : Lean.Syntax) : Option String := Id.run do
       let gap := tr?.getD "" ++ ld?.getD ""
       if !gap.toList.all (·.isWhitespace) then return none   -- inline comment
       if gap.any (· == '\n') then return none               -- not single-line
-      out := out ++ (if gap.isEmpty then "" else " ") ++ t
+      let sep := match gapRule (bareSrc p) t with
+        | some true => " "
+        | some false => ""
+        | none => if gap.isEmpty then "" else " "
+      out := out ++ sep ++ t
     prev := some l
   if out.isEmpty then return none
   return some out
