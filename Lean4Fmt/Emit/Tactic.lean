@@ -17,6 +17,7 @@
 -/
 
 import Lean4Fmt.Emit.Monad
+import Lean4Fmt.Emit.Tokens
 import Lean4Fmt.Emit.DoNotation
 
 namespace Lean4Fmt.Emit.Tactic
@@ -74,7 +75,8 @@ private def groupText?
   for j in [0:g.size] do
     let it := g[j]!
     if Lean4Fmt.Syntax.interiorHasLineComment it then return none
-    let t := (Lean4Fmt.Emit.bareSrc it).trimAscii.toString
+    let t := (Lean4Fmt.Emit.tokenJoin? it).getD
+      ((Lean4Fmt.Emit.bareSrc it).trimAscii.toString)
     if t.isEmpty || t.any (· == '\n') then return none
     if j + 1 < g.size then
       let tr := (Lean4Fmt.Syntax.trailing? it).getD ""
@@ -191,7 +193,7 @@ private partial def lineWords?
     let hasBracket := c.getArgs.any fun x =>
       x.isAtom && (Lean4Fmt.Emit.bareSrc x).trimAscii.toString == "["
     if !t.any (· == '\n') && !hasBracket then
-      out := out.push (.text t)
+      out := out.push (.text ((Lean4Fmt.Emit.tokenJoin? c).getD t))
     else
       match lineWords? c with
       | some ws => out := out ++ ws
@@ -336,7 +338,8 @@ def emit
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
     let mut line := ""
     for c in a do
-      let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+      let t := (Lean4Fmt.Emit.tokenJoin? c).getD
+        ((Lean4Fmt.Emit.bareSrc c).trimAscii.toString)
       if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
     if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
@@ -452,7 +455,8 @@ def emit
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
     let mut line := ""
     for c in a do
-      let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+      let t := (Lean4Fmt.Emit.tokenJoin? c).getD
+        ((Lean4Fmt.Emit.bareSrc c).trimAscii.toString)
       if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
     if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)

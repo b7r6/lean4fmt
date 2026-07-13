@@ -105,9 +105,12 @@ def interiorHasLineComment
     (stx : Lean.Syntax)
     : Bool :=
 
+  -- the trailing exemption must reach the LAST TOKEN's trailing: getTailInfo
+  -- is defeated by trailing empty null slots (a match arm ends in one), which
+  -- would count an arm's own trailing comment as interior
   countSubtreeLineComments stx
     > countLineComments ((leading? stx).getD "")
-        + countLineComments ((trailing? stx).getD "")
+        + countLineComments ((lastTokenTrailing? stx).getD "")
 
 /-- Exact original source text for a node (leading trivia in, trailing out):
     reprint, falling back to the source slice when reprint is unavailable

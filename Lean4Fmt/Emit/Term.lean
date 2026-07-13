@@ -124,7 +124,7 @@ partial def emit
   -- inter-item comments structurally; anything they can't hold falls back
   -- internally.
   if !Lean4Fmt.Syntax.ownsSeams stx.getKind
-      && Lean4Fmt.Syntax.hasOwnedLineComment stx then
+      && Lean4Fmt.Syntax.hasUnownedLineComment stx then
     return (← verbatim stx)
   match stx with
   | .atom _ v => return .text v

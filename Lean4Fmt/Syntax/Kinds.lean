@@ -9,6 +9,7 @@
 -/
 
 import Lean
+import Lean4Fmt.Syntax.Trivia
 
 namespace Lean4Fmt.Syntax
 
@@ -58,5 +59,23 @@ def isNeverInline
       || kind == ``Lean.Parser.Term.show
       || kind == ``Lean.Parser.Term.suffices
       || kind == ``Lean.Parser.Term.letrec
+
+/-- Comment hazard EXCLUDING seam-owning descendants: a `match`/`let`/… child
+    places its own interior comments structurally (and falls back to a
+    multi-line verbatim itself when it cannot — which the parent's
+    hasMultilineVerbatim check catches). Counting their subtrees at the parent
+    made e.g. `fun c => match … -- comment` verbatim for no reason. The tail
+    token's trailing stays exempt (the enclosing seam owns it). -/
+partial def hasUnownedLineComment (stx : Lean.Syntax) : Bool :=
+  go stx > countLineComments ((lastTokenTrailing? stx).getD "")
+where
+  go (s : Lean.Syntax) : Nat :=
+    match s with
+    | .node _ k args =>
+      if ownsSeams k then 0
+      else args.foldl (fun n c => n + go c) 0
+    | _ =>
+      countLineComments ((leading? s).getD "")
+        + countLineComments ((trailing? s).getD "")
 
 end Lean4Fmt.Syntax
