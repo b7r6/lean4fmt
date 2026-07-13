@@ -169,7 +169,7 @@ def inductiveDoc?
   let sig := a[2]!.getArgs
   let mut head := "inductive " ++ idT
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
-    let t := (bareSrc b).trimAscii.toString
+    let t := Lean4Fmt.Emit.canonTok b
     if t.any (· == '\n') then return none
     head := head ++ " " ++ t
   match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
@@ -298,7 +298,7 @@ def structureDoc?
   let sig := a[2]!.getArgs
   let mut head := kwT ++ " " ++ idT
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
-    let t := (bareSrc b).trimAscii.toString
+    let t := Lean4Fmt.Emit.canonTok b
     if t.any (· == '\n') then return none
     head := head ++ " " ++ t
   match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with

@@ -366,15 +366,18 @@ private def valForm
       -- the value's HEAD-LEADING comment lines place structurally (the seam
       -- kit; T3) and force the BROKEN placement — an inline `:= -- cmt v`
       -- would be nonsense. hasMultilineVerbatim still spans.
-      -- seam-owning kinds place their OWN leading (the let-chain walker
-      -- emits its head comments) — prepending here would double them
+      -- CHAIN walkers (let/letrec) place their OWN leading (their head
+      -- comments are chain seams) — prepending would double them; every
+      -- other kind gets the seam-kit prefix (idempotence sweep verifies)
+      let selfLead := v.getKind == ``Lean.Parser.Term.let
+        || v.getKind == ``Lean.Parser.Term.letrec
       let vdoc ← (do
-        if leadCmts > 0 && !Lean4Fmt.Syntax.ownsSeams v.getKind then
+        if leadCmts > 0 && !selfLead then
           match Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? v).getD "") with
           | some sep => pure (sep ++ vdoc)
           | none => pure vdoc   -- unownable shape: caught below as span
         else pure vdoc)
-      if leadCmts > 0 && !Lean4Fmt.Syntax.ownsSeams v.getKind
+      if leadCmts > 0 && !selfLead
           && !(match Lean4Fmt.Emit.leadingSep?
           ((Lean4Fmt.Syntax.leading? v).getD "") with | some _ => true | none => false) then
         return .span (← verbatim declVal)
