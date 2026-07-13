@@ -196,7 +196,12 @@ def emit
     let body ← walk c
     match prev with
     | some (p, pBody) =>
-      if gapOk p c pBody body then
+      -- an EMPTY previous form (an importless header) means the "gap" is the
+      -- file head — route it there (its first segment starts at byte 0)
+      if (Lean4Fmt.Emit.bareSrc p).isEmpty
+          && ((Lean4Fmt.Syntax.trailing? p).getD "").isEmpty then
+        acc := acc ++ fileHead ((Lean4Fmt.Syntax.leading? c).getD "") ++ body
+      else if gapOk p c pBody body then
         -- swallow prev trailing + c leading (both pure ws): impose the rhythm
         acc := acc ++ .blank style.blankLines.betweenTopLevelDecls ++ body
       else
