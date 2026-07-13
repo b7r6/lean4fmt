@@ -51,6 +51,88 @@ private def headerDoc?
     acc := acc ++ sep ++ .text t ++ trailDoc
   return some acc
 
+/-- Structural placement of MODULE-LEVEL trivia with block-comment awareness:
+    comment chunks (line comments; balanced `/- … -/` blocks INCLUDING their
+    interior blank lines — comment text is content) ride byte-exact; the
+    whitespace runs between chunks become structural separators (blank runs
+    clamp to policy). `none` when the trivia has a shape no seam owns
+    (a same-line head segment with content). -/
+private def moduleTrivia?
+    (lead : String)
+    (atFileStart : Bool)
+    : Option Doc := Id.run do
+  let ls := lead.splitOn "\n"
+  if ls.isEmpty then return some .nil
+  -- head segment: remainder of the previous line (must be ws) — except at
+  -- file start, where the first segment IS the first line of the file
+  let mut i := 0
+  if !atFileStart then
+    if !(ls[0]!.toList.all (·.isWhitespace)) then return none
+    i := 1
+  let mut d : Doc := .nil
+  let mut blanks := 0
+  let mut sawAny := false
+  let mut depth := 0
+  let mut chunk : Array String := #[]
+  let n := ls.length
+  let flushChunk (d : Doc) (blanks : Nat) (sawAny : Bool) (chunk : Array String) : Doc :=
+    if chunk.isEmpty then d
+    else
+      let sep : Doc :=
+        if atFileStart && !sawAny then .nil
+        else if blanks > 0 then .blank blanks else .hardline
+      d ++ sep ++ .textRaw (String.intercalate "\n"
+        (chunk.toList.map (fun l => l.trimAsciiEnd.toString)))
+  while i < n do
+    let l := ls[i]!
+    let last := i + 1 == n
+    let t := l.trimAscii.toString
+    if depth > 0 then
+      chunk := chunk.push l
+      depth := depth + (t.splitOn "/-").length - 1 - ((t.splitOn "-/").length - 1)
+    else if t.isEmpty then
+      if last then
+        -- tail segment: the form's own indentation — the renderer re-indents
+        i := i + 1
+        continue
+      if !chunk.isEmpty then
+        d := flushChunk d blanks sawAny chunk
+        sawAny := true
+        chunk := #[]
+        blanks := 1   -- THIS blank line counts toward the next separator
+      else
+        blanks := blanks + 1
+    else if t.startsWith "--" || t.startsWith "/-" then
+      if !chunk.isEmpty && t.startsWith "/-" then
+        d := flushChunk d blanks sawAny chunk
+        sawAny := true
+        chunk := #[]
+        blanks := 0
+      chunk := chunk.push (l.trimAsciiEnd.toString)
+      if t.startsWith "/-" then
+        depth := depth + (t.splitOn "/-").length - 1 - ((t.splitOn "-/").length - 1)
+    else
+      return none   -- content line that is not a comment: no seam owns it
+    i := i + 1
+  if depth != 0 then return none
+  if !chunk.isEmpty then
+    d := flushChunk d blanks sawAny chunk
+    sawAny := true
+    blanks := 0
+  -- final separator before the form
+  let finalSep : Doc :=
+    if atFileStart && !sawAny then .nil
+    else if blanks > 0 then .blank blanks else .hardline
+  return some (d ++ finalSep)
+
+/-- Drop the leftmost separator of a seam doc (the file head has no previous
+    line — a leading hardline/blank would open the file with a stray newline). -/
+private partial def dropLeadingSep : Doc → Doc
+  | .cat a b => .cat (dropLeadingSep a) b
+  | .hardline => .nil
+  | .blank _ => .nil
+  | d => d
+
 /-- Emit a whole module: each form (header + commands) as
     `leading ++ walk(bare) ++ trailing`. Since leading[next] and trailing[prev]
     partition the inter-form gap exactly, forms tile byte-exactly — handled kinds
@@ -87,6 +169,15 @@ def emit
     let nls := (gap.toList.filter (· == '\n')).length
     return gap.toList.all (·.isWhitespace) && nls ≥ 1
       && (multi pBody || multi cBody || nls ≥ 2)
+  -- file-head leading (banner comments, blanks): structural under normalize —
+  -- prepending a virtual newline makes the seam kit treat every banner line
+  -- as a full line; the artificial first separator is dropped
+  let fileHead (lead : String) : Doc :=
+    if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize then
+      match moduleTrivia? lead (atFileStart := true) with
+      | some d => d
+      | none => .textRaw lead
+    else .textRaw lead
   let mut acc : Doc := .nil
   let mut prev : Option (Lean.Syntax × Doc) := none   -- previous form + its body; trailing HELD
   let mut pendTrail : Doc := .nil
@@ -95,7 +186,7 @@ def emit
     let body ← match headerDoc? h with
       | some d => pure d
       | none => walk h
-    acc := Lean4Fmt.Emit.leadingRaw h ++ body
+    acc := fileHead ((Lean4Fmt.Syntax.leading? h).getD "") ++ body
     prev := some (h, body)
     pendTrail := Lean4Fmt.Emit.trailingRaw h
   | none => pure ()
@@ -111,16 +202,33 @@ def emit
       else
         -- adjacent ONE-LINER pair (ws-only gap, no blank line): adjacency is
         -- content, but the gap bytes canonicalize to a single newline
-        let gap := ((Lean4Fmt.Syntax.trailing? p).getD "")
-          ++ ((Lean4Fmt.Syntax.leading? c).getD "")
-        if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize
-            && gap.toList.all (·.isWhitespace)
+        let trailS := (Lean4Fmt.Syntax.trailing? p).getD ""
+        let leadS := (Lean4Fmt.Syntax.leading? c).getD ""
+        let gap := trailS ++ leadS
+        let normalize := style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize
+        if normalize && gap.toList.all (·.isWhitespace)
             && (gap.toList.filter (· == '\n')).length == 1 then
           acc := acc ++ .hardline ++ body
         else
-          acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leadingRaw c ++ body
+          -- COMMENT-BEARING gap: canonicalize structurally — the prev form's
+          -- same-line trailing comment re-appends, the full comment/blank
+          -- lines place via the seam kit (T3: content-exact; blank runs clamp
+          -- to the policy). Byte-exact only when no seam owns the shape.
+          let trailT := trailS.trimAscii.toString
+          let gapDoc? : Option Doc := Id.run do
+            if !normalize then return none
+            if trailS.any (· == '\n') then return none
+            if trailT.startsWith "/-" && !trailT.startsWith "/--" then
+              return none   -- same-line block comment: opaque
+            let some sep := moduleTrivia? leadS (atFileStart := false)
+              | return none
+            let trailD : Doc := if trailT.isEmpty then .nil else .text (" " ++ trailT)
+            return some (trailD ++ sep)
+          match gapDoc? with
+          | some g => acc := acc ++ g ++ body
+          | none => acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leadingRaw c ++ body
     | none =>
-      acc := acc ++ Lean4Fmt.Emit.leadingRaw c ++ body
+      acc := acc ++ fileHead ((Lean4Fmt.Syntax.leading? c).getD "") ++ body
     prev := some (c, body)
     pendTrail := Lean4Fmt.Emit.trailingRaw c
   return acc ++ pendTrail
