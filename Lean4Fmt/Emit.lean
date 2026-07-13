@@ -16,6 +16,7 @@
 -/
 
 import Lean4Fmt.Emit.Monad
+import Lean4Fmt.Emit.Tokens
 import Lean4Fmt.Emit.Module
 import Lean4Fmt.Emit.Decl
 import Lean4Fmt.Emit.Command
@@ -168,8 +169,12 @@ partial def walk
     -- ports — the opt-out log shows only the multi-line residue.
     else
       let t := Lean4Fmt.Emit.bareSrc stx
-      if !t.isEmpty && !t.any (· == '
-') then pure (.text t)
+      if !t.isEmpty && !t.any (· == '\n') then
+        -- canonical respacing (zero-passthrough): ws gaps collapse to one
+        -- space; an interior comment keeps the bytes exact
+        match Lean4Fmt.Emit.tokenJoin? stx with
+        | some t' => pure (.text t')
+        | none => pure (.text t)
       else verbatim stx
 
 /-- Format a whole module to a `Doc` plus collected diagnostics, under `style`. -/
