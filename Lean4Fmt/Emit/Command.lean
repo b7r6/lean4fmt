@@ -14,6 +14,7 @@
 -/
 
 import Lean4Fmt.Emit.Monad
+import Lean4Fmt.Emit.Tokens
 import Lean4Fmt.Syntax.Trivia
 
 namespace Lean4Fmt.Emit.Command
@@ -369,8 +370,31 @@ def emit
   if kind == ``Lean.Parser.Command.open || kind == ``Lean.Parser.Command.namespace
       || kind == ``Lean.Parser.Command.end || kind == ``Lean.Parser.Command.section
       || kind == ``Lean.Parser.Command.universe || kind == ``Lean.Parser.Command.eval then
-    -- trivial one-line commands, token-for-token
+    -- trivial one-line commands, token-for-token; a MULTI-LINE command
+    -- (an `open Ns (long ident list)`) reflows its tokens as a fillSep pool
     if Lean4Fmt.Syntax.hasOwnedLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    if kind == ``Lean.Parser.Command.open && (bareSrc stx).any (· == '\n') then
+      let toks := (Lean4Fmt.Emit.leafTokens stx).map
+        (fun l => (bareSrc l).trimAscii.toString) |>.filter (fun t => !t.isEmpty)
+      if toks.isEmpty || toks.any (·.any (· == '\n')) then
+        return (← Lean4Fmt.Emit.verbatim stx)
+      match toks.toList with
+      | kw :: rest =>
+        -- glue parens onto their neighbors (fill items are space-separated)
+        let mut items : Array String := #[]
+        let mut pfx := ""
+        for t in rest do
+          if t == "(" then pfx := pfx ++ "("
+          else if t == ")" then
+            if items.isEmpty then pfx := pfx ++ ")"
+            else items := items.set! (items.size - 1) (items[items.size - 1]! ++ ")")
+          else
+            items := items.push (pfx ++ t)
+            pfx := ""
+        if !pfx.isEmpty then items := items.push pfx
+        let cont := (← read).layout.continuationIndent
+        return .text (kw ++ " ") ++ .nest cont (Doc.fillSep (items.toList.map Doc.text))
+      | [] => return (← Lean4Fmt.Emit.verbatim stx)
     let mut line := ""
     for c in stx.getArgs do
       let t := (bareSrc c).trimAscii.toString

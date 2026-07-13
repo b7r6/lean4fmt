@@ -16,6 +16,7 @@
 
 import Lean4Fmt.Emit.Monad
 import Lean4Fmt.Emit.Tokens
+import Lean4Fmt.Emit.Binders
 import Lean4Fmt.Emit.Command
 import Lean4Fmt.Syntax.Kinds
 
@@ -130,78 +131,6 @@ private def commentBlock?
       let dedented := ls.map (fun l => if l.length ≥ base then String.ofList (l.toList.drop base) else l)
       return some (String.intercalate "\n" dedented)
 
-/-- A binder as a single active line: bracket atoms from source, the interior
-    segments trimmed and single-spaced (`(x  :  Nat)` → `(x : Nat)`). Only the
-    bracketed binder kinds; `none` (caller falls back to per-binder verbatim)
-    on anything else, a multi-line piece, or a comment (a line comment forces a
-    newline into its segment, so the '\n' guard covers it). -/
-private def binderText?
-            (b : Lean.Syntax)
-            (preserve : Bool := false)
-            : Option String := Id.run do
-  let k := b.getKind
-  if k != ``Lean.Parser.Term.explicitBinder && k != ``Lean.Parser.Term.implicitBinder
-      && k != ``Lean.Parser.Term.strictImplicitBinder && k != ``Lean.Parser.Term.instBinder then
-    return none
-  let a := b.getArgs
-  if a.size < 3 then return none
-  let l := (bareSrc a[0]!).trimAscii.toString
-  let r := (bareSrc a[a.size-1]!).trimAscii.toString
-  if l.isEmpty || r.isEmpty then return none
-  if preserve then
-    -- byte-exact interior (the author's `s: String` survives)
-    let t := (bareSrc b).trimAscii.toString
-    if t.isEmpty || t.any (· == '\n') then return none
-    return some t
-  let mut interior := ""
-  for c in a.extract 1 (a.size - 1) do
-    let t := (bareSrc c).trimAscii.toString
-    if t.any (· == '\n') then return none
-    if !t.isEmpty then interior := if interior.isEmpty then t else interior ++ " " ++ t
-  if interior.isEmpty then return none
-  return some (l ++ interior ++ r)
-
-/-- A binder doc: active single-line text when `binderText?` can hold it;
-    a MULTI-LINE binder walks its type (chains/apps lay out actively inside
-    the brackets); verbatim only when the shape offers no seam. -/
-private def binderDoc
-            (walk : Lean4Fmt.Emit.Walk)
-            (b : Lean.Syntax)
-            : EmitM Doc := do
-  match binderText? b (← read).spacing.preserveBinders with
-  | some t => pure (.text t)
-  | none =>
-    -- [l, names…, (":" type)?, r] — names single-line, type WALKED
-    let k := b.getKind
-    if (k == ``Lean.Parser.Term.explicitBinder || k == ``Lean.Parser.Term.implicitBinder
-        || k == ``Lean.Parser.Term.strictImplicitBinder || k == ``Lean.Parser.Term.instBinder)
-        && !Lean4Fmt.Syntax.interiorHasLineComment b then
-      let a := b.getArgs
-      if a.size ≥ 3 then
-        let l := (bareSrc a[0]!).trimAscii.toString
-        let r := (bareSrc a[a.size-1]!).trimAscii.toString
-        -- the interior: leading name tokens single-line, then a type slot
-        -- whose LAST child is the type term (walked)
-        let mut head := ""
-        let mut ok := true
-        let mut tyDoc : Doc := .nil
-        for c in a.extract 1 (a.size - 1) do
-          let t := (bareSrc c).trimAscii.toString
-          if t.isEmpty then continue
-          if !t.any (· == '\n') then
-            head := if head.isEmpty then t else head ++ " " ++ t
-          else
-            -- multi-line piece: the `: τ` slot — walk the type term
-            let ca := c.getArgs
-            if ca.size == 2 && (bareSrc ca[0]!).trimAscii.toString == ":" then
-              let d ← walk ca[1]!
-              if Lean4Fmt.Doc.hasMultilineVerbatim d then ok := false
-              else tyDoc := .text " : " ++ d
-            else ok := false
-        if ok && !head.isEmpty then
-          return .text (l ++ head) ++ tyDoc ++ .text r
-    verbatim b
-
 /-- Signature return-type info: `none` if there is no type spec, else
     `(termDoc, colonTypeDoc, flatWidth, multiline?)` where `termDoc` is the type
     term alone (no colon) — WALKED, so arrow chains and applications lay out
@@ -269,7 +198,7 @@ private def sigDoc
       match commentBlock? ((Lean4Fmt.Syntax.leading? b).getD "") with
       | some cmt => d := d ++ .hardline ++ .verbatim cmt 0
       | none => pure ()
-      d := d ++ .hardline ++ (← binderDoc walk b)
+      d := d ++ .hardline ++ (← Lean4Fmt.Emit.binderDoc walk b)
     match ti with
     | some (term, colonType, _, multi) =>
       if multi then d := d ++ .hardline ++ colonType         -- multi-line type: own line, byte-exact
@@ -280,7 +209,7 @@ private def sigDoc
     let mut d : Doc := .nil
     let mut first := true
     for b in binders do
-      let bd ← binderDoc walk b
+      let bd ← Lean4Fmt.Emit.binderDoc walk b
       d := d ++ (if first then .space else .group (.line)) ++ bd
       first := false
     match ti with
@@ -292,7 +221,7 @@ private def sigDoc
     let mut bdoc : Doc := .nil
     let mut bwidth := 0
     for b in binders do
-      let bd ← binderDoc walk b
+      let bd ← Lean4Fmt.Emit.binderDoc walk b
       bdoc := bdoc ++ .space ++ bd
       bwidth := bwidth + 1 + (Lean4Fmt.Doc.flatWidth bd).getD 0
     match ti with
@@ -318,6 +247,10 @@ private def isActiveMultiline
       || kind == ``Lean.Parser.Term.tuple
       || kind == ``Lean.Parser.Term.structInst
       || kind.toString == "«term[_]»"
+      || kind.toString == "«term#[_,]»"
+      || kind == ``Lean.Parser.Term.forall
+      || kind == ``Lean.Parser.Term.arrow
+      || kind == ``Lean.Parser.Term.paren
       || kind == ``Lean.Parser.Term.let
       || kind == ``Lean.Parser.Term.letrec
       || kind == ``Lean.Parser.Term.match
@@ -562,7 +495,7 @@ private def defnDoc
   let mut bInline : Doc := .nil
   let mut bW := 0
   for b in binders do
-    let bd ← binderDoc walk b
+    let bd ← Lean4Fmt.Emit.binderDoc walk b
     bInline := bInline ++ .space ++ bd
     bW := bW + 1 + (Lean4Fmt.Doc.flatWidth bd).getD 0
   let ti ← match sigStx with | some s => typeInfo walk s | none => pure none
@@ -841,7 +774,7 @@ private def instanceDoc?
   if !idT.isEmpty then head := head ++ " " ++ idT
   let sig := a[4]!.getArgs
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
-    match binderText? b (← read).spacing.preserveBinders with
+    match Lean4Fmt.Emit.binderText? b (← read).spacing.preserveBinders with
     | some t => head := head ++ " " ++ t
     | none =>
       let t := (bareSrc b).trimAscii.toString
@@ -978,6 +911,33 @@ def emit
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx)
+  -- multi-line SIG-ONLY decls (axiom/opaque with a forall/arrow type that
+  -- spans lines): kw+id active, binders via the binder kit, the type WALKED
+  -- (chains lay out at the continuation)
+  let sigOnlyDoc? : EmitM (Option Doc) := do
+    let dargs := defn.getArgs
+    if dargs.size < 3 then return none
+    let kwT := (bareSrc dargs[0]!).trimAscii.toString
+    let idT := (bareSrc dargs[1]!).trimAscii.toString
+    if kwT.isEmpty || kwT.any (· == '\n') || idT.any (· == '\n') then return none
+    for c in dargs.extract 3 dargs.size do
+      if !(bareSrc c).trimAscii.toString.isEmpty then return none
+    if Lean4Fmt.Syntax.interiorHasLineComment defn then return none
+    let sig := dargs[2]!
+    let sa := sig.getArgs
+    if sa.size < 2 then return none
+    let mut hd : Doc := .text (kwT ++ (if idT.isEmpty then "" else " " ++ idT))
+    for b in ((sa[0]?).map (·.getArgs)).getD #[] do
+      let bd ← Lean4Fmt.Emit.binderDoc walk b
+      if Lean4Fmt.Doc.hasMultilineVerbatim bd then return none
+      hd := hd ++ .space ++ bd
+    let tyNode := (sa[1]?.bind (fun x =>
+      if x.getKind == ``Lean.Parser.Term.typeSpec then some x else x.getArgs[0]?)).getD .missing
+    if tyNode.getKind != ``Lean.Parser.Term.typeSpec then return none
+    let tyDoc ← walk (tyNode.getArgs[1]?.getD .missing)
+    if Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then return none
+    let cont := (← read).layout.continuationIndent
+    return some (hd ++ .text " :" ++ .group (.nest cont (.line ++ tyDoc)))
   if !isDefShape defn.getKind || !isActiveVal then
     -- sig-only decls (axiom, opaque, variable …) and unported value forms:
     -- modifiers (docstring on its own line, attrs per the knob) place
@@ -994,7 +954,13 @@ def emit
           | none => (.nil, 0)
         return modsDoc ++ .text t'
       | none => return (← verbatim stx)
-    return (← verbatim stx)     -- multi-line tail: reproduce
+    match ← sigOnlyDoc? with
+    | some d =>
+      let (modsDoc, _) := match a[0]? with
+        | some m => modifiersDoc attrsOwnLine m
+        | none => (.nil, 0)
+      return modsDoc ++ d
+    | none => return (← verbatim stx)     -- multi-line tail: reproduce
   if isEqns && !eqnsFormattable (dargs[3]?.getD .missing) then
     return (← verbatim stx)     -- comment/where/termination-bearing eqns: whole-decl verbatim
   if (a[0]?.map (modifiersCommentHazard · defn)).getD false then

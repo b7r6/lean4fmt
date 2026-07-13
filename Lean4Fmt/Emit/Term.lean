@@ -13,6 +13,7 @@
 
 import Lean4Fmt.Emit.Monad
 import Lean4Fmt.Emit.Tokens
+import Lean4Fmt.Emit.Binders
 import Lean4Fmt.Syntax.Kinds
 import Lean4Fmt.Syntax.Trivia
 
@@ -522,19 +523,20 @@ partial def emit
       -- after the comma when it fits, else on the next line at
       -- continuationIndent (quantifier bodies read as continuations)
       if args.size != 5 then return (← verbatim stx)
-      let mut head := (bareSrc args[0]!).trimAscii.toString
-      if head.isEmpty then return (← verbatim stx)
+      let kwT := (bareSrc args[0]!).trimAscii.toString
+      if kwT.isEmpty then return (← verbatim stx)
+      let mut hd : Doc := .text kwT
       for b in args[1]!.getArgs do
-        let t := (bareSrc b).trimAscii.toString
-        if t.isEmpty || t.any (· == '\n') then return (← verbatim stx)
-        head := head ++ " " ++ t
+        let bd ← Lean4Fmt.Emit.binderDoc walk b   -- multi-line types walk
+        if Lean4Fmt.Doc.hasMultilineVerbatim bd then return (← verbatim stx)
+        hd := hd ++ .space ++ bd
       let optT := (bareSrc args[2]!).trimAscii.toString
       if optT.any (· == '\n') then return (← verbatim stx)
-      if !optT.isEmpty then head := head ++ " " ++ optT
+      if !optT.isEmpty then hd := hd ++ .text (" " ++ optT)
       let bodyDoc ← walk args[4]!
       if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then return (← verbatim stx)
       let cont := (← read).layout.continuationIndent
-      return .text (head ++ ",") ++ .group (.nest cont (.line ++ bodyDoc))
+      return hd ++ .text "," ++ .group (.nest cont (.line ++ bodyDoc))
     else if kind == ``Lean.Parser.Term.hole then
       return .text "_"
     else if kind == `str || kind == `num || kind == `scientific || kind == `char then

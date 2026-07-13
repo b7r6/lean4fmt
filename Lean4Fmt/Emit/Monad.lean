@@ -70,7 +70,8 @@ def verbatimQuiet
 def verbatim
     (stx : Lean.Syntax)
     : EmitM Doc := do
-  logOptOut stx
+  if !(bareSrc stx).isEmpty then   -- an empty node emits nothing: not an opt-out
+    logOptOut stx
   verbatimQuiet stx
 
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
