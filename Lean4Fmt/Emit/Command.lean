@@ -15,6 +15,7 @@
 
 import Lean4Fmt.Emit.Monad
 import Lean4Fmt.Emit.Tokens
+import Lean4Fmt.Emit.Binders
 import Lean4Fmt.Syntax.Trivia
 
 namespace Lean4Fmt.Emit.Command
