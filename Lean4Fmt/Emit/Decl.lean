@@ -161,14 +161,46 @@ private def binderText?
   if interior.isEmpty then return none
   return some (l ++ interior ++ r)
 
-/-- A binder doc: active single-line text when `binderText?` can hold it,
-    verbatim otherwise. -/
+/-- A binder doc: active single-line text when `binderText?` can hold it;
+    a MULTI-LINE binder walks its type (chains/apps lay out actively inside
+    the brackets); verbatim only when the shape offers no seam. -/
 private def binderDoc
+            (walk : Lean4Fmt.Emit.Walk)
             (b : Lean.Syntax)
             : EmitM Doc := do
   match binderText? b (← read).spacing.preserveBinders with
   | some t => pure (.text t)
-  | none => verbatim b
+  | none =>
+    -- [l, names…, (":" type)?, r] — names single-line, type WALKED
+    let k := b.getKind
+    if (k == ``Lean.Parser.Term.explicitBinder || k == ``Lean.Parser.Term.implicitBinder
+        || k == ``Lean.Parser.Term.strictImplicitBinder || k == ``Lean.Parser.Term.instBinder)
+        && !Lean4Fmt.Syntax.interiorHasLineComment b then
+      let a := b.getArgs
+      if a.size ≥ 3 then
+        let l := (bareSrc a[0]!).trimAscii.toString
+        let r := (bareSrc a[a.size-1]!).trimAscii.toString
+        -- the interior: leading name tokens single-line, then a type slot
+        -- whose LAST child is the type term (walked)
+        let mut head := ""
+        let mut ok := true
+        let mut tyDoc : Doc := .nil
+        for c in a.extract 1 (a.size - 1) do
+          let t := (bareSrc c).trimAscii.toString
+          if t.isEmpty then continue
+          if !t.any (· == '\n') then
+            head := if head.isEmpty then t else head ++ " " ++ t
+          else
+            -- multi-line piece: the `: τ` slot — walk the type term
+            let ca := c.getArgs
+            if ca.size == 2 && (bareSrc ca[0]!).trimAscii.toString == ":" then
+              let d ← walk ca[1]!
+              if Lean4Fmt.Doc.hasMultilineVerbatim d then ok := false
+              else tyDoc := .text " : " ++ d
+            else ok := false
+        if ok && !head.isEmpty then
+          return .text (l ++ head) ++ tyDoc ++ .text r
+    verbatim b
 
 /-- Signature return-type info: `none` if there is no type spec, else
     `(termDoc, colonTypeDoc, flatWidth, multiline?)` where `termDoc` is the type
@@ -237,7 +269,7 @@ private def sigDoc
       match commentBlock? ((Lean4Fmt.Syntax.leading? b).getD "") with
       | some cmt => d := d ++ .hardline ++ .verbatim cmt 0
       | none => pure ()
-      d := d ++ .hardline ++ (← binderDoc b)
+      d := d ++ .hardline ++ (← binderDoc walk b)
     match ti with
     | some (term, colonType, _, multi) =>
       if multi then d := d ++ .hardline ++ colonType         -- multi-line type: own line, byte-exact
@@ -248,7 +280,7 @@ private def sigDoc
     let mut d : Doc := .nil
     let mut first := true
     for b in binders do
-      let bd ← binderDoc b
+      let bd ← binderDoc walk b
       d := d ++ (if first then .space else .group (.line)) ++ bd
       first := false
     match ti with
@@ -260,7 +292,7 @@ private def sigDoc
     let mut bdoc : Doc := .nil
     let mut bwidth := 0
     for b in binders do
-      let bd ← binderDoc b
+      let bd ← binderDoc walk b
       bdoc := bdoc ++ .space ++ bd
       bwidth := bwidth + 1 + (Lean4Fmt.Doc.flatWidth bd).getD 0
     match ti with
@@ -395,11 +427,26 @@ private def valForm
       -- span (which carries it byte-exact)
       let leadCmts := Lean4Fmt.Syntax.countLineComments
         ((Lean4Fmt.Syntax.leading? v).getD "")
-      if (if Lean4Fmt.Syntax.ownsSeams v.getKind then leadCmts > 0
-          else Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts) then
+      if (if Lean4Fmt.Syntax.ownsSeams v.getKind then False
+          else Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts + leadCmts) then
+        return .span (← verbatim declVal)
+      -- the value's HEAD-LEADING comment lines place structurally (the seam
+      -- kit; T3) and force the BROKEN placement — an inline `:= -- cmt v`
+      -- would be nonsense. hasMultilineVerbatim still spans.
+      -- seam-owning kinds place their OWN leading (the let-chain walker
+      -- emits its head comments) — prepending here would double them
+      let vdoc ← (do
+        if leadCmts > 0 && !Lean4Fmt.Syntax.ownsSeams v.getKind then
+          match Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? v).getD "") with
+          | some sep => pure (sep ++ vdoc)
+          | none => pure vdoc   -- unownable shape: caught below as span
+        else pure vdoc)
+      if leadCmts > 0 && !Lean4Fmt.Syntax.ownsSeams v.getKind
+          && !(match Lean4Fmt.Emit.leadingSep?
+          ((Lean4Fmt.Syntax.leading? v).getD "") with | some _ => true | none => false) then
         return .span (← verbatim declVal)
       let clean := !Lean4Fmt.Doc.hasMultilineVerbatim vdoc   -- comments handled above
-      if isActiveMultiline v.getKind && clean then return .body vdoc false
+      if (isActiveMultiline v.getKind || leadCmts > 0) && clean then return .body vdoc false
       match Lean4Fmt.Doc.flatWidth vdoc with
       | some _ => return .body vdoc false      -- width decides (no forced flatten)
       | none => return .span (← verbatim declVal)                                    -- multi-line: safe span
@@ -515,7 +562,7 @@ private def defnDoc
   let mut bInline : Doc := .nil
   let mut bW := 0
   for b in binders do
-    let bd ← binderDoc b
+    let bd ← binderDoc walk b
     bInline := bInline ++ .space ++ bd
     bW := bW + 1 + (Lean4Fmt.Doc.flatWidth bd).getD 0
   let ti ← match sigStx with | some s => typeInfo walk s | none => pure none
