@@ -9,6 +9,7 @@ for seed in 1 2 3; do
   # spine filter: perturbed must still parse to the same tokens (harness emits or fails)
   pert=$(LEAN_PATH=$FMT_LIB:$MERGE:$CORE lean --run /tmp/v2harness.lean /tmp/fz-$$.lean --emit 2>/dev/null)
   [ -z "$pert" ] && continue   # mutation broke the parse — filtered
+  case "$pert" in PARSEFAIL*) continue;; esac
   if [ "$base" != "$pert" ]; then echo "DIVERGE seed=$seed $f"; fi
 done
 rm -f /tmp/fz-$$.lean

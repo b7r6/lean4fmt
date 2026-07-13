@@ -15,6 +15,7 @@
 -/
 
 import Lean4Fmt.Emit.Monad
+import Lean4Fmt.Emit.Tokens
 import Lean4Fmt.Emit.Command
 import Lean4Fmt.Syntax.Kinds
 
@@ -934,6 +935,14 @@ def emit
       return modsDoc ++ d
     | none => return (← verbatim stx)
   if !isDefShape defn.getKind || !isActiveVal then
+    -- sig-only decls (axiom, opaque, variable …) and unported value forms:
+    -- a SINGLE-LINE declaration (modifiers included) rides canonically
+    -- respaced; multi-line stays verbatim (tail)
+    let t := bareSrc stx
+    if !t.isEmpty && !t.any (· == '\n') then
+      match Lean4Fmt.Emit.tokenJoin? stx with
+      | some t' => return .text t'
+      | none => return (← verbatim stx)
     return (← verbatim stx)     -- other value forms: reproduce
   if isEqns && !eqnsFormattable (dargs[3]?.getD .missing) then
     return (← verbatim stx)     -- comment/where/termination-bearing eqns: whole-decl verbatim
