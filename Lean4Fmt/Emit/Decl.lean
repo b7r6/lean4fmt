@@ -190,12 +190,9 @@ private def typeInfo
         && !Lean4Fmt.Syntax.subtreeHasLineComment ts then
       let term ← walk (ts.getArgs[1]?.getD .missing)
       let colonType ← verbatimQuiet ts   -- probe: logged only if the span is TAKEN
-      let w := (← read).layout.lineWidth
-      -- a type too wide to EVER fit flat would explode into the all-or-nothing
-      -- group layouts (a 20-element byte list, one element per line) — keep the
-      -- author's hand-packed span for those until a fill mode exists (§5)
-      let tooWide := (Lean4Fmt.Doc.flatWidth term).getD (w + 1) > w
-      if Lean4Fmt.Doc.hasMultilineVerbatim term || tooWide then
+      -- wide types are ACTIVE now: commaGroups carry fillSep pools (§5), so a
+      -- byte table reflows as a packed fill instead of exploding one-per-line
+      if Lean4Fmt.Doc.hasMultilineVerbatim term then
         logOptOut ts
         return some (colonType, colonType, (Lean4Fmt.Doc.flatWidth colonType).getD 0, true)
       return some (term, colonType, (Lean4Fmt.Doc.flatWidth term).getD 0, false)

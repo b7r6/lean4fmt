@@ -12,6 +12,7 @@
 -/
 
 import Lean4Fmt.Emit.Monad
+import Lean4Fmt.Emit.Tokens
 import Lean4Fmt.Syntax.Kinds
 import Lean4Fmt.Syntax.Trivia
 
@@ -99,7 +100,11 @@ private partial def structFieldDoc
             (field : Lean.Syntax)
             : EmitM Doc := do
   let fa := field.getArgs
-  let lval ← verbatim (fa[0]?.getD .missing)
+  let lvalStx := fa[0]?.getD .missing
+  let lvalT := bareSrc lvalStx
+  let lval ← if !lvalT.isEmpty && !lvalT.any (· == '\n') then
+      pure (Doc.text ((Lean4Fmt.Emit.tokenJoin? lvalStx).getD lvalT))
+    else verbatim lvalStx
   let rest := (fa[1]?.getD Lean.Syntax.missing).getArgs
   let fd? := rest.find? (·.getKind == ``Lean.Parser.Term.structInstFieldDef)
   match fd? with
@@ -134,13 +139,25 @@ partial def emit
     -- (the atom carries the source spelling — `→` or `->` — and the token gate
     -- cares, so it rides through the walk as-is).
     if (Lean4Fmt.Syntax.isBinOp kind || kind == ``Lean.Parser.Term.arrow) && args.size == 3 then
-      -- `lhs op rhs` — width-aware: flat if it fits, else break BEFORE the operator
-      -- (the operator leads the continuation line, indented by continuationIndent).
+      -- `lhs op rhs` — width-aware: flat if it fits, else break BEFORE the
+      -- operator (operator leads the continuation line). A CHAIN of the same
+      -- operator flattens to ONE continuation indent (no staircase):
+      --   a = true
+      --       ∧ b = true
+      --       ∧ c = true
       let lhs ← walk args[0]!
       let op ← walk args[1]!
-      let rhs ← walk args[2]!
+      let mut tail : Doc := .nil
+      let mut cur := args[2]!
+      let mut steps := 0
+      while cur.getKind == kind && cur.getArgs.size == 3 && steps < 64 do
+        let ca := cur.getArgs
+        tail := tail ++ .line ++ op ++ .space ++ (← walk ca[0]!)
+        cur := ca[2]!
+        steps := steps + 1
+      let rhs ← walk cur
       let cont := (← read).layout.continuationIndent
-      return .group (lhs ++ .nest cont (.line ++ op ++ .space ++ rhs))
+      return .group (lhs ++ .nest cont (tail ++ .line ++ op ++ .space ++ rhs))
     else if kind == ``Lean.Parser.Term.app then
       -- `fn a b c` — width-aware: flat if it fits, else `fn` on its line with each
       -- argument on a continuation line indented by `layout.indent`. All-or-
@@ -521,7 +538,11 @@ partial def emit
     else if kind == ``Lean.Parser.Term.hole then
       return .text "_"
     else if kind == `str || kind == `num || kind == `scientific || kind == `char then
-      return (← verbatim stx)      -- literal: reproduce exactly
+      -- literal: exact token; multi-line strings are CONTENT (quiet — not an
+      -- actionable opt-out)
+      let t := bareSrc stx
+      if !t.isEmpty && !t.any (· == '\n') then return .text t
+      return (← verbatimQuiet stx)
     else
       return (← verbatim stx)      -- not yet ported (let/match/do/if/…): opaque
   | .missing => return .nil

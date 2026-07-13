@@ -263,7 +263,7 @@ def emit
         else .text "| " ++ patDoc ++ .text " =>" ++ bD
       d := d ++ .hardline ++ armD
     return d
-  else if kind != ``Lean.Parser.Term.do then
+  else if kind != ``Lean.Parser.Term.do && kind != ``Lean.Parser.Term.doNested then
     return (← Lean4Fmt.Emit.verbatim stx)
   else
   -- a comment on the `do` line itself (`do -- setup`) has no home in the layout

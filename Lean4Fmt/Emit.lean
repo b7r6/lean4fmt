@@ -56,6 +56,7 @@ partial def walk
         && !(Lean4Fmt.Emit.bareSrc stx).isEmpty then
       pure (.text (Lean4Fmt.Emit.bareSrc stx))
     else if kind == ``Lean.Parser.Term.do
+         || kind == ``Lean.Parser.Term.doNested
          || kind == ``Lean.Parser.Term.doLet
          || kind == ``Lean.Parser.Term.doLetArrow
          || kind == ``Lean.Parser.Term.doReassign
