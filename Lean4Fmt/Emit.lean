@@ -57,6 +57,9 @@ partial def walk
       pure (.text (Lean4Fmt.Emit.bareSrc stx))
     else if kind == ``Lean.Parser.Term.do
          || kind == ``Lean.Parser.Term.doNested
+         || kind == ``Lean.Parser.Term.doFor
+         || kind == `Lean.Parser.Term.doWhile
+         || kind == `Lean.Parser.Term.doUnless
          || kind == ``Lean.Parser.Term.doLet
          || kind == ``Lean.Parser.Term.doLetArrow
          || kind == ``Lean.Parser.Term.doReassign

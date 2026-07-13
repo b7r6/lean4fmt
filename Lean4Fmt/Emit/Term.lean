@@ -74,12 +74,20 @@ private def seamCommaList?
     -- `e  -- note` with `, e₂` on the next line) or the COMMA (`e, -- note`);
     -- own both zones. Content in a comma's own LEADING has no seam — bail.
     let eTrail := ((Lean4Fmt.Syntax.trailing? e).getD "").trimAscii.toString
+    -- inter-element comments in LEADING-COMMA style live in the COMMA's
+    -- leading full lines — own them via the seam kit (placed after this
+    -- element's comma, before the next element; pend collapse merges the
+    -- separators). Plain whitespace comma-leading contributes nothing.
+    let mut commaLeadSep : Doc := .nil
     let cTrail ← do
       match comma? with
       | some c =>
         let isWsC (t : String) : Bool := t.all (fun ch => ch == ' ' || ch == '\t')
         let cl := (Lean4Fmt.Syntax.leading? c).getD ""
-        if !(((cl.splitOn "\n").drop 1).dropLast.all isWsC) then return none
+        if !(((cl.splitOn "\n").drop 1).dropLast.all isWsC) then
+          match Lean4Fmt.Emit.leadingSep? cl with
+          | some d => commaLeadSep := d
+          | none => return none
         pure (((Lean4Fmt.Syntax.trailing? c).getD "").trimAscii.toString)
       | none => pure ""
     let trailT := String.intercalate " " (([eTrail, cTrail].filter (fun t => !t.isEmpty)))
@@ -88,7 +96,7 @@ private def seamCommaList?
     let _ := ()
     let commaD : Doc := if last then .nil else .text ","
     let trailD : Doc := if trailT.isEmpty then .nil else .text (" " ++ trailT)
-    body := body ++ sep ++ eDoc ++ commaD ++ trailD
+    body := body ++ sep ++ eDoc ++ commaD ++ trailD ++ commaLeadSep
   let openD : Doc := if openTrail.isEmpty then .nil else .text (" " ++ openTrail)
   return some (.text l ++ openD ++ .nest 2 body ++ .hardline ++ .text r)
 

@@ -20,6 +20,7 @@
 -/
 
 import Lean4Fmt.Emit.Monad
+import Lean4Fmt.Emit.Tokens
 
 namespace Lean4Fmt.Emit.DoNotation
 
@@ -263,6 +264,24 @@ def emit
         else .text "| " ++ patDoc ++ .text " =>" ++ bD
       d := d ++ .hardline ++ armD
     return d
+  else if kind == ``Lean.Parser.Term.doFor || kind == `Lean.Parser.Term.doWhile
+      || kind == `Lean.Parser.Term.doUnless then
+    -- `for x in xs do` / `while c do` / `unless c do` — head tokens
+    -- single-line (canonically respaced), the body sequence one statement
+    -- per line at +2 with the seam loop owning inter-statement trivia
+    if a.size < 2 then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut head := ""
+    for c in a.extract 0 (a.size - 1) do
+      if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then
+        return (← Lean4Fmt.Emit.verbatim stx)
+      let t := Lean4Fmt.Emit.canonTok c
+      if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+      if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
+    if head.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    let some ss := stmts? a[a.size - 1]! | return (← Lean4Fmt.Emit.verbatim stx)
+    match ← seqLinesDoc? walk ss true with
+    | some body => return .text head ++ .nest 2 body
+    | none => return (← Lean4Fmt.Emit.verbatim stx)
   else if kind != ``Lean.Parser.Term.do && kind != ``Lean.Parser.Term.doNested then
     return (← Lean4Fmt.Emit.verbatim stx)
   else
