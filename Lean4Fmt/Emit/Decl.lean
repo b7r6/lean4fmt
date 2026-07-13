@@ -759,6 +759,22 @@ private def exampleDoc?
   if dargs[2]!.getKind != ``Lean.Parser.Command.declValSimple then return none
   headValDoc? walk head dargs[2]!
 
+/-- Fallback for an `example` whose SIGNATURE spans lines (quasiquote types):
+    the keyword rides active, everything from the signature on is ONE
+    re-anchored span — the decl participates in module structure (blank
+    rhythm) while its interior stays byte-exact. -/
+private def exampleSpanDoc?
+            (defn : Lean.Syntax)
+            : EmitM (Option Doc) := do
+  let dargs := defn.getArgs
+  if dargs.size != 3 then return none
+  let kwT := (bareSrc dargs[0]!).trimAscii.toString
+  if kwT.isEmpty || kwT.any (· == '\n') then return none
+  let rest := Lean.mkNullNode (dargs.extract 1 dargs.size)
+  let t := bareSrc rest
+  if t.isEmpty then return none
+  return some (.text (kwT ++ " ") ++ (← verbatimQuiet rest) )
+
 /-- Active layout for `instance` declarations: head on one line
     (`instance (prio)? (name)? <binders> : τ`), then `:= value` (walked, the
     same placement rules as a def) or `where` + one field per line at +2 (the
@@ -897,7 +913,9 @@ def emit
     -- example: no declId — [kw, optDeclSig, declVal]
     if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
       return (← verbatim stx)
-    match ← exampleDoc? walk defn with
+    match ← (do match ← exampleDoc? walk defn with
+                | some d => pure (some d)
+                | none => exampleSpanDoc? defn) with
     | some d =>
       let (modsDoc, _) := match a[0]? with
         | some m => modifiersDoc attrsOwnLine m
