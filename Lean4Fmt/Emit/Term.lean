@@ -299,6 +299,13 @@ partial def emit
       -- [if, cond, then, thenBranch, else, elseBranch]; a width-aware group:
       -- flat `if c then a else b`, or broken with 2-space branches, `else` at
       -- the if's base column (§ active layout). Branches recurse via `walk`.
+      -- An interior slot whose TAIL carries a comment (`… then x -- note` before
+      -- `else`) has no seam in this layout — verbatim keeps it. (The entry
+      -- guard can't see it: the comment hides in an ownsSeams subtree whose
+      -- own emitter treats its tail trailing as the PARENT's zone.)
+      for slot in [args[1]?, args[3]?] do
+        let t := ((slot.bind Lean4Fmt.Syntax.lastTokenTrailing?).getD "").trimAscii.toString
+        if !t.isEmpty then return (← verbatim stx)
       let cond ← walk (args[1]?.getD .missing)
       let thenB ← walk (args[3]?.getD .missing)
       let elseB ← walk (args[5]?.getD .missing)
@@ -407,7 +414,7 @@ partial def emit
       for h : i in [0:alts.size] do
         let alt := alts[i]
         -- a comment INSIDE the arm (pattern/body interior) — whole-match verbatim
-        if Lean4Fmt.Syntax.interiorHasLineComment alt then return (← verbatim stx)
+        if Lean4Fmt.Syntax.hasUnownedInteriorComment alt then return (← verbatim stx)
         let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
         let some sep := Lean4Fmt.Emit.leadingSep? lead | return (← verbatim stx)
         let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
@@ -450,7 +457,11 @@ partial def emit
       return .text head ++ armsDoc
     else if kind.toString == "termDepIfThenElse" then
       -- [if, binderIdent, :, cond, then, thenBranch, else, elseBranch] — the
-      -- dependent `if h : c then … else …`; same layout as termIfThenElse.
+      -- dependent `if h : c then … else …`; same layout as termIfThenElse,
+      -- same interior-tail comment bail (no seam for `… then x -- note`).
+      for slot in [args[3]?, args[5]?] do
+        let t := ((slot.bind Lean4Fmt.Syntax.lastTokenTrailing?).getD "").trimAscii.toString
+        if !t.isEmpty then return (← verbatim stx)
       let binder ← walk (args[1]?.getD .missing)
       let cond ← walk (args[3]?.getD .missing)
       let thenB ← walk (args[5]?.getD .missing)

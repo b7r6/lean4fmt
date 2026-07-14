@@ -160,6 +160,37 @@ def emit
       match ← idDeclDoc? walk a[3]! with
       | some d => return headD ++ d
       | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if kind == ``Lean.Parser.Term.doLetRec then
+    -- `let rec <decl>` = [group[let,rec], letRecDecls, null] — single, plain,
+    -- suffix-free binding rides the letDecl machinery (mirrors Term.letrec,
+    -- minus the body: the do-loop owns what follows). This statement was a
+    -- MUTUAL POISONER: its multi-line verbatim marked the whole enclosing
+    -- decl (and any mutual) opaque.
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    if a.size < 2 || a.size > 3 then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let kwT := Lean4Fmt.Emit.canonTok a[0]!
+    if kwT.isEmpty || kwT.any (· == '\n') then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    if !((a[2]?.map (fun s => (Lean4Fmt.Emit.bareSrc s).trimAscii.toString.isEmpty)).getD true) then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let decls := ((a[1]!.getArgs[0]?).map (·.getArgs)).getD #[]
+    if decls.size != 1 then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let rd := decls[0]!
+    if rd.getKind != ``Lean.Parser.Term.letRecDecl || rd.getArgs.size != 4 then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    if !(Lean4Fmt.Emit.bareSrc rd.getArgs[0]!).trimAscii.toString.isEmpty then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    if !(Lean4Fmt.Emit.bareSrc rd.getArgs[1]!).trimAscii.toString.isEmpty then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    if !(Lean4Fmt.Emit.bareSrc rd.getArgs[3]!).trimAscii.toString.isEmpty then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let declDoc ← walk rd.getArgs[2]!
+    if Lean4Fmt.Doc.hasMultilineVerbatim declDoc then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    return .text (kwT ++ " ") ++ declDoc
   else if kind == ``Lean.Parser.Term.doReassign then
     -- bare `x := v` = [letIdDeclNoBinders] — the inner decl IS the statement
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)

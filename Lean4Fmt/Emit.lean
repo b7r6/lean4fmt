@@ -29,9 +29,11 @@ namespace Lean4Fmt.Emit
 
 open Lean Lean4Fmt.Doc Lean4Fmt.Style
 
+mutual
+
 /-- The single recursive walker. Dispatches to category emitters; falls back to
     verbatim reproduction for anything not yet actively formatted. -/
-partial def walk
+partial def walkCore
             (stx : Lean.Syntax)
             : EmitM Doc := do
   match stx with
@@ -61,6 +63,7 @@ partial def walk
          || kind == `Lean.Parser.Term.doWhile
          || kind == `Lean.Parser.Term.doUnless
          || kind == ``Lean.Parser.Term.doLet
+         || kind == ``Lean.Parser.Term.doLetRec
          || kind == ``Lean.Parser.Term.doLetArrow
          || kind == ``Lean.Parser.Term.doReassign
          || kind == ``Lean.Parser.Term.doReassignArrow
@@ -186,6 +189,26 @@ partial def walk
         | some t' => pure (.text t')
         | none => pure (.text t)
       else verbatim stx
+
+/-- `walkCore` + the single-line bail interception: a DISPATCHED emitter that
+    bails whole-node (`.verbatim`, one line) still gets the canonical token
+    respacing the walk-default gives undispatched kinds — one seam closes the
+    entire "dispatched but bailed" origin-carrier class (semicolon `do`s,
+    pattern let-arrows, tuple bails, …). Multi-line verbatims and comment-gap
+    joins stay byte-exact; preserveLineBreaks styles keep source bytes. -/
+partial def walk
+            (stx : Lean.Syntax)
+            : EmitM Doc := do
+  let d ← walkCore stx
+  match d with
+  | .verbatim s _ =>
+    if s.any (· == '\n') || (← read).breaking.preserveLineBreaks then return d
+    match Lean4Fmt.Emit.tokenJoin? stx with
+    | some t => return .text t
+    | none => return d
+  | _ => return d
+
+end
 
 /-- Format a whole module to a `Doc` plus collected diagnostics, under `style`. -/
 def run

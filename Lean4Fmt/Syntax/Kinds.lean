@@ -47,6 +47,12 @@ def ownsSeams
       || kind == ``Lean.Parser.Term.anonymousCtor
       || kind == ``Lean.Parser.Term.structInst
       || kind == ``Lean.Parser.Term.app
+      -- the do statement loop owns inter-statement trivia (comments/blanks
+      -- place structurally; a statement-interior comment keeps just that
+      -- statement verbatim — bytes never drop). Counting do-body comments
+      -- at an eqns/match ARM forced whole-decl (and enclosing-mutual)
+      -- verbatim for every commented proof-shaped arm.
+      || kind == ``Lean.Parser.Term.do
       || kind.toString == "«term[_]»"
       || kind.toString == "«term#[_,]»"
 
@@ -74,6 +80,26 @@ where
     | .node _ k args =>
       if ownsSeams k then 0
       else args.foldl (fun n c => n + go c) 0
+    | _ =>
+      countLineComments ((leading? s).getD "")
+        + countLineComments ((trailing? s).getD "")
+
+/-- The ARM-SITE variant of the unowned-comment count: (a) the node's OWN
+    leading is exempt — the arm loop places it via `leadingSep?`; (b) a
+    seam-owning DESCENDANT's HEAD-leading still counts — its emitter owns
+    comments BETWEEN its items, not the one before its own first token
+    (a comment between `=>` and a `match` body was silently DROPPED when
+    the plain ownsSeams cutoff swallowed it — found by the comment diff
+    check, the gate is blind to it). -/
+partial def hasUnownedInteriorComment (stx : Lean.Syntax) : Bool :=
+  goI stx > countLineComments ((leading? stx).getD "")
+      + countLineComments ((lastTokenTrailing? stx).getD "")
+where
+  goI (s : Lean.Syntax) : Nat :=
+    match s with
+    | .node _ k args =>
+      if ownsSeams k then countLineComments ((leading? s).getD "")
+      else args.foldl (fun n c => n + goI c) 0
     | _ =>
       countLineComments ((leading? s).getD "")
         + countLineComments ((trailing? s).getD "")

@@ -101,7 +101,7 @@ private def eqnsFormattable
   -- hold must be decided HERE, where the fallback is whole-decl verbatim
   for h : i in [0:alts.size] do
     let alt := alts[i]
-    if Lean4Fmt.Syntax.interiorHasLineComment alt then return false
+    if Lean4Fmt.Syntax.hasUnownedInteriorComment alt then return false
     let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
     let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
     if !isWs ((lead.splitOn "\n").headD "") then return false
@@ -413,7 +413,7 @@ private def valForm
       let alt := alts[i]
       -- a comment INSIDE the arm — whole-declaration verbatim (via the
       -- defnDoc multiline-arms gate: the span carries it)
-      if Lean4Fmt.Syntax.interiorHasLineComment alt then return .span (← verbatim declVal)
+      if Lean4Fmt.Syntax.hasUnownedInteriorComment alt then return .span (← verbatim declVal)
       let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
       let some sep := Lean4Fmt.Emit.leadingSep? lead | return .span (← verbatim declVal)
       let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
