@@ -79,6 +79,29 @@ def hasMultilineVerbatim : Doc → Bool
   | .fillSep items => hasMLList items
   | _ => false
 
+/-- Whether a doc contains a multi-line RE-ANCHORING block — `.verbatim` only.
+    `.textRaw` (docstrings, comment blocks) emits its lines RAW at their source
+    columns, indifferent to placement indent, so it is placement-stable; only
+    `.verbatim` dedents/re-indents by column. The mutual member bail cares
+    about exactly the re-anchoring class — counting textRaw kept every member
+    with a MULTI-LINE DOCSTRING (and its whole mutual) verbatim. -/
+def hasMultilineReanchor : Doc → Bool
+  | .verbatim s _ => s.any (· == '\n')
+  | .cat a b => hasMultilineReanchor a || hasMultilineReanchor b
+  | .group d | .nest _ d | .align d | .flatten d => hasMultilineReanchor d
+  | .alignTable _ rows => hasMRRows rows
+  | .alignOr _ _ fb => hasMultilineReanchor fb
+  | .fillSep items => hasMRList items
+  | _ => false
+
+def hasMRList : List Doc → Bool
+  | [] => false
+  | d :: ds => hasMultilineReanchor d || hasMRList ds
+
+def hasMRRows : List (List Doc) → Bool
+  | [] => false
+  | r :: rs => hasMRList r || hasMRRows rs
+
 def hasMLList : List Doc → Bool
   | [] => false
   | d :: ds => hasMultilineVerbatim d || hasMLList ds

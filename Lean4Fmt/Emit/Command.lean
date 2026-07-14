@@ -471,26 +471,32 @@ def emit
   if kind != ``Lean.Parser.Command.mutual then
     return (← Lean4Fmt.Emit.verbatim stx)
   let a := stx.getArgs
-  if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
+  if a.size != 3 then
+    return (← Lean4Fmt.Emit.verbatim stx)
   if ((a[2]?.map bareSrc).getD "").trimAscii.toString != "end" then
     return (← Lean4Fmt.Emit.verbatim stx)
   -- a comment on the `mutual` line itself has no home in the layout
   if !((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString.isEmpty then
     return (← Lean4Fmt.Emit.verbatim stx)
   let decls := (a[1]?.map (·.getArgs)).getD #[]
-  if decls.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+  if decls.isEmpty then
+    return (← Lean4Fmt.Emit.verbatim stx)
   let mut body : Doc := .nil
   for d in decls do
     let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? d).getD "")
       | return (← Lean4Fmt.Emit.verbatim stx)
     let trailT := ((Lean4Fmt.Syntax.trailing? d).getD "").trimAscii.toString
-    if trailT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+    if trailT.any (· == '\n') then
+      return (← Lean4Fmt.Emit.verbatim stx)
     let trailDoc : Doc := if !trailT.isEmpty then .text (" " ++ trailT) else .nil
     let dDoc ← walk d
-    -- a member that reproduces as a multi-line opaque block re-anchors by
-    -- column — only idempotent at its natural top-level position, and mutual
-    -- members sit at +2: drift. Whole-block verbatim for those.
-    if Lean4Fmt.Doc.hasMultilineVerbatim dDoc then return (← Lean4Fmt.Emit.verbatim stx)
+    -- a member that reproduces as a multi-line RE-ANCHORING block (verbatim)
+    -- drifts at +2 (only idempotent at its natural top-level column) — whole
+    -- block verbatim. textRaw (multi-line docstrings, comment blocks) emits
+    -- RAW at source columns, placement-stable — NOT counted (counting it kept
+    -- every mutual with a multi-line-docstring'd member verbatim).
+    if Lean4Fmt.Doc.hasMultilineReanchor dDoc then
+      return (← Lean4Fmt.Emit.verbatim stx)
     body := body ++ sep ++ dDoc ++ trailDoc
   let some endSep := leadingSep? ((Lean4Fmt.Syntax.leading? a[2]!).getD "")
     | return (← Lean4Fmt.Emit.verbatim stx)
