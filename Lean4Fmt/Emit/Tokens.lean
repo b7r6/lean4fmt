@@ -62,9 +62,16 @@ def tokenJoin? (stx : Lean.Syntax) : Option String := Id.run do
   if ls.isEmpty then return none
   let mut out := ""
   let mut prev : Option Lean.Syntax := none
+  -- trivia carried by SKIPPED empty leaves (e.g. the synthetic `[anonymous]`
+  -- idents of a cdot expansion, whose trailing holds the real inter-token
+  -- space) — folded into the next real gap, else `(· + ·)` would relex-glue
+  let mut skipGap := ""
   for l in ls do
     let t := bareSrc l
-    if t.isEmpty then continue
+    if t.isEmpty then
+      skipGap := skipGap
+        ++ (Lean4Fmt.Syntax.leading? l).getD "" ++ (Lean4Fmt.Syntax.trailing? l).getD ""
+      continue
     if t.any (· == '\n') then return none
     match prev with
     | none => out := t
@@ -76,7 +83,7 @@ def tokenJoin? (stx : Lean.Syntax) : Option String := Id.run do
       let tr? := Lean4Fmt.Syntax.trailing? p
       let ld? := Lean4Fmt.Syntax.leading? l
       if tr?.isNone || ld?.isNone then return none
-      let gap := tr?.getD "" ++ ld?.getD ""
+      let gap := tr?.getD "" ++ skipGap ++ ld?.getD ""
       if !gap.toList.all (·.isWhitespace) then return none   -- inline comment
       if gap.any (· == '\n') then return none               -- not single-line
       let sep := match gapRule (bareSrc p) t with
@@ -85,6 +92,7 @@ def tokenJoin? (stx : Lean.Syntax) : Option String := Id.run do
         | none => if gap.isEmpty then "" else " "
       out := out ++ sep ++ t
     prev := some l
+    skipGap := ""
   if out.isEmpty then return none
   return some out
 
@@ -98,9 +106,13 @@ def tokenJoinFlat? (stx : Lean.Syntax) : Option String := Id.run do
   if ls.isEmpty then return none
   let mut out := ""
   let mut prev : Option Lean.Syntax := none
+  let mut skipGap := ""   -- trivia from skipped empty leaves (see tokenJoin?)
   for l in ls do
     let t := bareSrc l
-    if t.isEmpty then continue
+    if t.isEmpty then
+      skipGap := skipGap
+        ++ (Lean4Fmt.Syntax.leading? l).getD "" ++ (Lean4Fmt.Syntax.trailing? l).getD ""
+      continue
     if t.any (· == '\n') then return none    -- multi-line TOKEN: content
     match prev with
     | none => out := t
@@ -108,7 +120,7 @@ def tokenJoinFlat? (stx : Lean.Syntax) : Option String := Id.run do
       let tr? := Lean4Fmt.Syntax.trailing? p
       let ld? := Lean4Fmt.Syntax.leading? l
       if tr?.isNone || ld?.isNone then return none
-      let gap := tr?.getD "" ++ ld?.getD ""
+      let gap := tr?.getD "" ++ skipGap ++ ld?.getD ""
       if !gap.toList.all (·.isWhitespace) then return none
       let sep := match gapRule (bareSrc p) t with
         | some true => " "
@@ -116,6 +128,7 @@ def tokenJoinFlat? (stx : Lean.Syntax) : Option String := Id.run do
         | none => if gap.isEmpty then "" else " "
       out := out ++ sep ++ t
     prev := some l
+    skipGap := ""
   if out.isEmpty then return none
   return some out
 

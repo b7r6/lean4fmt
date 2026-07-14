@@ -336,15 +336,115 @@ def goCells (width maxPend : Nat) : List Doc → Nat → List String
 
 end
 
+/-- STRING-AWARE trailing-whitespace strip: drop spaces/tabs at every line end
+    EXCEPT inside string literals (plain/interpolated/raw), where they are token
+    content. Trailing whitespace anywhere else — code, line comments, block
+    comments — is trivia the canonical form does not carry (the gate's
+    `commentContent` check is whitespace-blind, so comment-tail stripping is
+    provably meaning-safe). The scanner tracks the lexical mode at each newline:
+    line comments end AT the newline (strippable); block comments nest; `'` opens
+    a char literal only after a non-identifier char (else it is a prime); raw
+    strings `r#…#"…"#…#` close on a quote followed by their hash count. Inside
+    `s!"…{e}…"` the quote-toggle treats interpolation code as string — the
+    conservative direction (never strips string content; at worst leaves a space
+    inside interpolation code, which the gate would catch anyway). -/
+def stripTrailingWs (s : String) : String := Id.run do
+  let a : Array Char := s.toList.toArray
+  let n := a.size
+  let isIdChar := fun (c : Char) =>
+    c.isAlphanum || c == '_' || c == '\'' || c == '!' || c == '?' || c.val > 127
+  -- modes: 0 code, 1 line comment, 2 block comment, 3 string, 4 raw string, 5 char
+  let mut mode : Nat := 0
+  let mut depth : Nat := 0          -- block-comment nesting / raw-string hash count
+  let mut docComment := false       -- `/--`/`/-!` are ATOMS (leafToks) — never strip inside
+  let mut prev : Char := ' '
+  let mut out : Array Char := Array.mkEmpty n
+  let strip := fun (o : Array Char) => Id.run do
+    let mut o := o
+    while !o.isEmpty && (o.back! == ' ' || o.back! == '\t') do o := o.pop
+    return o
+  let mut i := 0
+  while _h : i < n do
+    let c := a[i]!
+    let c1 := a[i + 1]?
+    match mode with
+    | 0 =>
+      if c == '\n' then
+        out := (strip out).push c
+      else if c == '-' && c1 == some '-' then
+        mode := 1; out := (out.push c).push '-'; i := i + 1
+      else if c == '/' && c1 == some '-' then
+        mode := 2; depth := 1
+        docComment := a[i + 2]? == some '-' || a[i + 2]? == some '!'
+        out := (out.push c).push '-'; i := i + 1
+      else if c == '"' then
+        mode := 3; out := out.push c
+      else if c == 'r' && !isIdChar prev && (c1 == some '"' || c1 == some '#') then
+        -- raw string candidate: r#*" — count hashes, confirm the quote
+        let mut j := i + 1
+        let mut hs := 0
+        while _hj : j < n && a[j]! == '#' do hs := hs + 1; j := j + 1
+        if a[j]? == some '"' then
+          mode := 4; depth := hs
+          for k in [i:j+1] do out := out.push a[k]!
+          i := j
+        else
+          out := out.push c
+      else if c == '\'' && !isIdChar prev then
+        mode := 5; out := out.push c
+      else
+        out := out.push c
+    | 1 =>  -- line comment: the newline both strips and closes
+      if c == '\n' then mode := 0; out := (strip out).push c
+      else out := out.push c
+    | 2 =>  -- block comment (nested): line ends inside are strippable trivia,
+            -- EXCEPT in doc comments, whose whole text is one leaf token
+      if c == '\n' then out := (if docComment then out else strip out).push c
+      else if c == '/' && c1 == some '-' then
+        depth := depth + 1; out := (out.push c).push '-'; i := i + 1
+      else if c == '-' && c1 == some '/' then
+        depth := depth - 1; out := (out.push c).push '/'; i := i + 1
+        if depth == 0 then mode := 0
+      else out := out.push c
+    | 3 =>  -- string literal: NOTHING is stripped (multi-line interiors are content)
+      if c == '\\' then
+        out := out.push c
+        match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
+      else
+        if c == '"' then mode := 0
+        out := out.push c
+    | 4 =>  -- raw string: closes on `"` + depth hashes; interiors are content
+      if c == '"' then
+        let mut j := i + 1
+        let mut hs := 0
+        while _hj : j < n && a[j]! == '#' && hs < depth do hs := hs + 1; j := j + 1
+        if hs == depth then
+          mode := 0
+          for k in [i:j] do out := out.push a[k]!
+          i := j - 1
+        else
+          out := out.push c
+      else out := out.push c
+    | _ =>  -- char literal (or prime-misparse recovery on newline)
+      if c == '\\' then
+        out := out.push c
+        match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
+      else
+        if c == '\'' || c == '\n' then mode := 0
+        if c == '\n' then out := (strip out).push c else out := out.push c
+    prev := (out.back?).getD ' '
+    i := i + 1
+  return String.ofList (strip out).toList
+
 /-- Render a `Doc` to a string under `style`. -/
 def render
     (style : Style)
     (doc : Doc)
     : String :=
   let st := go style.layout.lineWidth (style.blankLines.maxConsecutive + 1) doc 0 false {}
-  -- NOTE: no blanket trailing-whitespace strip — active layout never emits
-  -- trailing whitespace, and a strip would damage multi-line string literal
-  -- interiors (their trailing spaces are token content).
-  if st.out.endsWith "\n" then st.out else st.out ++ "\n"
+  -- trailing whitespace is trivia everywhere outside string literals — the
+  -- string-aware strip is what makes verbatim blocks canonical at line ends
+  let out := stripTrailingWs st.out
+  if out.endsWith "\n" then out else out ++ "\n"
 
 end Lean4Fmt.Doc
