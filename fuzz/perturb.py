@@ -6,14 +6,23 @@ lines = open(sys.argv[1]).read().split('\n')
 out = []
 in_block = False   # crude /- -/ and string guards
 in_meta = False    # macro_rules/syntax/notation/elab quotations: CONTENT (pin)
+in_tpl = False     # MULTI-LINE quasiquote templates [ident| ... |]: CONTENT (pin)
 import re
 META = re.compile(r'^(@\[[^]]*\]\s*)?(local\s+|scoped\s+)*(macro_rules|macro\s|syntax\s|notation\s|elab\s|elab_rules)')
+TPL_OPEN = re.compile(r'\[[A-Za-z_][A-Za-z0-9_\.]*\|')
 for ln in lines:
     s = ln
     if META.match(s): in_meta = True
     elif in_meta and s and not s[0].isspace() and not s.lstrip().startswith('|'):
         in_meta = False
-    guard = ('"' in s) or ('/-' in s) or ('-/' in s) or in_block or in_meta \
+    tpl_line = in_tpl
+    if TPL_OPEN.search(s) and '|]' not in s:
+        in_tpl = True
+        tpl_line = True
+    if '|]' in s:
+        tpl_line = True   # the closing line is template content too
+        in_tpl = False
+    guard = ('"' in s) or ('/-' in s) or ('-/' in s) or in_block or in_meta or tpl_line \
         or s.lstrip().startswith('--') or ('|]' in s) or ('[' in s and '|' in s and ']' in s)
     if '/-' in s and '-/' not in s: in_block = True
     if '-/' in s: in_block = False

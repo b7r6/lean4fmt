@@ -958,7 +958,7 @@ def emit
       return (← verbatim stx)
     let al := (← read).alignment
     let inner? ← if defn.getKind == ``Lean.Parser.Command.inductive
-      then pure (Command.inductiveDoc? defn al.trailingComments al.maxDelta preserveLB)
+      then Command.inductiveDoc? walk defn al.trailingComments al.maxDelta preserveLB
       else Command.structureDoc? walk defn al.trailingComments al.structFields
              al.maxDelta preserveLB
     match inner? with

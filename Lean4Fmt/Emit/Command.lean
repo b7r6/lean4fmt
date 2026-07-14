@@ -27,9 +27,10 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
     piece or a structural surprise — the caller reproduces the whole
     declaration. -/
 private def ctorDoc?
+            (walk : Lean4Fmt.Emit.Walk)
             (c : Lean.Syntax)
             (preserve : Bool)
-            : Option (Doc × String) := Id.run do
+            : Lean4Fmt.Emit.EmitM (Option (Doc × String × Option Doc)) := do
   let ctor := c
   if c.getKind != ``Lean.Parser.Command.ctor then return none
   let a := c.getArgs
@@ -40,10 +41,21 @@ private def ctorDoc?
   if nameT.isEmpty || nameT.any (· == '\n') || modsT.any (· == '\n') then return none
   let sig := a[4]!.getArgs
   let mut parts : Array String := #[]
+  let mut fillDocs : Array Doc := #[]
+  let mut needFill := false
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
     let t := Lean4Fmt.Emit.canonTok b
-    if t.any (· == '\n') then return none
-    parts := parts.push t
+    if t.any (· == '\n') then
+      -- multi-line param: flatten it; the LINE goes to fill mode
+      match Lean4Fmt.Emit.tokenJoinFlat? b with
+      | some ft =>
+        needFill := true
+        parts := parts.push ft
+        fillDocs := fillDocs.push (Doc.text ft)
+      | none => return none
+    else
+      parts := parts.push t
+      fillDocs := fillDocs.push (Doc.text t)
   let tyT ← do
     match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
     | [ts] =>
@@ -59,10 +71,19 @@ private def ctorDoc?
   let exact := (Lean4Fmt.Emit.bareSrc (Lean.mkNullNode (a.extract 1 a.size))).trimAscii.toString
   let line := if preserve && !exact.isEmpty && !exact.any (· == '\n')
       then "| " ++ exact else joined
+  -- a ctor whose joined line cannot fit gets FILL mode: params packed and
+  -- wrapped at the continuation (deterministic; grid-ineligible)
+  let w := (← read).layout.lineWidth
+  let lineDoc? : Option Doc :=
+    if (needFill || joined.length + 4 > w) && !fillDocs.isEmpty then
+      some (.text ("| " ++ (if modsT.isEmpty then "" else modsT ++ " ") ++ nameT ++ " ")
+        ++ .nest 6 (Doc.fillSep fillDocs.toList
+             ++ (match tyT with | some t => Doc.text (" : " ++ t) | none => Doc.nil)))
+    else none
   -- the doc comment is byte-exact on its own line above (it may be multi-line;
   -- it sits at a hardline position, literal emission is the stable choice)
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
-  return some (docD, line)
+  return some (docD, line, lineDoc?)
 
 /-- A body item for the seam-owning loops: its separator (leading trivia,
     already placed), whether that separator is a plain single newline, its
@@ -159,11 +180,12 @@ private def assemble
     WITHOUT its modifiers — `Decl.emit` places those). `none` when this layout
     can't hold the input faithfully. -/
 def inductiveDoc?
+    (walk : Lean4Fmt.Emit.Walk)
     (defn : Lean.Syntax)
     (alignMode : Lean4Fmt.Style.AlignMode)
     (alignDelta : Nat)
     (preserve : Bool := false)
-    : Option Doc := Id.run do
+    : Lean4Fmt.Emit.EmitM (Option Doc) := do
   let a := defn.getArgs
   if a.size != 7 then return none
   -- head: `inductive Name <binders> (: τ)? where` — one line, token-for-token
@@ -177,18 +199,21 @@ def inductiveDoc?
     head := head ++ " " ++ t
   match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
   | [ts] =>
-    let t := (bareSrc ((ts.getArgs[1]?).getD .missing)).trimAscii.toString
+    let t := Lean4Fmt.Emit.canonTok ((ts.getArgs[1]?).getD .missing)
     if t.isEmpty || t.any (· == '\n') then return none
     head := head ++ " : " ++ t
   | [] => pure ()
   | _ => return none
-  -- `where` must be present (old `:=`-style bodies stay verbatim), computed
-  -- fields must be absent
-  if ((a[3]?.map bareSrc).getD "").trimAscii.toString != "where" then return none
+  -- `where` optional (the headless `inductive X | ctor …` form is the same
+  -- ctor loop); old `:=`-style bodies and computed fields stay verbatim
+  let whereT := ((a[3]?.map bareSrc).getD "").trimAscii.toString
+  if whereT != "where" && !whereT.isEmpty then return none
   if !((a[5]?.map bareSrc).getD "").trimAscii.toString.isEmpty then return none
   -- a comment on the `where` line itself has no home in the layout
-  if !((Lean4Fmt.Syntax.trailing? a[3]!).getD "").trimAscii.toString.isEmpty then return none
-  head := head ++ " where"
+  if whereT == "where"
+      && !((Lean4Fmt.Syntax.trailing? a[3]!).getD "").trimAscii.toString.isEmpty then
+    return none
+  if whereT == "where" then head := head ++ " where"
   -- constructors, one per line at +2. The loop OWNS the inter-ctor trivia (the
   -- seam model): each ctor's leading comment/blank lines are placed
   -- structurally before it, and a same-line trailing comment is re-appended —
@@ -217,7 +242,7 @@ def inductiveDoc?
     let lead := (Lean4Fmt.Syntax.leading? c).getD ""
     let some sep := leadingSep? lead | return none
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
-    let some (docD, line) := ctorDoc? c preserve | return none
+    let some (docD, line, lineDoc?) ← ctorDoc? walk c preserve | return none
     -- preserve: the trailing comment's hand padding is part of the line
     let rawTrail := (((Lean4Fmt.Syntax.trailing? c).getD "").trimAsciiEnd).toString
     let (line, trailT) :=
@@ -226,7 +251,7 @@ def inductiveDoc?
       else (line, trailT)
     items := items.push
       { sep, plainSep, prefixDoc := docD, hasPrefix := !(docD matches Doc.nil),
-        line, trailT := if owned then trailT else "" }
+        line, lineDoc := lineDoc?, trailT := if owned then trailT else "" }
   let body := assemble alignMode .never alignDelta items
   let derD : Doc := if hasDer then derSep ++ .text derT else .nil
   return some (.text head ++ .nest 2 (body ++ derD))
@@ -426,7 +451,7 @@ def emit
       | [] => return (← Lean4Fmt.Emit.verbatim stx)
     let mut line := ""
     for c in stx.getArgs do
-      let t := (bareSrc c).trimAscii.toString
+      let t := Lean4Fmt.Emit.canonTok c
       if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
     if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)

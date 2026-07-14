@@ -375,7 +375,7 @@ partial def emit
       -- block (re-anchoring one mid-layout drifts).
       if args.size != 5 then return (← verbatim stx)
       if (bareSrc args[3]!).trimAscii.toString != ":=" then return (← verbatim stx)
-      let headParts := ((args.extract 0 3).map (fun s => (bareSrc s).trimAscii.toString)).filter
+      let headParts := ((args.extract 0 3).map Lean4Fmt.Emit.canonTok).filter
         (fun s => !s.isEmpty)
       let head := String.intercalate " " headParts.toList
       if head.isEmpty || head.any (· == '\n') then return (← verbatim stx)
