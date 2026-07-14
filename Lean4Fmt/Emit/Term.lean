@@ -562,6 +562,13 @@ partial def emit
       if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then return (← verbatim stx)
       let cont := (← read).layout.continuationIndent
       return .text head ++ .group (.nest cont (.line ++ bodyDoc))
+    else if kind == `«term¬_» && args.size == 2 then
+      -- prefix negation over a (possibly multi-line) operand
+      let opT := (bareSrc args[0]!).trimAscii.toString
+      if opT.isEmpty || opT.any (· == '\n') then return (← verbatim stx)
+      let d ← walk args[1]!
+      if Lean4Fmt.Doc.hasMultilineVerbatim d then return (← verbatim stx)
+      return .text (opT ++ " ") ++ d
     else if kind == ``Lean.Parser.Term.hole then
       return .text "_"
     else if kind == `str || kind == `num || kind == `scientific || kind == `char then

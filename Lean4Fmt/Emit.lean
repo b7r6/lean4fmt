@@ -149,6 +149,7 @@ partial def walk
          || kind == `Lean.«term∃__,_»
          || kind == `«term∃_,_»
          || kind == `«term∀_,_»
+         || kind == `«term¬_»
          || kind == ``Lean.Parser.Term.app
          || kind == ``Lean.Parser.Term.paren
          || kind == ``Lean.Parser.Term.proj
