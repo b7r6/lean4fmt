@@ -734,11 +734,61 @@ private def exampleDoc?
   for c in dargs.extract 0 2 do
     if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then return none
     let t := Lean4Fmt.Emit.canonTok c
+    -- flatten-first: a multi-line signature's canonical one-line spelling
+    let wLim := (← read).layout.lineWidth
+    let t := if t.any (· == '\n') then
+        match Lean4Fmt.Emit.tokenJoinFlat? c with
+        | some ft => if ft.length + 16 ≤ wLim then ft else t
+        | none => t
+      else t
     if t.any (· == '\n') then return none
     if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
   if head.isEmpty then return none
   if dargs[2]!.getKind != ``Lean.Parser.Command.declValSimple then return none
   headValDoc? walk head dargs[2]!
+
+/-- Value placement behind a Doc-valued (already multi-line) head: no inline
+    path — the value glues or breaks per the knobs. -/
+private def docHeadValDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (hd : Doc)
+            (declVal : Lean.Syntax)
+            : EmitM (Option Doc) := do
+  let bodyOwnLine := (← read).breaking.bodyOwnLine
+  match spanBodyBlank bodyOwnLine declVal (← valForm walk declVal) with
+  | .span d => return some (hd ++ .text " " ++ d)
+  | .body d glue =>
+    if glue then
+      return some (hd ++ .text " := " ++ (if bodyOwnLine then glueBodyBlank d else d))
+    else if bodyOwnLine then return some (hd ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
+    else return some (hd ++ .text " :=" ++ .nest 2 (.hardline ++ d))
+  | .eqns _ => return none
+
+/-- An `example` whose signature cannot flatten: binders via the kit, the
+    TYPE walked at the continuation, value behind the Doc head. -/
+private def exampleWalkedDoc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (defn : Lean.Syntax)
+            : EmitM (Option Doc) := do
+  let dargs := defn.getArgs
+  if dargs.size != 3 then return none
+  if Lean4Fmt.Syntax.interiorHasLineComment defn then return none
+  if dargs[2]!.getKind != ``Lean.Parser.Command.declValSimple then return none
+  let sa := dargs[1]!.getArgs
+  if sa.size < 2 then return none
+  let mut hd : Doc := .text ((bareSrc dargs[0]!).trimAscii.toString)
+  for b in ((sa[0]?).map (·.getArgs)).getD #[] do
+    let bd ← Lean4Fmt.Emit.binderDoc walk b
+    if Lean4Fmt.Doc.hasMultilineVerbatim bd then return none
+    hd := hd ++ .space ++ bd
+  let tyNode := (sa[1]?.bind (fun x =>
+    if x.getKind == ``Lean.Parser.Term.typeSpec then some x else x.getArgs[0]?)).getD .missing
+  if tyNode.getKind != ``Lean.Parser.Term.typeSpec then return none
+  let tyDoc ← walk (tyNode.getArgs[1]?.getD .missing)
+  if Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then return none
+  let cont := (← read).layout.continuationIndent
+  docHeadValDoc? walk
+    (hd ++ .text " :" ++ .group (.nest cont (.line ++ tyDoc))) dargs[2]!
 
 /-- Fallback for an `example` whose SIGNATURE spans lines (quasiquote types):
     the keyword rides active, everything from the signature on is ONE
@@ -791,6 +841,14 @@ private def instanceDoc?
     let tyStx := (ts.getArgs[1]?).getD .missing
     let t := Lean4Fmt.Emit.canonTok tyStx
     if t.isEmpty then return none
+    -- flatten-first: the canonical one-line spelling when it fits
+    let wLim := (← read).layout.lineWidth
+    let t := if t.any (· == '\n') then
+        match Lean4Fmt.Emit.tokenJoinFlat? tyStx with
+        | some ft => if head.length + 3 + ft.length + 6 ≤ wLim
+            then ft else t
+        | none => t
+      else t
     if t.any (· == '\n') then
       let tyDoc ← walk tyStx
       if Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then return none
@@ -916,7 +974,10 @@ def emit
       return (← verbatim stx)
     match ← (do match ← exampleDoc? walk defn with
                 | some d => pure (some d)
-                | none => exampleSpanDoc? defn) with
+                | none =>
+                  match ← exampleWalkedDoc? walk defn with
+                  | some d => pure (some d)
+                  | none => exampleSpanDoc? defn) with
     | some d =>
       let (modsDoc, _) := match a[0]? with
         | some m => modifiersDoc attrsOwnLine m
