@@ -234,7 +234,7 @@ def emit
     -- comment (the statement seam follows it).
     if a.size != 7 then return (← Lean4Fmt.Emit.verbatim stx)
     let midParts := ((a.extract 1 5).map
-      (fun s => (Lean4Fmt.Emit.bareSrc s).trimAscii.toString)).filter (fun s => !s.isEmpty)
+      (fun s => Lean4Fmt.Emit.canonTok s)).filter (fun s => !s.isEmpty)
     let head := "match " ++ String.intercalate " " midParts.toList ++ " with"
     if head.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let mut alts : Array Lean.Syntax := #[]

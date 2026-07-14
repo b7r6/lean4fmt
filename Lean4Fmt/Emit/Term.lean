@@ -392,7 +392,7 @@ partial def emit
       -- are walked (opaque, so a multi-line pattern trips the valDoc gate to the
       -- safe span). Guarded: any structural surprise falls back to verbatim.
       let midParts := (#[args[1]?, args[2]?, args[3]?].filterMap id).toList.filterMap
-        (fun s => let t := (bareSrc s).trimAscii.toString; if t.isEmpty then none else some t)
+        (fun s => let t := Lean4Fmt.Emit.canonTok s; if t.isEmpty then none else some t)
       let head := "match " ++ String.intercalate " " midParts ++ " with"
       let some altsNode := args[5]? | return (← verbatim stx)
       let mut alts : Array Lean.Syntax := #[]

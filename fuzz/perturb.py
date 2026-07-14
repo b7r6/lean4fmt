@@ -31,12 +31,15 @@ for ln in lines:
         if r < 0.15:
             s = s + ' ' * random.randint(1, 3)          # trailing spaces
         elif r < 0.30 and '  ' not in s.strip():
-            toks = s.split(' ')
+            # comment TEXT is content (pin): only mutate the code prefix
+            cut = s.find(' -- ')
+            code, tail = (s, '') if cut < 0 else (s[:cut], s[cut:])
+            toks = code.split(' ')
             if len(toks) > 3:
                 i = random.randint(1, len(toks) - 2)
                 if toks[i] and toks[i-1]:
                     toks[i] = ' ' + toks[i]              # double an inner gap
-                s = ' '.join(toks)
+                s = ' '.join(toks) + tail
     out.append(s)
     # blank INSERTION/removal between decls is a CONTENT mutation under the
     # blank-line pin (0-vs->=1 between one-liners is authorial) -- excluded.
