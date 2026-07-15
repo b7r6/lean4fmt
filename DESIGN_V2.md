@@ -21,9 +21,10 @@ production design (§0). Supersedes the v1 architecture.
 
 ### Relationship to existing docs
 
-- **`ARCHITECTURE.md`** — describes the v1 monolithic syntax walker that emits
-  strings directly. This document supersedes it: the walker is split into a
-  pure `Syntax → Doc` pass and a `Style`-driven `Doc → String` renderer.
+- **`ARCHITECTURE.md`** — the AS-BUILT system map (rewritten 2026-07-15):
+  module tree, pipeline, the seam/verbatim/respacing machinery, the
+  zero-passthrough instruments, the progress ledger, and future work. Read it
+  first for orientation; this document remains the design rationale.
 - **`DESIGN.md`** — is a style guide plus v1 phasing. Its style guide content
   is *not* discarded: it becomes the specification for the **Straylight preset**
   (§6). The phasing is replaced by §13 here.
@@ -34,6 +35,43 @@ production design (§0). Supersedes the v1 architecture.
   actively reformatted, 15 already-in-form), every output validated by full
   `lean`. Builds under both `v4.31.0` and `v4.32.0-rc1`. The 10 files it can't
   touch fail at the *parser*, not the emitter (§0.4).
+
+### Checkpoint — 2026-07-15 (zero-passthrough campaign)
+
+The standing directive is **zero passthrough**: for a fixed style, output is a
+function of the parse tree + comment attachments only — one fixed point per
+parse-equivalence class, origin-agnostic. The metric is the perturbation
+fuzzer (`fuzz/`): parse-preserving trivia mutations must not change the
+output; failures are the ranked work queue. Current measured state:
+
+- **Core fuzz set** (40 files × 3 seeds): **0/120 divergences** since
+  `8848c74`, protected by every round since.
+- **Full corpus** (234 files × 3 seeds): 227 → **102/702**, converging
+  round-by-round (census → port → gate → remeasure). Early drops were fuzzer
+  honesty (multi-line quasiquote templates and comment text are CONTENT and
+  must not be mutated — the pins are encoded in `perturb.py`).
+- **Coverage**: 77.3% of code bytes actively formatted (honest ceiling ≈81%;
+  strings/quasiquotes/moduleDoc are correctly verbatim forever).
+- **Correctness posture unchanged**: gate PASS 234/234, 0 non-idempotent,
+  proof spine T1–T4 holds (T1 unconditional), comment diff check run every
+  round that touches comment guards (it has caught three eaters the gate
+  cannot see).
+- **Key mechanisms added by the campaign**: the token respacing engine
+  (`tokenJoin?`/`canonTok` + pair-rule table), the walk-level join
+  interception (dispatched-but-bailed single-line nodes respace), the
+  string-aware trailing-ws strip in render (doc comments exempt — leaf
+  tokens), seam-owned comment zones with `hasUnownedInteriorComment`, and
+  the `hasMultilineReanchor` refinement (textRaw is placement-stable; only
+  re-anchoring verbatim drifts — multi-line docstrings no longer poison
+  mutuals).
+- **Presets**: straylight/aniva/purtell all PRESCRIPTIVE (preservation values
+  banned from presets); measured finding: preserve-based styles cannot
+  round-trip through a prescriptive wash, so the vendor contract is direct
+  `HEAD → author-style = HEAD`, and origin-agnosticism ≡ active coverage.
+
+Next: full-corpus fuzz to 0/702 (remaining classes named in
+`ARCHITECTURE.md §10`), then the vendor wash test as the cross-style
+endpoint, then the knob line and milestone-2 plumbing.
 
 ### Checkpoint — 2026-07-11 (milestone 1: daily-driver on continuity)
 
