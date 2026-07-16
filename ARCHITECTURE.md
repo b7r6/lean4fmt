@@ -347,24 +347,34 @@ per-commit detail; `MEMORY`/session notes hold the pitfalls):
 | Milestone 1: daily driver on Continuity | closed (dogfood commit `7637744`) |
 | Milestone 2 opened: aniva/purtell cut prescriptive | Pantograph/lithe direct-wash measured |
 | Zero-passthrough: respacing engine + fuzzer | core set 92/120 → **0/120** (`8848c74`) |
-| Full-corpus ledger | 227 → 160 (fuzzer honesty) → 144 → 123 → 114 → 110 → **102/702** |
-| Coverage | **77.3%** code-active; honest ceiling ≈81% (strings/quasiquotes/moduleDoc are correctly verbatim forever) |
+| Full-corpus ledger | 227 → 160 (fuzzer honesty) → 144 → 123 → 114 → 110 → 102 → **0/702** (`9a170bb`) |
+| Coverage | **77.4%** code-active; honest ceiling ≈81% (strings/quasiquotes/moduleDoc are correctly verbatim forever) |
 
-Current head: `5a7a715`. The core fuzz set (40 files × 3 seeds) has been at
-**zero** since `8848c74` and is protected by every subsequent round.
+Current head: `9a170bb` (+ dogfood `27cdc9b`). **The campaign's primary goal is
+closed**: zero fuzz divergences over the whole non-vendor tree (347 files × 3
+seeds; the 234-file corpus metric is 0/702). The closing move was the LEXICAL
+whitespace canon (`canonVerbatimWs`, §6): opaque verbatim content and every
+bareSrc emission fallback collapse interior space runs and blank runs
+string/comment/template-aware, so even UNPORTED constructs are canonical
+functions of tokens+comments. Quotation constructs (`Term.quot`/`dynamicQuot`,
+`macro_rules`/`syntax`/`notation`/`elab` families — `Syntax.hasQuotationKind`)
+and DSL templates (`[ident| … |]`, a scanner mode) ride byte-exact per the
+quasiquotation pin. Consequence shipped in `27cdc9b`: hand-padded alignment
+inside verbatim regions de-aligns — alignment is the emitter's to re-derive
+(armsAligned/alignTable), not origin bytes to preserve.
 
 ## 10. Future work
 
 Ordered by the standing plan; each item names its acceptance instrument.
 
-1. **Full-corpus fuzz → 0/702** (task #7, in progress). Remaining 102 known
-   classes: guard-arm eqns shapes (HsClause-like members), blank-run
-   extensions inside still-verbatim decls, tactic-body interior respace
-   (`have`/`rw`/`simp` argument gaps in proof-heavy codec files), `#eval`
-   lines, structInst field values. Same machine: census → port → gate →
-   remeasure. Cosmetic follow-up: eqns arm body `do` placement is
-   inconsistent (single-statement do breaks to its own line; semicolon-do
-   stays inline) — unify under `breaking.compactDo`.
+1. ~~**Full-corpus fuzz → 0/702**~~ **DONE** (`9a170bb`): the lexical ws-canon
+   closed the whole tail in one move — see §9. Standing follow-ups: (a) grid
+   RE-alignment for comment-interleaved arm sets (the de-aligned
+   `CxxType.render`-style tables want a comment-tolerant `armsAligned`); (b)
+   cosmetic: eqns arm body `do` placement is inconsistent (single-statement
+   do breaks to its own line; semicolon-do stays inline) — unify under
+   `breaking.compactDo`. The fuzzer stays in CI position: any new emitter
+   must keep the tree at 0.
 2. **Vendor wash test** — the cross-style origin-agnosticism endpoint:
    straylight → aniva vs direct-to-aniva byte-identical on Pantograph (and
    purtell/lithe), once the corpus converges. Task #5 (lithe do-body indent
