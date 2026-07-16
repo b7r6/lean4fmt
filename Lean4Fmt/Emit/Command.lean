@@ -461,7 +461,7 @@ def emit
     -- command walked (usually a declaration; Decl does the real work)
     let a := stx.getArgs
     if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
-    let preT := (bareSrc a[0]!).trimAscii.toString
+    let preT := Lean4Fmt.Emit.canonTok a[0]!
     if preT.isEmpty || preT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     if !((Lean4Fmt.Syntax.trailing? a[1]!).getD "").trimAscii.toString.isEmpty then
       return (← Lean4Fmt.Emit.verbatim stx)

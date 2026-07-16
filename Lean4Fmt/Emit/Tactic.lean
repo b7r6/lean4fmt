@@ -154,7 +154,7 @@ private def listItems?
     let subs := if c.getKind == Lean.nullKind then c.getArgs else #[c]
     for d in subs do
       if d.isAtom then continue
-      let t := (Lean4Fmt.Emit.bareSrc d).trimAscii.toString
+      let t := Lean4Fmt.Emit.canonTok d
       if t.isEmpty || t.any (· == '\n') then return none
       items := items.push (.text t)
   if items.isEmpty then return none
@@ -220,7 +220,7 @@ private def headBlockDoc?
   let mut head := ""
   for c in a.extract 0 (a.size - 1) do
     if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then return none
-    let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+    let t := Lean4Fmt.Emit.canonTok c
     if t.any (· == '\n') then return none
     if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
   if head.isEmpty then return none
@@ -260,11 +260,11 @@ def emit
     let mut ds : Array Doc := #[]
     for r in (rs.getArgs[1]?.map (·.getArgs)).getD #[] do
       if r.isAtom then continue
-      let t := (Lean4Fmt.Emit.bareSrc r).trimAscii.toString
+      let t := Lean4Fmt.Emit.canonTok r
       if t.isEmpty || t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       ds := ds.push (.text t)
     if ds.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-    let locT := ((a[3]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString
+    let locT := (a[3]?.map Lean4Fmt.Emit.canonTok).getD ""
     if locT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let locD : Doc := if locT.isEmpty then .nil else .text (" " ++ locT)
     return .text "rw " ++ Lean4Fmt.Doc.commaList "[" "]" ds ++ locD
@@ -275,7 +275,7 @@ def emit
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
     if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
     let kwT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
-    let cfgT := (Lean4Fmt.Emit.bareSrc a[1]!).trimAscii.toString
+    let cfgT := Lean4Fmt.Emit.canonTok a[1]!
     if cfgT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let dDoc ← walk a[2]!
     if Lean4Fmt.Doc.hasMultilineVerbatim dDoc then return (← Lean4Fmt.Emit.verbatim stx)
@@ -315,7 +315,7 @@ def emit
     for c in a.extract 0 (a.size - 1) do
       if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then
         return (← Lean4Fmt.Emit.verbatim stx)
-      let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+      let t := Lean4Fmt.Emit.canonTok c
       if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
     if head.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
@@ -327,7 +327,7 @@ def emit
       if Lean4Fmt.Syntax.interiorHasLineComment alt then return (← Lean4Fmt.Emit.verbatim stx)
       let mut lhs := ""
       for c in ala.extract 0 3 do
-        let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+        let t := Lean4Fmt.Emit.canonTok c
         if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
         if !t.isEmpty then lhs := if lhs.isEmpty then t else lhs ++ " " ++ t
       let some bD ← armSeqDoc? walk ala[3]! | return (← Lean4Fmt.Emit.verbatim stx)
@@ -351,7 +351,7 @@ def emit
     if a.size == 0 then return (← Lean4Fmt.Emit.verbatim stx)
     let mut head := ""
     for c in a.extract 0 (a.size - 1) do
-      let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+      let t := Lean4Fmt.Emit.canonTok c
       if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
     if head.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
@@ -369,7 +369,7 @@ def emit
       if alt.getKind != ``Lean.Parser.Tactic.inductionAlt || alt.getArgs.size != 2 then
         return (← Lean4Fmt.Emit.verbatim stx)
       if Lean4Fmt.Syntax.interiorHasLineComment alt then return (← Lean4Fmt.Emit.verbatim stx)
-      let lhsT := (Lean4Fmt.Emit.bareSrc alt.getArgs[0]!).trimAscii.toString
+      let lhsT := Lean4Fmt.Emit.canonTok alt.getArgs[0]!
       if lhsT.isEmpty || lhsT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       let rhs := alt.getArgs[1]!.getArgs
       if rhs.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
@@ -399,7 +399,7 @@ def emit
     let steps := a[1]!.getArgs
     let mut ds : Array Doc := #[]
     for st in steps do
-      let t := (Lean4Fmt.Emit.bareSrc st).trimAscii.toString
+      let t := Lean4Fmt.Emit.canonTok st
       if t.isEmpty || t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       ds := ds.push (.text t)
     if ds.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)

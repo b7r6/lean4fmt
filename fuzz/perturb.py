@@ -32,7 +32,7 @@ for ln in lines:
             s = s + ' ' * random.randint(1, 3)          # trailing spaces
         elif r < 0.30 and '  ' not in s.strip():
             # comment TEXT is content (pin): only mutate the code prefix
-            cut = s.find(' -- ')
+            cut = s.find(' --')
             code, tail = (s, '') if cut < 0 else (s[:cut], s[cut:])
             toks = code.split(' ')
             if len(toks) > 3:

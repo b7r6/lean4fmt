@@ -184,10 +184,16 @@ partial def walkCore
       let t := Lean4Fmt.Emit.bareSrc stx
       if !t.isEmpty && !t.any (· == '\n') then
         -- canonical respacing (zero-passthrough): ws gaps collapse to one
-        -- space; an interior comment keeps the bytes exact
+        -- space; when tokenJoin? can't (choice nodes, synthetic-info gaps,
+        -- interior comments), the LEXICAL ws-collapse still applies — token
+        -- and comment bytes survive, interior space runs do not. Quotation
+        -- kinds are content byte-exact (pin); templates are guarded inside
+        -- canonVerbatimWs itself.
         match Lean4Fmt.Emit.tokenJoin? stx with
         | some t' => pure (.text t')
-        | none => pure (.text t)
+        | none =>
+          if Lean4Fmt.Syntax.hasQuotationKind stx then pure (.text t)
+          else pure (.text (Lean4Fmt.Doc.canonVerbatimWs t))
       else verbatim stx
 
 /-- `walkCore` + the single-line bail interception: a DISPATCHED emitter that

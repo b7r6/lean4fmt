@@ -295,7 +295,13 @@ private def spanBodyBlank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : ValForm
     | first :: rest =>
       let ft := first.trimAsciiEnd.toString
       if (ft == ":=" || ft == ":= by" || ft == ":= do") && !rest.isEmpty then
-        return .span (.text ft ++ .blank 1 ++ .verbatim (String.intercalate "\n" rest) 0)
+        -- bodyOwnLine is a prescriptive rewrite, so the body gets the same
+        -- ws-canonicalization as every verbatimQuiet block (zero-passthrough);
+        -- quotation-bearing bodies ride byte-exact (pin)
+        let body := String.intercalate "\n" rest
+        let body := if Lean4Fmt.Syntax.hasQuotationKind declVal then body
+          else Lean4Fmt.Doc.canonVerbatimWs body
+        return .span (.text ft ++ .blank 1 ++ .verbatim body 0)
       return .span d
     | _ => return .span d
   | vf => vf
@@ -612,7 +618,7 @@ private def whereFieldDoc?
       return some (.text t)
   let fa := f.getArgs
   if fa.size != 2 then return none
-  let lvalT := (bareSrc fa[0]!).trimAscii.toString
+  let lvalT := Lean4Fmt.Emit.canonTok fa[0]!
   if lvalT.isEmpty || lvalT.any (· == '\n') then return none
   let rest := fa[1]!.getArgs
   let mut head := lvalT
@@ -620,7 +626,7 @@ private def whereFieldDoc?
   for c in rest do
     if c.getKind == ``Lean.Parser.Term.structInstFieldDef then fd := some c
     else
-      let t := (bareSrc c).trimAscii.toString
+      let t := Lean4Fmt.Emit.canonTok c
       if t.any (· == '\n') then return none
       if !t.isEmpty then head := head ++ " " ++ t
   let some fdef := fd | return none

@@ -104,4 +104,46 @@ where
       countLineComments ((leading? s).getD "")
         + countLineComments ((trailing? s).getD "")
 
+/-- Quasiquotation CONTENT (the zero-passthrough pin): quotation terms
+    (`Term.quot`/`dynamicQuot`/tactic quotations — any kind whose name carries
+    "quot") and the metaprogram commands whose bodies are made of them
+    (`macro_rules`, `syntax`, `notation`, `macro`, `elab`, `elab_rules`,
+    mixfix sugar). Inside these, inter-token whitespace can be semantic to the
+    DSL being quoted — never respace, never ws-canonicalize. DSL TEMPLATES
+    (`[ident| … |]`) are open-ended custom kinds and are guarded lexically
+    instead (canonVerbatimWs' template mode; `hasTemplateOpener` for the
+    token-join bail). -/
+partial def hasQuotationKind (stx : Lean.Syntax) : Bool :=
+  match stx with
+  | .node _ k args =>
+    -- `.quot`/`…Quot` = the quotation PARSERS (`Term.quot`, `dynamicQuot`,
+    -- category quots); name-literal kinds (`quotedName`) are single tokens —
+    -- nothing inside them to respace — and must NOT poison their whole decl
+    (let s := k.toString; s.endsWith ".quot" || s.endsWith "Quot")
+      || k == `Lean.Parser.Command.macro_rules
+      || k == `Lean.Parser.Command.elab_rules
+      || k == `Lean.Parser.Command.syntax
+      || k == `Lean.Parser.Command.syntaxAbbrev
+      || k == `Lean.Parser.Command.notation
+      || k == `Lean.Parser.Command.macro
+      || k == `Lean.Parser.Command.elab
+      || k == `Lean.Parser.Command.mixfix
+      || args.any hasQuotationKind
+  | _ => false
+
+/-- A DSL template opener (`[ident|`) anywhere in the text — the lexical
+    counterpart of the perturber's TPL_OPEN guard, for source that parses
+    under custom template kinds we cannot enumerate. -/
+def hasTemplateOpener (s : String) : Bool := Id.run do
+  let a : Array Char := s.toList.toArray
+  let n := a.size
+  for i in [0:n] do
+    if a[i]! == '[' && i + 1 < n && (a[i+1]!.isAlpha || a[i+1]! == '_') then
+      let mut j := i + 1
+      while _hj : j < n && (a[j]!.isAlphanum || a[j]! == '_' || a[j]! == '.') do
+        j := j + 1
+      if _hj : j < n then
+        if a[j]! == '|' then return true
+  return false
+
 end Lean4Fmt.Syntax

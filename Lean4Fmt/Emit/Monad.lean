@@ -19,6 +19,7 @@ import Lean4Fmt.Doc
 import Lean4Fmt.Style
 import Lean4Fmt.Rules.Diagnostic
 import Lean4Fmt.Syntax.Trivia
+import Lean4Fmt.Syntax.Kinds
 
 namespace Lean4Fmt.Emit
 
@@ -61,10 +62,23 @@ def verbatimQuiet
   let base := if lead.any (· == '\n')
     then (((lead.splitOn "\n").getLastD "").toList.takeWhile (· == ' ')).length
     else 0
+  -- zero-passthrough closure for the opaque tail: interior ws-run collapse
+  -- (canonVerbatimWs) makes even UNPORTED content a canonical function of the
+  -- tokens+comments — spacing preservation is exactly what preservation mode
+  -- means, so it is the one (non-preset) opt-out
+  let preserve := (← read).breaking.preserveLineBreaks
+  -- quotation KINDS (macro_rules/syntax/notation/quot terms) are content
+  -- byte-exact (pin); templates inside ordinary code are guarded by
+  -- canonVerbatimWs' template mode, so everything else still collapses
+  let quoted := Lean4Fmt.Syntax.hasQuotationKind stx
+  let canon := fun (t : String) =>
+    if preserve || quoted then t else Lean4Fmt.Doc.canonVerbatimWs t
   let s := bareSrc stx
   if s.isEmpty then
-    match stx.reprint with | some r => pure (.verbatim r base) | none => pure .nil
-  else pure (.verbatim s base)
+    match stx.reprint with
+    | some r => pure (.verbatim (canon r) base)
+    | none => pure .nil
+  else pure (.verbatim (canon s) base)
 
 /-- Opaque reproduction WITH the opt-out trail entry — the safe default. -/
 def verbatim

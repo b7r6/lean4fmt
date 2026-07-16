@@ -16,6 +16,7 @@
 -/
 
 import Lean4Fmt.Emit.Monad
+import Lean4Fmt.Syntax.Kinds
 
 namespace Lean4Fmt.Emit
 
@@ -58,6 +59,10 @@ private def gapRule (prev next : String) : Option Bool :=
     (an inline block comment), or there are no tokens. -/
 def tokenJoin? (stx : Lean.Syntax) : Option String := Id.run do
   if hasChoice stx then return none
+  -- quotation/template content (pin): inter-token spacing may be semantic
+  -- to the quoted DSL — never respace
+  if Lean4Fmt.Syntax.hasQuotationKind stx then return none
+  if Lean4Fmt.Syntax.hasTemplateOpener (bareSrc stx) then return none
   let ls := leafTokens stx
   if ls.isEmpty then return none
   let mut out := ""
@@ -102,6 +107,8 @@ def tokenJoin? (stx : Lean.Syntax) : Option String := Id.run do
     out the tail). -/
 def tokenJoinFlat? (stx : Lean.Syntax) : Option String := Id.run do
   if hasChoice stx then return none
+  if Lean4Fmt.Syntax.hasQuotationKind stx then return none
+  if Lean4Fmt.Syntax.hasTemplateOpener (bareSrc stx) then return none
   let ls := leafTokens stx
   if ls.isEmpty then return none
   let mut out := ""
@@ -133,8 +140,18 @@ def tokenJoinFlat? (stx : Lean.Syntax) : Option String := Id.run do
   return some out
 
 /-- Canonical single-line token text: tokenJoin? with a bareSrc fallback —
-    the standard spelling for EMITTED head pieces. -/
+    the standard spelling for EMITTED head pieces. The fallback (choice nodes,
+    synthetic-info gaps) still ws-canonicalizes LEXICALLY (canonVerbatimWs):
+    token bytes survive, interior space runs do not — so even the fallback is
+    not an origin carrier. -/
 def canonTok (stx : Lean.Syntax) : String :=
-  (tokenJoin? stx).getD ((bareSrc stx).trimAscii.toString)
+  match tokenJoin? stx with
+  | some t => t
+  | none =>
+    let raw := (bareSrc stx).trimAscii.toString
+    -- quotation KINDS ride byte-exact; templates are guarded inside
+    -- canonVerbatimWs (template mode), so the lexical collapse is safe
+    if Lean4Fmt.Syntax.hasQuotationKind stx then raw
+    else Lean4Fmt.Doc.canonVerbatimWs raw
 
 end Lean4Fmt.Emit

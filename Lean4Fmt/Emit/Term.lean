@@ -112,7 +112,7 @@ private partial def structFieldDoc
   let lvalStx := fa[0]?.getD .missing
   let lvalT := bareSrc lvalStx
   let lval ← if !lvalT.isEmpty && !lvalT.any (· == '\n') then
-      pure (Doc.text ((Lean4Fmt.Emit.tokenJoin? lvalStx).getD lvalT))
+      pure (Doc.text (Lean4Fmt.Emit.canonTok lvalStx))
     else verbatim lvalStx
   let rest := (fa[1]?.getD Lean.Syntax.missing).getArgs
   let fd? := rest.find? (·.getKind == ``Lean.Parser.Term.structInstFieldDef)
@@ -263,7 +263,7 @@ partial def emit
         let mut ok := true
         for h : i in [0:fields.size] do
           let fa := fields[i]!.getArgs
-          let lvalT := (bareSrc (fa[0]?.getD .missing)).trimAscii.toString
+          let lvalT := Lean4Fmt.Emit.canonTok (fa[0]?.getD .missing)
           if lvalT.isEmpty || lvalT.any (· == '\n') then ok := false
           let rest := (fa[1]?.getD Lean.Syntax.missing).getArgs
           match rest.find? (·.getKind == ``Lean.Parser.Term.structInstFieldDef) with
@@ -483,10 +483,10 @@ partial def emit
       if ba.size != 4 then return (← verbatim stx)
       let mut head := "fun"
       for b in ((ba[0]?).map (·.getArgs)).getD #[] do
-        let t := (bareSrc b).trimAscii.toString
+        let t := Lean4Fmt.Emit.canonTok b
         if t.isEmpty || t.any (· == '\n') then return (← verbatim stx)
         head := head ++ " " ++ t
-      let tyT := ((ba[1]?.map bareSrc).getD "").trimAscii.toString
+      let tyT := (ba[1]?.map Lean4Fmt.Emit.canonTok).getD ""
       if tyT.any (· == '\n') then return (← verbatim stx)
       if !tyT.isEmpty then head := head ++ " " ++ tyT
       let body := ba[3]!

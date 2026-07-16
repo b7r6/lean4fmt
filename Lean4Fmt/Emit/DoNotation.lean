@@ -39,8 +39,8 @@ private def idDeclDoc?
   if d.getKind != ``Lean.Parser.Term.doIdDecl then return none
   let a := d.getArgs
   if a.size != 4 then return none
-  let idT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
-  let tyT := (Lean4Fmt.Emit.bareSrc a[1]!).trimAscii.toString
+  let idT := Lean4Fmt.Emit.canonTok a[0]!
+  let tyT := Lean4Fmt.Emit.canonTok a[1]!
   let arrowT := (Lean4Fmt.Emit.bareSrc a[2]!).trimAscii.toString
   let head := String.intercalate " " ([idT, tyT].filter (fun s => !s.isEmpty))
   if head.isEmpty || head.any (· == '\n') || arrowT.any (· == '\n') then return none
@@ -229,13 +229,13 @@ def emit
     -- end in a trailing comment (the statement seam follows it); a comment
     -- before an `else` has no seam.
     if a.size != 6 then return (← Lean4Fmt.Emit.verbatim stx)
-    let condT := (Lean4Fmt.Emit.bareSrc a[1]!).trimAscii.toString
+    let condT := Lean4Fmt.Emit.canonTok a[1]!
     if condT.isEmpty || condT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let mut branches : Array (String × Lean.Syntax) := #[("if " ++ condT ++ " then", a[3]!)]
     for g in a[4]!.getArgs do
       let ga := g.getArgs
       if ga.size != 4 then return (← Lean4Fmt.Emit.verbatim stx)
-      let cT := (Lean4Fmt.Emit.bareSrc ga[1]!).trimAscii.toString
+      let cT := Lean4Fmt.Emit.canonTok ga[1]!
       if cT.isEmpty || cT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       branches := branches.push ("else if " ++ cT ++ " then", ga[3]!)
     let elseArgs := a[5]!.getArgs

@@ -459,6 +459,137 @@ def stripTrailingWs (s : String) : String := Id.run do
     i := i + 1
   return String.ofList (strip out).toList
 
+/-- Canonical whitespace for OPAQUE (verbatim) block content — the zero-
+    passthrough closure for constructs the walker has not ported. Two rules,
+    both restricted to CODE (the same lexical modes as `stripTrailingWs`):
+
+    * interior runs of 2+ spaces collapse to one — EXCEPT line-leading runs
+      (indentation is layout, and Lean's column sensitivity binds at line
+      starts) and runs directly before a comment opener (line or block),
+      which carry trailing-comment alignment;
+    * runs of newlines collapse to at most one blank line (the §8 clamp,
+      textually) — 0-vs-1 blank adjacency survives, run LENGTH does not.
+
+    String/char/raw-string interiors and comment interiors (line and block)
+    are token/comment content — untouched. Both rules are idempotent, and
+    token text is unchanged, so the gate's leafToks law is preserved by
+    construction. -/
+def canonVerbatimWs (s : String) : String := Id.run do
+  let a : Array Char := s.toList.toArray
+  let n := a.size
+  let isIdChar := fun (c : Char) =>
+    c.isAlphanum || c == '_' || c == '\'' || c == '!' || c == '?' || c.val > 127
+  -- modes: 0 code, 1 line comment, 2 block comment, 3 string, 4 raw string, 5 char
+  let mut mode : Nat := 0
+  let mut depth : Nat := 0
+  let mut prev : Char := ' '
+  let mut out : Array Char := Array.mkEmpty n
+  let mut i := 0
+  while _h : i < n do
+    let c := a[i]!
+    let c1 := a[i + 1]?
+    match mode with
+    | 0 =>
+      if c == '\n' then
+        -- newline RUN: consume spaces/newlines ahead; k newlines = k-1 blank
+        -- lines; emit min(k,2) newlines and resume at the LAST one so the
+        -- final line's indentation flows through untouched
+        let mut j := i
+        let mut k := 0
+        let mut last := i
+        while _hj : j < n && (a[j]! == '\n' || a[j]! == ' ' || a[j]! == '\t') do
+          if a[j]! == '\n' then k := k + 1; last := j
+          j := j + 1
+        out := if k ≥ 2 then (out.push '\n').push '\n' else out.push '\n'
+        i := last
+      else if c == ' ' then
+        let lineStart := out.isEmpty || out.back! == '\n'
+        let mut j := i
+        while _hj : j < n && a[j]! == ' ' do j := j + 1
+        let commentNext := (a[j]? == some '-' && a[j+1]? == some '-')
+          || (a[j]? == some '/' && a[j+1]? == some '-')
+        if lineStart || j - i == 1 || commentNext then
+          for k in [i:j] do out := out.push a[k]!
+        else if a[j]? != some '\n' && j < n then
+          out := out.push ' '
+        -- (run before a newline or at end: trailing ws, dropped)
+        i := j - 1
+      else if c == '[' && (c1.map (fun x => x.isAlpha || x == '_')).getD false then
+        -- DSL template candidate `[ident| … |]`: the interior is CONTENT
+        -- (the quasiquotation pin) — copy verbatim through the closing `|]`
+        let mut j := i + 1
+        while _hj : j < n && (a[j]!.isAlphanum || a[j]! == '_' || a[j]! == '.') do
+          j := j + 1
+        if (a[j]? == some '|') && a[j+1]? != some ']' then
+          let mut e := j + 1
+          while _he : e + 1 < n && !(a[e]! == '|' && a[e+1]! == ']') do e := e + 1
+          let last := if e + 1 < n then e + 1 else n - 1
+          for m in [i:last+1] do out := out.push a[m]!
+          i := last
+        else
+          out := out.push c
+      else if c == '-' && c1 == some '-' then
+        mode := 1; out := (out.push c).push '-'; i := i + 1
+      else if c == '/' && c1 == some '-' then
+        mode := 2; depth := 1
+        out := (out.push c).push '-'; i := i + 1
+      else if c == '"' then
+        mode := 3; out := out.push c
+      else if c == 'r' && !isIdChar prev && (c1 == some '"' || c1 == some '#') then
+        let mut j := i + 1
+        let mut hs := 0
+        while _hj : j < n && a[j]! == '#' do hs := hs + 1; j := j + 1
+        if a[j]? == some '"' then
+          mode := 4; depth := hs
+          for k in [i:j+1] do out := out.push a[k]!
+          i := j
+        else
+          out := out.push c
+      else if c == '\'' && !isIdChar prev then
+        mode := 5; out := out.push c
+      else
+        out := out.push c
+    | 1 =>  -- line comment: interior is content; the newline closes AND starts
+            -- a code-mode run (step back onto it so the run rule applies)
+      if c == '\n' then mode := 0; i := i - 1
+      else out := out.push c
+    | 2 =>  -- block comment (nested): interior is content, blank lines included
+      if c == '/' && c1 == some '-' then
+        depth := depth + 1; out := (out.push c).push '-'; i := i + 1
+      else if c == '-' && c1 == some '/' then
+        depth := depth - 1; out := (out.push c).push '/'; i := i + 1
+        if depth == 0 then mode := 0
+      else out := out.push c
+    | 3 =>  -- string literal: content
+      if c == '\\' then
+        out := out.push c
+        match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
+      else
+        if c == '"' then mode := 0
+        out := out.push c
+    | 4 =>  -- raw string: closes on `"` + depth hashes; interior is content
+      if c == '"' then
+        let mut j := i + 1
+        let mut hs := 0
+        while _hj : j < n && a[j]! == '#' && hs < depth do hs := hs + 1; j := j + 1
+        if hs == depth then
+          mode := 0
+          for k in [i:j] do out := out.push a[k]!
+          i := j - 1
+        else
+          out := out.push c
+      else out := out.push c
+    | _ =>  -- char literal (or prime-misparse recovery on newline)
+      if c == '\\' then
+        out := out.push c
+        match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
+      else
+        if c == '\'' || c == '\n' then mode := 0
+        out := out.push c
+    prev := (out.back?).getD ' '
+    i := i + 1
+  return String.ofList out.toList
+
 /-- Render a `Doc` to a string under `style`. -/
 def render
     (style : Style)
