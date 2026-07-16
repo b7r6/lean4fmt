@@ -104,32 +104,56 @@ where
       countLineComments ((leading? s).getD "")
         + countLineComments ((trailing? s).getD "")
 
-/-- Quasiquotation CONTENT (the zero-passthrough pin): quotation terms
-    (`Term.quot`/`dynamicQuot`/tactic quotations — any kind whose name carries
-    "quot") and the metaprogram commands whose bodies are made of them
-    (`macro_rules`, `syntax`, `notation`, `macro`, `elab`, `elab_rules`,
-    mixfix sugar). Inside these, inter-token whitespace can be semantic to the
-    DSL being quoted — never respace, never ws-canonicalize. DSL TEMPLATES
-    (`[ident| … |]`) are open-ended custom kinds and are guarded lexically
-    instead (canonVerbatimWs' template mode; `hasTemplateOpener` for the
-    token-join bail). -/
+/-- A quotation TERM kind (`Term.quot`, `dynamicQuot`, category quots) —
+    `.quot`/`…Quot` names the quotation PARSERS; name-literal kinds
+    (`quotedName`) are single tokens — nothing inside them to respace — and
+    must NOT poison their whole decl. -/
+def isQuotTermKind (k : Lean.SyntaxNodeKind) : Bool :=
+  let s := k.toString
+  s.endsWith ".quot" || s.endsWith "Quot"
+
+/-- A metaprogram COMMAND whose whole body is quotation content byte-exact
+    (arm padding included — the perturber's META guard mirrors this). -/
+def isQuotationCommand (k : Lean.SyntaxNodeKind) : Bool :=
+  k == `Lean.Parser.Command.macro_rules
+    || k == `Lean.Parser.Command.elab_rules
+    || k == `Lean.Parser.Command.syntax
+    || k == `Lean.Parser.Command.syntaxAbbrev
+    || k == `Lean.Parser.Command.notation
+    || k == `Lean.Parser.Command.macro
+    || k == `Lean.Parser.Command.elab
+    || k == `Lean.Parser.Command.mixfix
+
 partial def hasQuotationKind (stx : Lean.Syntax) : Bool :=
   match stx with
   | .node _ k args =>
-    -- `.quot`/`…Quot` = the quotation PARSERS (`Term.quot`, `dynamicQuot`,
-    -- category quots); name-literal kinds (`quotedName`) are single tokens —
-    -- nothing inside them to respace — and must NOT poison their whole decl
-    (let s := k.toString; s.endsWith ".quot" || s.endsWith "Quot")
-      || k == `Lean.Parser.Command.macro_rules
-      || k == `Lean.Parser.Command.elab_rules
-      || k == `Lean.Parser.Command.syntax
-      || k == `Lean.Parser.Command.syntaxAbbrev
-      || k == `Lean.Parser.Command.notation
-      || k == `Lean.Parser.Command.macro
-      || k == `Lean.Parser.Command.elab
-      || k == `Lean.Parser.Command.mixfix
-      || args.any hasQuotationKind
+    isQuotTermKind k || isQuotationCommand k || args.any hasQuotationKind
   | _ => false
+
+/-- Whether the subtree carries one of the byte-exact metaprogram COMMANDS. -/
+partial def hasQuotationCommand (stx : Lean.Syntax) : Bool :=
+  match stx with
+  | .node _ k args => isQuotationCommand k || args.any hasQuotationCommand
+  | _ => false
+
+/-- The byte ranges of embedded quotation TERMS (outermost only — interiors
+    belong to their quotation). `none` when a quotation has no position info
+    (the caller must then treat the WHOLE text as content). -/
+partial def quotTermRanges? (stx : Lean.Syntax) : Option (Array (Nat × Nat)) :=
+  go stx (some #[])
+where
+  go (s : Lean.Syntax) (acc : Option (Array (Nat × Nat))) : Option (Array (Nat × Nat)) :=
+    match acc with
+    | none => none
+    | some a =>
+      match s with
+      | .node _ k args =>
+        if isQuotTermKind k then
+          match s.getPos?, s.getTailPos? with
+          | some p, some q => some (a.push (p.byteIdx, q.byteIdx))
+          | _, _ => none
+        else args.foldl (fun acc c => go c acc) (some a)
+      | _ => some a
 
 /-- A DSL template opener (`[ident|`) anywhere in the text — the lexical
     counterpart of the perturber's TPL_OPEN guard, for source that parses

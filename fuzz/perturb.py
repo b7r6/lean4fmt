@@ -23,7 +23,8 @@ for ln in lines:
         tpl_line = True   # the closing line is template content too
         in_tpl = False
     guard = ('"' in s) or ('/-' in s) or ('-/' in s) or in_block or in_meta or tpl_line \
-        or s.lstrip().startswith('--') or ('|]' in s) or ('[' in s and '|' in s and ']' in s)
+        or s.lstrip().startswith('--') or ('|]' in s) or ('[' in s and '|' in s and ']' in s) \
+        or ('`(' in s)   # quotation terms: interior is CONTENT (pin)
     if '/-' in s and '-/' not in s: in_block = True
     if '-/' in s: in_block = False
     r = random.random()

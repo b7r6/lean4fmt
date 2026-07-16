@@ -296,12 +296,13 @@ private def spanBodyBlank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : ValForm
       let ft := first.trimAsciiEnd.toString
       if (ft == ":=" || ft == ":= by" || ft == ":= do") && !rest.isEmpty then
         -- bodyOwnLine is a prescriptive rewrite, so the body gets the same
-        -- ws-canonicalization as every verbatimQuiet block (zero-passthrough);
-        -- quotation-bearing bodies ride byte-exact (pin)
+        -- piecewise ws-canonicalization as every verbatimQuiet block
+        -- (zero-passthrough; quotation pin honored by range). skipBytes:
+        -- `rest` is the bare source MINUS its first line and the newline.
         let body := String.intercalate "\n" rest
-        let body := if Lean4Fmt.Syntax.hasQuotationKind declVal then body
-          else Lean4Fmt.Doc.canonVerbatimWs body
-        return .span (.text ft ++ .blank 1 ++ .verbatim body 0)
+        let skip := first.utf8ByteSize + 1
+        return .span (.text ft ++ .blank 1
+          ++ .verbatim (Lean4Fmt.Emit.canonWsPiecewise declVal body skip) 0)
       return .span d
     | _ => return .span d
   | vf => vf

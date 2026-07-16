@@ -39,7 +39,12 @@ partial def walkCore
   match stx with
   | .missing => pure .nil
   | .atom _ v => pure (.text v)
-  | .ident _ _ n _ => pure (.text n.toString)
+  | .ident _ _ n _ =>
+    -- SOURCE bytes, not `n.toString`: a keyword-named ident (`«have»`,
+    -- `«let»`) round-trips through toString WITHOUT its guillemets and
+    -- reparses as the keyword (found on Pantograph — MANGLED)
+    let t := Lean4Fmt.Emit.bareSrc stx
+    pure (.text (if t.isEmpty then n.toString else t))
   | .node _ kind _ =>
     if kind == ``Lean.Parser.Module.module then Module.emit walk stx
     else if kind == ``Lean.Parser.Command.declaration then Decl.emit walk stx
@@ -191,9 +196,7 @@ partial def walkCore
         -- canonVerbatimWs itself.
         match Lean4Fmt.Emit.tokenJoin? stx with
         | some t' => pure (.text t')
-        | none =>
-          if Lean4Fmt.Syntax.hasQuotationKind stx then pure (.text t)
-          else pure (.text (Lean4Fmt.Doc.canonVerbatimWs t))
+        | none => pure (.text (Lean4Fmt.Emit.canonWsPiecewise stx t))
       else verbatim stx
 
 /-- `walkCore` + the single-line bail interception: a DISPATCHED emitter that

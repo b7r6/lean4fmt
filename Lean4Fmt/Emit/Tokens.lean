@@ -148,10 +148,10 @@ def canonTok (stx : Lean.Syntax) : String :=
   match tokenJoin? stx with
   | some t => t
   | none =>
-    let raw := (bareSrc stx).trimAscii.toString
-    -- quotation KINDS ride byte-exact; templates are guarded inside
-    -- canonVerbatimWs (template mode), so the lexical collapse is safe
-    if Lean4Fmt.Syntax.hasQuotationKind stx then raw
-    else Lean4Fmt.Doc.canonVerbatimWs raw
+    -- piecewise ws-canon: quotation terms/commands byte-exact (pin),
+    -- templates via canonVerbatimWs' own template mode, the rest collapses.
+    -- NOTE the trim: bareSrc has no leading trivia, so start trim is a no-op
+    -- and end trim only drops trailing ws — the piecewise offsets stay valid.
+    canonWsPiecewise stx ((bareSrc stx).trimAscii.toString)
 
 end Lean4Fmt.Emit

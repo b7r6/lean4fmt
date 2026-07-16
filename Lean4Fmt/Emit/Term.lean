@@ -481,7 +481,10 @@ partial def emit
       if bf.getKind != ``Lean.Parser.Term.basicFun then return (← verbatim stx)
       let ba := bf.getArgs
       if ba.size != 4 then return (← verbatim stx)
-      let mut head := "fun"
+      -- the keyword token from SOURCE: `fun` and `λ` are distinct tokens and
+      -- the gate cares (found on Pantograph — hardcoding "fun" ate every `λ`)
+      let mut head := (bareSrc args[0]!).trimAscii.toString
+      if head.isEmpty then return (← verbatim stx)
       for b in ((ba[0]?).map (·.getArgs)).getD #[] do
         let t := Lean4Fmt.Emit.canonTok b
         if t.isEmpty || t.any (· == '\n') then return (← verbatim stx)

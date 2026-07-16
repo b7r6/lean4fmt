@@ -41,6 +41,41 @@ def bareSrc
 
   (stx.getSubstring? false false).map (·.toString) |>.getD ""
 
+/-- `canonVerbatimWs` applied PIECEWISE around embedded quotation TERMS: the
+    quotation interiors ride byte-exact (the quasiquotation pin), everything
+    around them still collapses — a sibling statement's gap must not escape
+    canonicalization just because the block also holds a `` `(…) ``. The
+    perturber mirrors this boundary (it guards quotation-bearing lines).
+    `skipBytes` shifts the range base when `s` is a SUFFIX of the node's bare
+    source (spanBodyBlank hands us the tail lines). Whole-node fallbacks: no
+    substring/position info, or range geometry that doesn't land inside `s`. -/
+def canonWsPiecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) : String := Id.run do
+  if Lean4Fmt.Syntax.hasQuotationCommand stx then return s
+  let some ranges := Lean4Fmt.Syntax.quotTermRanges? stx | return s
+  if ranges.isEmpty then return Lean4Fmt.Doc.canonVerbatimWs s
+  let some sub := stx.getSubstring? false false | return s
+  let base := sub.startPos.byteIdx + skipBytes
+  let bytes := s.toUTF8
+  let send := bytes.size
+  -- range boundaries are token edges, so byte slices are valid UTF-8; any
+  -- decode surprise bails to the whole text (content-safe)
+  let piece? := fun (a b : Nat) => String.fromUTF8? (bytes.extract a b)
+  let mut out := ""
+  let mut cur : Nat := 0
+  for (qs, qe) in ranges do
+    if qe ≤ base then continue               -- range before our suffix window
+    let a := qs - base                        -- Nat sub clamps: partial overlap → 0
+    let b := qe - base
+    if b ≤ a || a < cur || b > send then return s   -- geometry surprise: content-safe
+    match piece? cur a, piece? a b with
+    | some code, some quot =>
+      out := out ++ Lean4Fmt.Doc.canonVerbatimWs code ++ quot
+      cur := b
+    | _, _ => return s
+  match piece? cur send with
+  | some tail => return out ++ Lean4Fmt.Doc.canonVerbatimWs tail
+  | none => return s
+
 /-- The opt-out trail entry (debug level): names the kind and position.
     `verbatim` emits it; PROBE constructions (docs built speculatively and
     possibly discarded) use `verbatimQuiet` and log at their decision site —
@@ -67,12 +102,12 @@ def verbatimQuiet
   -- tokens+comments — spacing preservation is exactly what preservation mode
   -- means, so it is the one (non-preset) opt-out
   let preserve := (← read).breaking.preserveLineBreaks
-  -- quotation KINDS (macro_rules/syntax/notation/quot terms) are content
-  -- byte-exact (pin); templates inside ordinary code are guarded by
-  -- canonVerbatimWs' template mode, so everything else still collapses
-  let quoted := Lean4Fmt.Syntax.hasQuotationKind stx
+  -- ws-canon with the quasiquotation pin honored piecewise: quotation-command
+  -- subtrees ride whole-node byte-exact, embedded quotation TERMS byte-exact
+  -- by range, templates via canonVerbatimWs' own template mode — everything
+  -- else collapses
   let canon := fun (t : String) =>
-    if preserve || quoted then t else Lean4Fmt.Doc.canonVerbatimWs t
+    if preserve then t else canonWsPiecewise stx t
   let s := bareSrc stx
   if s.isEmpty then
     match stx.reprint with

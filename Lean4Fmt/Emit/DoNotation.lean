@@ -206,15 +206,18 @@ def emit
     | some d => return d
     | none => return (← Lean4Fmt.Emit.verbatim stx)
   else if kind == ``Lean.Parser.Term.doReturn then
-    -- `return` or `return v` = ["return", null(term?)] — the value is walked,
-    -- flat on the return line when it fits, else on the next line at +2
+    -- `return` or `return v` = ["return", null(term?)] — the value GLUES to
+    -- the keyword line: the argument is OPTIONAL, so a break after `return`
+    -- reparses as a bare return plus a stray statement ("must be last element
+    -- in a do sequence" — found on Pantograph). A too-wide value breaks
+    -- INSIDE itself (its head stays on the line).
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
     match ((a[1]?.map (·.getArgs)).getD #[])[0]? with
     | none => return (Doc.text "return")
     | some v =>
       let vdoc ← walk v
       if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return (← Lean4Fmt.Emit.verbatim stx)
-      return Doc.text "return" ++ .group (.nest 2 (.line ++ vdoc))
+      return Doc.text "return " ++ vdoc
   else if kind == ``Lean.Parser.Term.doExpr then
     -- a plain expression statement: the term IS the statement
     match a[0]? with
