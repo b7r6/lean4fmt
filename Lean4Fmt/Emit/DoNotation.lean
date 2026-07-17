@@ -123,7 +123,9 @@ private def branchDoc?
     if plainLead && (lastOwned || trailT.isEmpty)
         && (!(← read).breaking.preserveLineBreaks || srcInline) then
       let sDoc ← walk ss[0]!
-      if (Lean4Fmt.Doc.flatWidth sDoc).isSome && !Lean4Fmt.Doc.hasMultilineVerbatim sDoc then
+      if (← read).breaking.inlineBranches
+          && (Lean4Fmt.Doc.flatWidth sDoc).isSome
+          && !Lean4Fmt.Doc.hasMultilineVerbatim sDoc then
         return some (.group (.nest 2 (.line ++ sDoc)))
       -- a nested `do` GLUES to the branch keyword (`=> do` / `then do`) —
       -- its statements bring their own hardlines (mirrors the eqns arm rule;

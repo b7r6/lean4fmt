@@ -55,7 +55,8 @@ def purtell
     : Style := {
   layout     := { lineWidth := 120, indent := 2, continuationIndent := 4 }
   breaking   := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := false,
-                  bodyOwnLine := false, compactDo := true }
+                  bodyOwnLine := false, compactDo := true, inlineBranches := true,
+                  ctorsOneLine := true }
   alignment  := { structFields := .never, matchArms := .never, recordFields := .never,
                   trailingComments := .never }
   blankLines := { policy := .normalize, betweenTopLevelDecls := 1, maxConsecutive := 1 }

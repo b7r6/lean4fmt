@@ -61,6 +61,12 @@ structure Breaking where
   preserveLineBreaks : Bool := false
   compactDo        : Bool := true
   elseIfChain      : Bool := true
+  /-- A single clean branch statement rides inline after its keyword when it
+      fits (`if ok then pure true`); off = always on its own line. -/
+  inlineBranches   : Bool := true
+  /-- Bare (typeless, docless) inductive constructors join on ONE line when
+      they fit (`| GET | POST | PUT`); off = one per line. -/
+  ctorsOneLine     : Bool := false
   deriving Repr, Inhabited
 
 structure Alignment where

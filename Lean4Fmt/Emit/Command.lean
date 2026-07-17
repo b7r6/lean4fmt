@@ -252,8 +252,17 @@ def inductiveDoc?
     items := items.push
       { sep, plainSep, prefixDoc := docD, hasPrefix := !(docD matches Doc.nil),
         line, lineDoc := lineDoc?, trailT := if owned then trailT else "" }
-  let body := assemble alignMode .never alignDelta items
   let derD : Doc := if hasDer then derSep ++ .text derT else .nil
+  -- ctorsOneLine (purtell): an all-BARE ctor set (`| GET | POST …` — no
+  -- docs, no comments, no binders/types) joins on ONE line when it fits —
+  -- the enum-table idiom, headless form, ctor line at column 0
+  if (← read).breaking.ctorsOneLine && whereT.isEmpty
+      && items.all (fun it => !it.hasPrefix && it.trailT.isEmpty && it.plainSep
+        && it.lineDoc.isNone && (it.line.splitOn " ").length == 2) then
+    let joined := String.intercalate " " (items.toList.map (·.line))
+    if joined.length ≤ (← read).layout.lineWidth then
+      return some (.text head ++ .hardline ++ .text joined ++ .nest 2 derD)
+  let body := assemble alignMode .never alignDelta items
   return some (.text head ++ .nest 2 (body ++ derD))
 
 /-- One structure field `(/-- doc -/)? (modifiers)? name (binders)* : τ (:= v)?`,
