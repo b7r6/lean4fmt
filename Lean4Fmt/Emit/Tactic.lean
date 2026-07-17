@@ -116,8 +116,13 @@ private def seqGroupsDoc?
     if !last && trailT.any (· == '\n') then return none
     if last && !lastOwned && !trailT.isEmpty then return none
     let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-    let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? first).getD "")
-      | return none
+    let lead := (Lean4Fmt.Syntax.leading? first).getD ""
+    -- first group: comment-free blank runs after the block opener are LAYOUT
+    -- (dropped; the style re-adds its own) — see seqLinesDoc?
+    let sep ← if i == 0 && lead.toList.all (·.isWhitespace) then pure Doc.hardline
+      else match Lean4Fmt.Emit.leadingSep? lead with
+        | some s => pure s
+        | none => return none
     let some gDoc ← groupDoc? walk g | return none
     body := body ++ sep ++ gDoc ++ trailDoc
   return some body

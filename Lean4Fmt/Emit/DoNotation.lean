@@ -91,7 +91,15 @@ def seqLinesDoc?
     if !last && trailT.any (· == '\n') then return none
     if last && !lastOwned && !trailT.isEmpty then return none
     let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-    let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? stmt).getD "") | return none
+    let lead := (Lean4Fmt.Syntax.leading? stmt).getD ""
+    -- FIRST statement: a comment-free blank run between the block opener and
+    -- the first statement is LAYOUT, not content — drop it and let the style
+    -- re-add its own (bodyOwnLine/glueBodyBlank). Without this, one style's
+    -- injected blank reads as content to the next (the wash-test leak).
+    let sep ← if i == 0 && lead.toList.all (·.isWhitespace) then pure Doc.hardline
+      else match Lean4Fmt.Emit.leadingSep? lead with
+        | some s => pure s
+        | none => return none
     let sDoc ← walk stmt
     body := body ++ sep ++ sDoc ++ trailDoc
   return some body

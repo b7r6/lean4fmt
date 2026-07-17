@@ -290,19 +290,28 @@ private def glueBodyBlank : Doc → Doc
     block on the next pass, and wrBlock drops those. -/
 private def spanBodyBlank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : ValForm → ValForm
   | .span d => Id.run do
-    if !bodyOwnLine then return .span d
     match (bareSrc declVal).splitOn "\n" with
     | first :: rest =>
       let ft := first.trimAsciiEnd.toString
       if (ft == ":=" || ft == ":= by" || ft == ":= do") && !rest.isEmpty then
-        -- bodyOwnLine is a prescriptive rewrite, so the body gets the same
-        -- piecewise ws-canonicalization as every verbatimQuiet block
-        -- (zero-passthrough; quotation pin honored by range). skipBytes:
-        -- `rest` is the bare source MINUS its first line and the newline.
+        -- the body gets the same piecewise ws-canonicalization as every
+        -- verbatimQuiet block (zero-passthrough; quotation pin honored by
+        -- range). skipBytes: `rest` is the bare source MINUS its first line
+        -- and the newline.
         let body := String.intercalate "\n" rest
         let skip := first.utf8ByteSize + 1
-        return .span (.text ft ++ .blank 1
-          ++ .verbatim (Lean4Fmt.Emit.canonWsPiecewise declVal body skip) 0)
+        if bodyOwnLine then
+          -- prescriptive rewrite: `:=` line, one blank, body re-anchored
+          return .span (.text ft ++ .blank 1
+            ++ .verbatim (Lean4Fmt.Emit.canonWsPiecewise declVal body skip) 0)
+        if ((rest.head?.getD "x").trimAscii.toString.isEmpty) then
+          -- blanks right after the `:=` head are the bodyOwnLine style's
+          -- LAYOUT, not content: reconstruct so they become LEADING blanks
+          -- of the block (wrBlock drops those) — without this, one style's
+          -- injected body blank reads as content to the next (wash leak)
+          return .span (.text ft ++ .hardline
+            ++ .verbatim (Lean4Fmt.Emit.canonWsPiecewise declVal body skip) 0)
+        return .span d
       return .span d
     | _ => return .span d
   | vf => vf
