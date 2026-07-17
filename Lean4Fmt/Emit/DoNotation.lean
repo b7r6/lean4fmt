@@ -125,6 +125,15 @@ private def branchDoc?
       let sDoc ← walk ss[0]!
       if (Lean4Fmt.Doc.flatWidth sDoc).isSome && !Lean4Fmt.Doc.hasMultilineVerbatim sDoc then
         return some (.group (.nest 2 (.line ++ sDoc)))
+      -- a nested `do` GLUES to the branch keyword (`=> do` / `then do`) —
+      -- its statements bring their own hardlines (mirrors the eqns arm rule;
+      -- without this the `do` lands alone on its own line)
+      let k := ss[0]!.getKind
+      if !Lean4Fmt.Doc.hasMultilineVerbatim sDoc
+          && (k == ``Lean.Parser.Term.doNested
+            || (k == ``Lean.Parser.Term.doExpr
+              && (ss[0]!.getArgs[0]?.map (·.getKind)) == some ``Lean.Parser.Term.do)) then
+        return some (.text " " ++ sDoc)
   match ← seqLinesDoc? walk ss lastOwned with
   | some body => return some (.nest 2 body)
   | none => return none
@@ -332,6 +341,15 @@ def emit
   if !doKwTrail.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
   let some seq := a[1]? | return (← Lean4Fmt.Emit.verbatim stx)
   let some ss := stmts? seq | return (← Lean4Fmt.Emit.verbatim stx)
+  -- compactDo: a SINGLE clean statement rides width-aware after `do` —
+  -- inline when it fits (`do pure 1`), else the ordinary block. This is what
+  -- makes the active path agree with the interception's inline `do a; b`
+  -- (single-statement dos used to force three lines for a one-line body).
+  if (← read).breaking.compactDo && ss.size == 1
+      && ((Lean4Fmt.Syntax.leading? ss[0]!).getD "").toList.all (·.isWhitespace) then
+    let sDoc ← walk ss[0]!
+    if !Lean4Fmt.Doc.hasMultilineVerbatim sDoc then
+      return .text "do" ++ .group (.nest 2 (.line ++ sDoc))
   -- trailing comments per statement placed by the loop; the LAST statement's
   -- trailing is the whole do's trailing — the enclosing seam owns it
   match ← seqLinesDoc? walk ss true with
