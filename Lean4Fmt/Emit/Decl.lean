@@ -493,7 +493,7 @@ private def defnDoc
             (defn : Lean.Syntax)
             : EmitM Doc := do
   let a := defn.getArgs
-  let kw := match a[0]? with | some (.atom _ v) => v | _ => "def"
+  let kw := match a[0]? with | some (Lean.Syntax.atom _ v) => v | _ => "def"
   let declId := (a[1]?.map bareSrc).getD ""
   let vf ← match a[3]? with | some v => valForm walk v | none => pure (.body .nil false)
   let bodyOwn := (← read).breaking.bodyOwnLine
