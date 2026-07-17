@@ -78,13 +78,13 @@ private def eqnsFormattable
             (declVal : Lean.Syntax)
             : Bool := Id.run do
   -- comments handle per-seam in the arm loop (between-arm comments place
-  -- structurally; an arm-INTERIOR comment falls back there). One zone stays
-  -- whole-declaration verbatim: declVal's HEAD leading (a comment between the
-  -- signature and the first arm) — every fallback in the loop is a `.span`,
-  -- and the span's bare source EXCLUDES that leading, so a span bail there
-  -- would silently drop the comment (found exactly that way).
-  if Lean4Fmt.Syntax.hasLineComment ((Lean4Fmt.Syntax.leading? declVal).getD "") then
-    return false
+  -- structurally; an arm-INTERIOR comment falls back there). declVal's HEAD
+  -- leading (a comment between the signature and the first arm — the
+  -- `-- ── section ──` header position) is the FIRST ARM's leading too, and
+  -- the loop places it via leadingSep? — safe ONLY because every loop bail
+  -- condition is pre-checked below (a mid-loop `.span` bail would silently
+  -- drop it: the span's bare source excludes that leading — found exactly
+  -- that way). Keep the mirror EXACT when touching either side.
   let mawd := (declVal.getArgs[0]?).getD .missing
   let margs := mawd.getArgs
   if (margs.toList.drop 1).any (fun s => !(bareSrc s).trimAscii.toString.isEmpty) then
@@ -421,10 +421,7 @@ private def valForm
       for c in g.getArgs do
         if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
     if alts.isEmpty then return .span (← verbatim declVal)
-    let mut armsDoc : Doc := .nil
-    let mut armsPlain : Doc := .nil
-    let mut aligned : Array (Doc × Option Doc) := #[]
-    let mut plainArms := true
+    let mut pieces : Array Lean4Fmt.Emit.ArmPiece := #[]
     for h : i in [0:alts.size] do
       let alt := alts[i]
       -- a comment INSIDE the arm — whole-declaration verbatim (via the
@@ -436,8 +433,8 @@ private def valForm
       let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
       let last := i + 1 == alts.size
       if !last && trailT.any (· == '\n') then return .span (← verbatim declVal)
-      let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-      if !plainSep || (!last && !trailT.isEmpty) then plainArms := false
+      let hasTrail := !last && !trailT.isEmpty
+      let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
       let aa := alt.getArgs
       let patDoc ← walk (aa[1]?.getD .missing)
       let body := aa[aa.size-1]?.getD .missing
@@ -460,18 +457,16 @@ private def valForm
             && !armSrc.any (· == '\n') then
           Doc.text armSrc
         else .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
-      armsDoc := armsDoc ++ sep ++ armDoc ++ trailDoc
-      armsPlain := armsPlain ++ (if i == 0 then Doc.nil else .hardline) ++ armDoc
       let inlineOk := body.getKind != ``Lean.Parser.Term.do
         && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
-      aligned := aligned.push (patDoc, if inlineOk then some bodyDoc else none)
+      let row := if inlineOk && !hasTrail then some (patDoc, some bodyDoc) else none
+      pieces := pieces.push
+        { sep := sep, plain := plainSep, doc := armDoc ++ trailDoc, gridRow := row }
     let al := (← read).alignment
     -- the arms doc OWNS its leading break (defnDoc places it bare at +2):
-    -- plain arm sets lead with a hardline; seam-led sets already start with
-    -- their first arm's separator
-    if plainArms then
-      return .eqns (.hardline ++ armsAligned al.matchArms al.maxDelta aligned armsPlain)
-    return .eqns armsDoc
+    -- each section starts with its first arm's separator (a plain hardline
+    -- for the seamless case), grids per visible-seam section
+    return .eqns (Lean4Fmt.Emit.armsAlignedRuns al.matchArms al.maxDelta pieces)
   else
     return .span (← verbatim declVal)   -- where-struct: literal span
 

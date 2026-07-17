@@ -348,7 +348,7 @@ per-commit detail; `MEMORY`/session notes hold the pitfalls):
 | Milestone 2 opened: aniva/purtell cut prescriptive | Pantograph/lithe direct-wash measured |
 | Zero-passthrough: respacing engine + fuzzer | core set 92/120 → **0/120** (`8848c74`) |
 | Full-corpus ledger | 227 → 160 (fuzzer honesty) → 144 → 123 → 114 → 110 → 102 → **0/702** (`9a170bb`) |
-| Coverage | **77.4%** code-active; honest ceiling ≈81% (strings/quasiquotes/moduleDoc are correctly verbatim forever) |
+| Coverage | **78.4%** code-active; honest ceiling ≈81% (strings/quasiquotes/moduleDoc are correctly verbatim forever) |
 
 Current head: `9a170bb` (+ dogfood `27cdc9b`). **The campaign's primary goal is
 closed**: zero fuzz divergences over the whole non-vendor tree (347 files × 3

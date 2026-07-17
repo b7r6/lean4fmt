@@ -170,6 +170,57 @@ def armsAligned
   let cap := if mode == Lean4Fmt.Style.AlignMode.always then 1000000 else maxDelta
   return Doc.alignOr { sep := " ", maxDelta := cap } rows fallback
 
+/-- One arm of a comment-interleaved arm set, for the RUN-aligned layout. -/
+structure ArmPiece where
+  /-- Structural leading (comments/blank requests) — positions the arm. -/
+  sep : Doc
+  /-- The sep is a bare newline: this arm may JOIN the run in progress. -/
+  plain : Bool
+  /-- The arm's ordinary layout, trailing comment included. -/
+  doc : Doc
+  /-- `pat × body` when grid-eligible (flat pattern, inline body, no trailing
+      comment) — `none` rides plain and terminates its run. -/
+  gridRow : Option (Doc × Option Doc)
+
+/-- §7 matchArms with clang-format run semantics: a VISIBLE seam (comment or
+    blank line) splits the arm set into sections, and each section aligns
+    independently (`armsAligned` — delta-guarded; single-arm sections degrade
+    to the plain layout). Within a section the whole-set judgment still holds:
+    one grid-ineligible arm (broken body, trailing comment) opts its whole
+    section out — mixed grids read worse than no grid. This is what lets a
+    sectioned table (`-- ── ints ──` between arm groups) keep its grids
+    instead of falling to plain arms because the set as a whole is
+    seam-bearing. -/
+def armsAlignedRuns
+    (mode : Lean4Fmt.Style.AlignMode)
+    (maxDelta : Nat)
+    (pieces : Array ArmPiece)
+    : Doc := Id.run do
+  let flush := fun (out sectLead : Doc) (sect : Array ArmPiece) => Id.run do
+    if sect.isEmpty then return out
+    let mut plainJ : Doc := .nil
+    let mut rows : Array (Doc × Option Doc) := #[]
+    let mut allGrid := true
+    for h : j in [0:sect.size] do
+      let p := sect[j]
+      plainJ := plainJ ++ (if j == 0 then Doc.nil else Doc.hardline) ++ p.doc
+      match p.gridRow with
+      | some r => rows := rows.push r
+      | none => allGrid := false
+    let body := if allGrid then armsAligned mode maxDelta rows plainJ else plainJ
+    return out ++ sectLead ++ body
+  let mut out : Doc := .nil
+  let mut sect : Array ArmPiece := #[]
+  let mut sectLead : Doc := .nil
+  for p in pieces do
+    if p.plain && !sect.isEmpty then
+      sect := sect.push p
+    else
+      out := flush out sectLead sect
+      sect := #[p]
+      sectLead := p.sep
+  return flush out sectLead sect
+
 /-- The leading trivia (comments + blank lines) before a form, as literal text. -/
 def leadingRaw (stx : Lean.Syntax) : Doc := .textRaw (Lean4Fmt.Syntax.leading? stx |>.getD "")
 

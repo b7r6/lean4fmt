@@ -407,10 +407,7 @@ partial def emit
         for c in g.getArgs do
           if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
       if alts.isEmpty || head.any (· == '\n') then return (← verbatim stx)
-      let mut armsDoc : Doc := .nil
-      let mut armsPlain : Doc := .nil   -- the classic first-nil/hardline join, for the §7 grid fallback
-      let mut aligned : Array (Doc × Option Doc) := #[]
-      let mut plainArms := true
+      let mut pieces : Array Lean4Fmt.Emit.ArmPiece := #[]
       for h : i in [0:alts.size] do
         let alt := alts[i]
         -- a comment INSIDE the arm (pattern/body interior) — whole-match verbatim
@@ -421,8 +418,8 @@ partial def emit
         let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
         let last := i + 1 == alts.size
         if !last && trailT.any (· == '\n') then return (← verbatim stx)
-        let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-        if !plainSep || (!last && !trailT.isEmpty) then plainArms := false
+        let hasTrail := !last && !trailT.isEmpty
+        let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
         let aa := alt.getArgs
         let patDoc ← walk (aa[1]?.getD .missing)
         let body := aa[aa.size-1]?.getD .missing
@@ -443,18 +440,15 @@ partial def emit
           if preserveLB && !armSrc.isEmpty && !armSrc.any (· == '\n') then
             Doc.text armSrc
           else .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
-        armsDoc := armsDoc ++ sep ++ armDoc ++ trailDoc
-        armsPlain := armsPlain ++ (if i == 0 then Doc.nil else .hardline) ++ armDoc
         let inlineOk := body.getKind != ``Lean.Parser.Term.do
           && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
-        aligned := aligned.push (patDoc, if inlineOk then some bodyDoc else none)
+        let row := if inlineOk && !hasTrail then some (patDoc, some bodyDoc) else none
+        pieces := pieces.push
+          { sep := sep, plain := plainSep, doc := armDoc ++ trailDoc, gridRow := row }
       let al := (← read).alignment
-      -- the aligned grid only for a comment-free, blank-free arm set (a grid
-      -- with foreign lines interleaved reads worse than no grid)
-      if plainArms then
-        return .text head ++ .hardline
-          ++ armsAligned al.matchArms al.maxDelta aligned armsPlain
-      return .text head ++ armsDoc
+      -- grids per visible-seam section (comments/blanks split; a section with
+      -- a grid-ineligible arm rides plain — see armsAlignedRuns)
+      return .text head ++ Lean4Fmt.Emit.armsAlignedRuns al.matchArms al.maxDelta pieces
     else if kind.toString == "termDepIfThenElse" then
       -- [if, binderIdent, :, cond, then, thenBranch, else, elseBranch] — the
       -- dependent `if h : c then … else …`; same layout as termIfThenElse,
