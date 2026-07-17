@@ -27,6 +27,50 @@ unsafe def initEnvImpl
 @[implemented_by initEnvImpl]
 opaque initEnv : IO Unit
 
+/-- Lake workspace discovery (milestone 2): walk up from each input to a
+    lakefile; one `lake env printenv LEAN_PATH` per distinct workspace root
+    supplies the olean search path for that workspace's imports — no
+    hand-built symlink farm. Additive and failure-tolerant: entries APPEND
+    to the search path (an explicit LEAN_PATH keeps first-match priority),
+    and a missing or failing `lake` is a silent skip, never an error. -/
+unsafe def addLakePathsImpl (files : List String) : IO Unit := do
+  -- an explicit LEAN_PATH is the caller taking control (corpus-gate's farm,
+  -- batch loops): skip the ~1.6s/root lake startup — discovery is the
+  -- ZERO-CONFIG path, not an override
+  if ((← IO.getEnv "LEAN_PATH").getD "") != "" then return
+  let mut roots : Array System.FilePath := #[]
+  for f in files do
+    -- absolute first: a bare relative path's parent chain ends BEFORE the
+    -- cwd (parent "Lithe" = none), so the workspace root is never seen
+    let p ← try IO.FS.realPath ⟨f⟩ catch _ => pure ⟨f⟩
+    let mut dir? := if (← p.isDir) then some p else p.parent
+    let mut steps := 0
+    while h : dir?.isSome ∧ steps < 64 do
+      let dir := dir?.get h.1
+      if (← (dir / "lakefile.lean").pathExists) || (← (dir / "lakefile.toml").pathExists) then
+        if !roots.contains dir then roots := roots.push dir
+        dir? := none
+      else
+        dir? := dir.parent
+      steps := steps + 1
+  for root in roots do
+    try
+      let r ← IO.Process.output
+        { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd := root }
+      if r.exitCode == 0 then
+        let entries := ((r.stdout.splitOn "\n").headD "").splitOn ":"
+          |>.filter (fun s => !s.isEmpty) |>.map System.FilePath.mk
+        if !entries.isEmpty then
+          Lean.searchPathRef.modify (· ++ entries)
+          Lean4Fmt.Log.log .debug s!"lake env: {root} → {entries.length} search paths"
+      else
+        Lean4Fmt.Log.log .debug s!"lake env failed at {root} (exit {r.exitCode})"
+    catch e =>
+      Lean4Fmt.Log.log .debug s!"lake env unavailable at {root}: {e}"
+
+@[implemented_by addLakePathsImpl]
+opaque addLakePaths (files : List String) : IO Unit
+
 /-- Resolve style, expand inputs (files/dirs) to the file set, and run all jobs
     through the scheduler seam (`Driver.runAll`). Behind an opaque boundary so the
     non-`unsafe` `main` can invoke the unsafe frontend. -/
@@ -37,6 +81,7 @@ unsafe def runJobsImpl
            (elabFallback : Bool)
            (retry : Bool)
            (logLevel : String)
+           (lakeEnv : Bool)
            : IO (Array Driver.Result) := do
   let base := (Style.byName? preset).getD Style.straylight
   let style := match width with
@@ -49,14 +94,17 @@ unsafe def runJobsImpl
       pure (some (exe.toString,
         (match width with | some w => #["--width", toString w] | none => #[])
           ++ #["--style", preset, "--log-level", logLevel]
-          ++ (if elabFallback then #[] else #["--elab", "off"])))
+          ++ (if elabFallback then #[] else #["--elab", "off"])
+          -- the augmented search path is in-process; the child re-discovers
+          -- (or matches an explicit --lake off)
+          ++ (if lakeEnv then #[] else #["--lake", "off"])))
     else pure none
   Driver.runAll style expanded elabFallback retryCfg
 
 @[implemented_by runJobsImpl]
 opaque runJobs
     (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool)
-    (logLevel : String)
+    (logLevel : String) (lakeEnv : Bool)
     : IO (Array Driver.Result)
 
 /-- Coverage accounting (`--stats`, DESIGN_V2 §15): per-file
@@ -117,6 +165,7 @@ def main
 
   initEnv
   Lean4Fmt.Log.setLevel (Lean4Fmt.Log.Level.ofString o.logLevel)
+  if o.lakeEnv then addLakePaths o.files
   let err ← IO.getStderr
 
   if o.mode == .stats then
@@ -135,7 +184,7 @@ def main
     IO.println s!"// coverage: code-active {pct ta code}  (of all output: active {pct ta (code + tt)}, trivia {pct tt (code + tt)})"
     return
 
-  let results ← runJobs o.files o.width o.preset o.elabFallback o.retry o.logLevel
+  let results ← runJobs o.files o.width o.preset o.elabFallback o.retry o.logLevel o.lakeEnv
 
   let mut failed := false
   for r in results do
