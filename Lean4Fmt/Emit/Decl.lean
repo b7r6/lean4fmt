@@ -215,6 +215,11 @@ private def sigDoc
     match ti with
     | some (term, colonType, _, multi) =>
       if multi then return .nest cont (d ++ .space ++ colonType)
+      -- colon placement honored when the type breaks: breakAfter keeps the
+      -- colon on the binder line (`… :` / type on the continuation — the
+      -- mathlib shape); breakBefore leads the continuation with `: `
+      else if (← read).breaking.colon == .breakAfter then
+        return .nest cont (d ++ .text " :" ++ .group (.line ++ term))
       else return .nest cont (d ++ .group (.line ++ .text ": " ++ term))
     | none => return .nest cont d
   | .oneLine =>

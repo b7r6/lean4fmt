@@ -31,7 +31,8 @@ def straylight
     with the mathlib-ish binder fill (pack + wrap) and blank preservation. -/
 def mathlib
     : Style := { straylight with
-  breaking   := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := false, bodyOwnLine := false }
+  breaking   := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := true, bodyOwnLine := false }
+  alignment  := { structFields := .never, matchArms := .never, recordFields := .never, trailingComments := .never }
   blankLines := { straylight.blankLines with policy := .preserve }
 }
 
