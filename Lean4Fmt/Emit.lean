@@ -174,6 +174,7 @@ partial def walkCore
          || kind.toString == "termIfThenElse"
          || kind.toString == "termDepIfThenElse"
          || kind == ``Lean.Parser.Term.let
+         || kind == ``Lean.Parser.Term.have
          || kind == ``Lean.Parser.Term.letrec
          || kind == ``Lean.Parser.Term.letDecl
          || kind == ``Lean.Parser.Term.letIdDecl

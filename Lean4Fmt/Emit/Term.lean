@@ -321,12 +321,17 @@ partial def emit
       let cond ← walk (args[1]?.getD .missing)
       let thenB ← walk (args[3]?.getD .missing)
       let elseB ← walk (args[5]?.getD .missing)
+      -- else-if CHAIN (breaking.elseIfChain): a nested ite glues after `else`
+      let elseIsIte := (args[5]?.map (fun e =>
+        e.getKind.toString == "termIfThenElse" || e.getKind.toString == "termDepIfThenElse")).getD false
+      let elseTail : Doc := if (← read).breaking.elseIfChain && elseIsIte
+        then .text "else " ++ elseB
+        else .text "else" ++ .nest 2 (.line ++ elseB)
       return .group (
         .text "if " ++ cond ++ .text " then"
           ++ .nest 2 (.line ++ thenB)
-          ++ .line ++ .text "else"
-          ++ .nest 2 (.line ++ elseB))
-    else if kind == ``Lean.Parser.Term.let then
+          ++ .line ++ elseTail)
+    else if kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.have then
       -- The CHAIN arm: unroll `let a := x; let b := y; body` into a vertical
       -- sequence of binding lines + the final body, each at the SAME indent
       -- (Lean let-chains don't nest). The loop OWNS the inter-binding trivia
@@ -338,7 +343,10 @@ partial def emit
       let mut cur := stx
       let mut first := true
       let mut steps := 0
-      while cur.getKind == ``Lean.Parser.Term.let && steps < 10000 do
+      -- have chains like let (same shape: [kw, letConfig, letDecl, …, body])
+      -- and the two INTERLEAVE (`have h := …` then `let x := …`)
+      while (cur.getKind == ``Lean.Parser.Term.let
+          || cur.getKind == ``Lean.Parser.Term.have) && steps < 10000 do
         steps := steps + 1
         let a := cur.getArgs
         if a.size < 5 then return (← verbatim stx)
@@ -366,7 +374,9 @@ partial def emit
         let trailT := ((Lean4Fmt.Syntax.trailing? decl).getD "").trimAscii.toString
         if trailT.any (· == '\n') then return (← verbatim stx)
         let cfgDoc : Doc := if cfgT.isEmpty then .nil else .text cfgT ++ .space
-        d := d ++ .text "let " ++ cfgDoc ++ declDoc ++ .text sepT
+        let kwT := (bareSrc (a[0]?.getD .missing)).trimAscii.toString
+        if kwT.isEmpty then return (← verbatim stx)
+        d := d ++ .text (kwT ++ " ") ++ cfgDoc ++ declDoc ++ .text sepT
           ++ (if trailT.isEmpty then Doc.nil else .text (" " ++ trailT))
         cur := a[a.size-1]?.getD .missing
       -- the final body: its leading is the last seam the chain owns
@@ -400,9 +410,11 @@ partial def emit
       if head.isEmpty || head.any (· == '\n') then return (← verbatim stx)
       let v := args[4]!
       let vdoc ← walk v
-      if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return (← verbatim stx)
-      if v.getKind == ``Lean.Parser.Term.do then
+      -- by glues like do (`h : T := by` + tactics below — the sequence-seam
+      -- invariant tolerates interior verbatims); other kinds keep the bail
+      if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic then
         return .text head ++ .text " := " ++ vdoc
+      if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return (← verbatim stx)
       return .text head ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
     else if kind == ``Lean.Parser.Term.match then
       -- [match, motive?, motive?, discrs, "with", matchAlts]. Reproduce the head
@@ -475,11 +487,17 @@ partial def emit
       let cond ← walk (args[3]?.getD .missing)
       let thenB ← walk (args[5]?.getD .missing)
       let elseB ← walk (args[args.size-1]?.getD .missing)
+      -- else-if CHAIN (breaking.elseIfChain): a nested ite in the else slot
+      -- glues (`else if … then`) instead of breaking to `else` + line
+      let elseIsIte := (args[args.size-1]?.map (fun e =>
+        e.getKind.toString == "termIfThenElse" || e.getKind.toString == "termDepIfThenElse")).getD false
+      let elseTail : Doc := if (← read).breaking.elseIfChain && elseIsIte
+        then .text "else " ++ elseB
+        else .text "else" ++ .nest 2 (.line ++ elseB)
       return .group (
         .text "if " ++ binder ++ .text " : " ++ cond ++ .text " then"
           ++ .nest 2 (.line ++ thenB)
-          ++ .line ++ .text "else"
-          ++ .nest 2 (.line ++ elseB))
+          ++ .line ++ elseTail)
     else if kind == ``Lean.Parser.Term.fun then
       -- `fun x (y : τ) => body` — ["fun", basicFun [binders, type?, "=>", body]].
       -- Binders as active text (trimmed, single-spaced), the body walked: flat

@@ -263,6 +263,7 @@ private def isActiveMultiline
       || kind == ``Lean.Parser.Term.arrow
       || kind == ``Lean.Parser.Term.paren
       || kind == ``Lean.Parser.Term.let
+      || kind == ``Lean.Parser.Term.have
       || kind == ``Lean.Parser.Term.letrec
       || kind == ``Lean.Parser.Term.match
       || Lean4Fmt.Syntax.isBinOp kind
@@ -407,6 +408,7 @@ private def valForm
       -- comments are chain seams) — prepending would double them; every
       -- other kind gets the seam-kit prefix (idempotence sweep verifies)
       let selfLead := v.getKind == ``Lean.Parser.Term.let
+        || v.getKind == ``Lean.Parser.Term.have
         || v.getKind == ``Lean.Parser.Term.letrec
       let vdoc ← (do
         if leadCmts > 0 && !selfLead then

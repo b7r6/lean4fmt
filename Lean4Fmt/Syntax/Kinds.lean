@@ -43,7 +43,8 @@ def ownsSeams
     (kind : SyntaxNodeKind)
     : Bool :=
 
-  kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.match
+  kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.have
+    || kind == ``Lean.Parser.Term.match
       || kind == ``Lean.Parser.Term.anonymousCtor
       || kind == ``Lean.Parser.Term.structInst
       || kind == ``Lean.Parser.Term.app
