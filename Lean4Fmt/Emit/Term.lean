@@ -242,7 +242,11 @@ partial def emit
       -- verbatim.
       let srcEmpty := ((args[1]?.map bareSrc).getD "").trimAscii.toString.isEmpty
       let ellipsisEmpty := ((args[3]?.map bareSrc).getD "").trimAscii.toString.isEmpty
-      if !srcEmpty || !ellipsisEmpty then return (← verbatim stx)
+      -- the UPDATE form `{ src with fields }`: the source segment joins
+      -- canonically (`p with`); comment-bearing and grid paths stay
+      -- conservative (plain group only)
+      let srcT := if srcEmpty then "" else Lean4Fmt.Emit.canonTok (args[1]?.getD .missing)
+      if srcT.any (· == '\n') || !ellipsisEmpty then return (← verbatim stx)
       let mut fields : Array Lean.Syntax := #[]
       let mut pairs : Array (Lean.Syntax × Option Lean.Syntax) := #[]
       let mut commas := 0
@@ -258,19 +262,24 @@ partial def emit
       if fields.isEmpty then return (← verbatim stx)
       if fields.size > 1 && commas + 1 != fields.size then return (← verbatim stx)  -- newline-separated
       if Lean4Fmt.Syntax.interiorHasLineComment stx then
+        if !srcT.isEmpty then return (← verbatim stx)
         -- comment-bearing record: forced broken, per-field seams
         match ← seamCommaList? walk "{" "}" (args[0]?.getD .missing) pairs (args[args.size - 1]?.getD .missing) with
         | some d => return d
         | none => return (← verbatim stx)
       let mut ds : Array Doc := #[]
       for f in fields do ds := ds.push (← structFieldDoc walk f)
-      let groupForm : Doc :=
-        .group (.text "{ " ++ .nest 2 (Lean4Fmt.Doc.sepBy (.text "," ++ .line) ds) ++ .text " }")
+      let groupForm : Doc := if srcT.isEmpty then
+          .group (.text "{ " ++ .nest 2 (Lean4Fmt.Doc.sepBy (.text "," ++ .line) ds) ++ .text " }")
+        else
+          -- `{ src with` rides the opener; fields below at +2 when broken
+          .group (.text ("{ " ++ srcT) ++ .nest 2 (.line
+            ++ Lean4Fmt.Doc.sepBy (.text "," ++ .line) ds) ++ .text " }")
       -- §7 recordFields: the broken form as an aligned grid — `{ `/`  ` ride in
       -- the first column so the grid IS the hanging house style; flat still
       -- wins when it fits (the renderer prefers a flat-capable fallback).
       let al := (← read).alignment
-      if al.recordFields != Lean4Fmt.Style.AlignMode.never && fields.size ≥ 2 then
+      if srcT.isEmpty && al.recordFields != Lean4Fmt.Style.AlignMode.never && fields.size ≥ 2 then
         let mut rows : List (List Doc) := []
         let mut ok := true
         for h : i in [0:fields.size] do
