@@ -73,6 +73,10 @@ structure Breaking where
   /-- Bare (typeless, docless) inductive constructors join on ONE line when
       they fit (`| GET | POST | PUT`); off = one per line. -/
   ctorsOneLine     : Bool := false
+  /-- `:= fun … =>` GLUES to the signature line (the lambda head rides the
+      decl, its body breaks below) — the mathlib idiom; off = the fun is an
+      ordinary body (inline when it fits, else its own line). -/
+  glueFun          : Bool := false
   deriving Repr, Inhabited
 
 structure Alignment where

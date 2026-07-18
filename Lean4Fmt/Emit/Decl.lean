@@ -358,6 +358,7 @@ private def valForm
             tail := tail ++ sep ++ (← verbatim sfx)
           | none => continue
         let glue := v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic
+          || ((← read).breaking.glueFun && v.getKind == ``Lean.Parser.Term.fun)
         return .body (vdoc ++ tail) glue
       let vdoc ← walk v
       -- `:= do` glues even when the do carries comments BETWEEN its statements —
@@ -365,7 +366,8 @@ private def valForm
       -- with a comment INSIDE a statement still lands here with a multi-line
       -- opaque block in vdoc (a line comment runs to end-of-line, so its
       -- statement is multi-line → verbatim), falling through to the safe span.
-      if (v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic)
+      if (v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic
+          || ((← read).breaking.glueFun && v.getKind == ``Lean.Parser.Term.fun))
           && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
         return .body vdoc true    -- glue `:= do` / `:= by`
       -- Comment hazard: a line comment anywhere in the value except its tail
@@ -649,7 +651,8 @@ private def whereFieldDoc?
   let some v := da[da.size - 1]? | return none
   let vdoc ← walk v
   if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return none
-  if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic then
+  if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic
+      || ((← read).breaking.glueFun && v.getKind == ``Lean.Parser.Term.fun) then
     return some (.text (head ++ " := ") ++ vdoc)
   return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc)))
 
