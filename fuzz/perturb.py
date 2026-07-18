@@ -5,6 +5,8 @@ random.seed(int(sys.argv[2]))
 lines = open(sys.argv[1]).read().split('\n')
 out = []
 in_block = False   # crude /- -/ and string guards
+blk_depth = 0      # block comments NEST; a line can hold both /- and -/ (e.g.
+                   # a docstring QUOTING `/-- doc -/` inline) -- count, don't toggle
 in_meta = False    # macro_rules/syntax/notation/elab quotations: CONTENT (pin)
 in_tpl = False     # MULTI-LINE quasiquote templates [ident| ... |]: CONTENT (pin)
 import re
@@ -25,8 +27,8 @@ for ln in lines:
     guard = ('"' in s) or ('/-' in s) or ('-/' in s) or in_block or in_meta or tpl_line \
         or s.lstrip().startswith('--') or ('|]' in s) or ('[' in s and '|' in s and ']' in s) \
         or ('`(' in s)   # quotation terms: interior is CONTENT (pin)
-    if '/-' in s and '-/' not in s: in_block = True
-    if '-/' in s: in_block = False
+    blk_depth = max(0, blk_depth + s.count('/-') - s.count('-/'))
+    in_block = blk_depth > 0
     r = random.random()
     if not guard and s.strip():
         if r < 0.15:

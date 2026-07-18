@@ -389,8 +389,20 @@ def emit
       let lhsT := Lean4Fmt.Emit.canonTok alt.getArgs[0]!
       if lhsT.isEmpty || lhsT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       let rhs := alt.getArgs[1]!.getArgs
+      if rhs.size == 0 then
+        -- arrow-less alt (`with | _ a h ih` — the body tactics are the
+        -- induction's SIBLINGS at outer indent): the pattern line alone
+        d := d ++ .hardline ++ .text lhsT
+        continue
       if rhs.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
       let some seq := rhs[1]? | return (← Lean4Fmt.Emit.verbatim stx)
+      if seq.getKind == ``Lean.Parser.Term.syntheticHole
+          || seq.getKind == ``Lean.Parser.Term.hole then
+        -- hole RHS (`=> ?_`): the grammar's non-seq alternative — plain text
+        let hT := Lean4Fmt.Emit.canonTok seq
+        if hT.isEmpty || hT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+        d := d ++ .hardline ++ .text (lhsT ++ " => " ++ hT)
+        continue
       let some bD ← armSeqDoc? walk seq | return (← Lean4Fmt.Emit.verbatim stx)
       d := d ++ .hardline ++ .text (lhsT ++ " =>") ++ bD
     return d
@@ -398,6 +410,23 @@ def emit
       || kind == ``Lean.Parser.Tactic.allGoals || kind == `Lean.Parser.Tactic.tacticRepeat_ then
     match ← headBlockDoc? walk stx with
     | some d => return d
+    | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if kind == `Lean.Parser.Tactic.classical then
+    -- [atom, tacticSeq] — the parser's block form: the sequence continues at
+    -- the SAME column as the keyword (nest 0), NOT indented under it
+    if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
+    let kwTrail := (Lean4Fmt.Syntax.trailing? a[0]!).getD ""
+    if !kwTrail.trimAscii.toString.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    let kwT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
+    let some groups := tacticGroups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
+    if !kwTrail.any (· == '\n') && groups.size == 1 then
+      -- authored inline (`classical exact h`): keep the one-line form
+      let some gDoc ← groupDoc? walk groups[0]! | return (← Lean4Fmt.Emit.verbatim stx)
+      if (Lean4Fmt.Doc.flatWidth gDoc).isSome && !Lean4Fmt.Doc.hasMultilineVerbatim gDoc then
+        return .text (kwT ++ " ") ++ gDoc
+      return (← Lean4Fmt.Emit.verbatim stx)
+    match ← seqGroupsDoc? walk groups true with
+    | some body => return .text kwT ++ body
     | none => return (← Lean4Fmt.Emit.verbatim stx)
   else if kind == `Lean.Parser.Tactic.Conv.conv then
     match ← headBlockDoc? walk stx (conv := true) with

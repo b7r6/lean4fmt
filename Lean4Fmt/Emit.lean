@@ -137,6 +137,7 @@ partial def walkCore
          || kind == `Lean.Parser.Tactic.«tacticNomatch_,,»
          || kind == `Lean.Parser.Tactic.paren
          || kind == `Lean.Parser.Tactic.generalize
+         || kind == `Lean.Parser.Tactic.classical
          || kind == `Lean.Parser.Term.byTactic' then
       Tactic.emit walk stx
     -- expression constructs → Term (flat, comment-guarded; else verbatim).
