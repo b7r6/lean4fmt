@@ -598,12 +598,16 @@ private def defnDoc
     -- a glued head that would overflow the line (long `:= fun args =>`)
     -- DEGRADES to the body break: mathlib demotes the body before breaking
     -- the signature (`sig :=` inline, fun whole on the next line)
-    let glueOverflow := match vf with
+    -- FUN glue only: by/do heads are two chars and never demote; an
+    -- already-broken sig re-fits its glued head via the reserve machinery
+    let vIsFun := ((a[3]?.bind (·.getArgs[1]?)).map (·.getKind))
+      == some ``Lean.Parser.Term.fun
+    let glueOverflow := vIsFun && (match vf with
       | .body d true =>
         prefixWidth + sigW + typeW
             + (Lean4Fmt.Doc.firstLineWidth (.text (eqGapL ++ ":= ") ++ d)).1 > w
           && prefixWidth + sigW + typeW + 3 ≤ w
-      | _ => false
+      | _ => false)
     let valBroken : Doc := match vf with
       | .span d => .text eqGapL ++ d
       | .body d glue =>
