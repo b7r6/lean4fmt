@@ -212,21 +212,32 @@ private def sigDoc
     | none => pure ()
     return .nest nameCol d
   | .fill =>
-    let mut d : Doc := .nil
-    let mut first := true
+    let mut bds : Array Doc := #[]
     for b in binders do
-      let bd ← Lean4Fmt.Emit.binderDoc walk b
-      d := d ++ (if first then .space else .group (.line)) ++ bd
-      first := false
+      bds := bds.push (← Lean4Fmt.Emit.binderDoc walk b)
+    let breakAfter := (← read).breaking.colon == .breakAfter
+    let hasType := match ti with | some (_, _, _, false) => true | _ => false
+    let mut d : Doc := .nil
+    for h : i in [0:bds.size] do
+      let bd := bds[i]
+      -- the group wraps separator AND item: a bare `.group (.line)` has flat
+      -- width 1 and always "fits" — the binder after it overflowed unmeasured.
+      -- The LAST break point also reserves the un-breakable tail that follows
+      -- on its line: ` :` when the type breaks after the colon, the caller's
+      -- `reserve` (` := by` head) when there is no type group at all.
+      let tailPad : Nat := if i + 1 < bds.size then 0
+        else if hasType then (if breakAfter then 2 else 0)
+        else reserve
+      d := d ++ (if i == 0 then .space ++ bd else .group (.line ++ bd ++ .pad tailPad))
     match ti with
     | some (term, colonType, _, multi) =>
       if multi then return .nest cont (d ++ .space ++ colonType)
       -- colon placement honored when the type breaks: breakAfter keeps the
       -- colon on the binder line (`… :` / type on the continuation — the
       -- mathlib shape); breakBefore leads the continuation with `: `
-      else if (← read).breaking.colon == .breakAfter then
-        return .nest cont (d ++ .text " :" ++ .group (.line ++ term))
-      else return .nest cont (d ++ .group (.line ++ .text ": " ++ term))
+      else if breakAfter then
+        return .nest cont (d ++ .text " :" ++ .group (.line ++ term ++ .pad reserve))
+      else return .nest cont (d ++ .group (.line ++ .text ": " ++ term ++ .pad reserve))
     | none => return .nest cont d
   | .oneLine =>
     let mut bdoc : Doc := .nil

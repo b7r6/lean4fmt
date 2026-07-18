@@ -52,6 +52,10 @@ inductive Doc where
   | fillSep    (items : List Doc)
   | blank      (req : BlankReq)                              -- §8
   | flatten    (d : Doc)                                     -- force flat
+  -- phantom width: renders NOTHING (flat width 0 — T2 exactness holds), but a
+  -- group fit counts it via `padWidth` — the reserve for un-breakable text the
+  -- CALLER appends after the group on the same line (` := by` after a sig)
+  | pad        (n : Nat)
   | textRaw    (s : String)                                  -- verbatim comment (may contain '\n')
   | verbatim   (src : String) (baseIndent : Nat)             -- opaque reproduction (§4.1)
   deriving Inhabited

@@ -36,7 +36,7 @@ mutual
     separator; `alignOr` denotes its FALLBACK — the renderer only takes the grid
     when the grid's content provably equals it. -/
 def content : Doc → List Char
-  | .nil | .line | .softline | .hardline | .blank _ => []
+  | .nil | .line | .softline | .hardline | .blank _ | .pad _ => []
   | .text s => nonWs s
   | .textRaw s => nonWs s
   | .verbatim s _ => nonWs s

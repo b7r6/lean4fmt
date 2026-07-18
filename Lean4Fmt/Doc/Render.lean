@@ -45,6 +45,9 @@ def flatWidth : Doc → Option Nat
   -- line is trailing-trimmed, leading whitespace KEPT
   | .verbatim s _ => if s.toList.any (· == '\n') then none else some (trimEndWs s.toList).length
   | .blank _ => none
+  -- pad renders NOTHING in flat mode — 0 keeps T2 (flat exactness); group
+  -- fits count the phantom width separately via `padWidth`
+  | .pad _ => some 0
   | .alignTable _ _ => none
   | .alignOr _ _ fb => flatWidth fb
   | .fillSep [] => some 0
@@ -62,6 +65,15 @@ def flatWidthSep : List Doc → Option Nat
     | _, _ => none
 
 end
+
+/-- Total phantom `pad` width in a doc — a group fit adds this ON TOP of
+    `flatWidth` (which stays render-exact, reporting pad as 0): the reserve
+    for un-breakable text the caller appends after the group. -/
+def padWidth : Doc → Nat
+  | .pad n => n
+  | .cat a b => padWidth a + padWidth b
+  | .group d | .nest _ d | .align d | .flatten d => padWidth d
+  | _ => 0
 
 mutual
 
@@ -156,6 +168,7 @@ def firstLineWidth : Doc → Nat × Bool
   | .verbatim s _ =>
     let ls := s.splitOn "\n"; ((ls.headD "").length, ls.length > 1)
   | .line | .softline | .hardline | .blank _ => (0, true)
+  | .pad _ => (0, false)
   | .cat a b =>
     let (wa, ba) := firstLineWidth a
     if ba then (wa, true) else let (wb, bb) := firstLineWidth b; (wa + wb, bb)
@@ -283,9 +296,13 @@ def go (width maxPend : Nat) : Doc → Nat → Bool → RSt → RSt
     -- flat context is sticky (the `flatten` contract); otherwise fit at the
     -- EFFECTIVE column (pending newlines land at `indent`)
     let effCol := if st.pend > 0 then indent else st.col
-    let canFlat := flat || (match flatWidth d with | some w => decide (effCol + w ≤ width) | none => false)
+    let canFlat := flat
+      || (match flatWidth d with
+          | some w => decide (effCol + w + padWidth d ≤ width)
+          | none => false)
     go width maxPend d indent canFlat st
   | .flatten d, indent, _, st => go width maxPend d indent true st
+  | .pad _, _, _, st => st
   | .nest n d, indent, flat, st => go width maxPend d (Int.toNat ((indent : Int) + n)) flat st
   | .align d, _, flat, st => go width maxPend d st.col flat st
   | .fillSep items, indent, flat, st =>
