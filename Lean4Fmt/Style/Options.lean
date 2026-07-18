@@ -48,6 +48,12 @@ structure Layout where
   lineWidth          : Nat := 100
   indent             : Nat := 2
   continuationIndent : Nat := 4
+  /-- Softer width for the WHOLE-DECL inline form (`sig := body` on one
+      line): inline only when the total fits BOTH this and lineWidth; past
+      it the body breaks to its own line even though the line would fit.
+      Mathlib-shaped corpora inline short decls but break bodies well before
+      the hard width. Default = effectively off. -/
+  bodyFitWidth       : Nat := 1000
   deriving Repr, Inhabited
 
 structure Breaking where

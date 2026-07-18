@@ -581,9 +581,10 @@ private def defnDoc
   -- source's `:=`-line decision (preserveLineBreaks: it is load-bearing)
   let srcValBroken := ((a[3]?.bind (·.getArgs[1]?)).map
     (fun v => ((Lean4Fmt.Syntax.leading? v).getD "").any (· == '\n'))).getD false
+  let fitW := Nat.min w (← read).layout.bodyFitWidth
   let inlineOk :=
     if preserveLB then noComment && vFlat.isSome && typeOK && !srcValBroken && !alwaysBreak
-    else noComment && vFlat.isSome && typeOK && total ≤ w && !alwaysBreak
+    else noComment && vFlat.isSome && typeOK && total ≤ fitW && !alwaysBreak
   if inlineOk then
     let typeInline : Doc :=
       if sigExact?.isSome then .nil
@@ -599,6 +600,10 @@ private def defnDoc
           .text (eqGapL ++ ":= ") ++ (if bodyOwnLine then glueBodyBlank d else d)
         else if bodyOwnLine then .text (eqGapL ++ ":=") ++ .nest 2 (.blank 1 ++ d)
         else if alwaysBreak || preserveLB then
+          .text (eqGapL ++ ":=") ++ .nest 2 (.hardline ++ d)
+        else if vFlat.isSome && total > fitW then
+          -- past bodyFitWidth: FORCE the break (the render group would
+          -- otherwise re-inline anything under the hard width)
           .text (eqGapL ++ ":=") ++ .nest 2 (.hardline ++ d)
         else .text (eqGapL ++ ":=") ++ .group (.nest 2 (.line ++ d))
       | .eqns _ => .nil     -- unreachable: eqns returned above

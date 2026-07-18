@@ -94,6 +94,7 @@ def applyEntry (s : Style) (e : ConfigEntry) : Except String Style := do
   | "layout.lineWidth" => pure { s with layout.lineWidth := ← asNat e }
   | "layout.indent" => pure { s with layout.indent := ← asNat e }
   | "layout.continuationIndent" => pure { s with layout.continuationIndent := ← asNat e }
+  | "layout.bodyFitWidth" => pure { s with layout.bodyFitWidth := ← asNat e }
   | "breaking.colon" =>
     match ColonPlacement.ofString? e.val with
     | some v => pure { s with breaking.colon := v }
