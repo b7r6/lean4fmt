@@ -988,6 +988,12 @@ def emit
     else attrsOwnLineKnob
   let dargs := defn.getArgs
   let valKind := dargs[3]?.map (·.getKind)
+  -- mathlib's `lemma`: [declModifiers, group[atom lemma, declId, declSig,
+  -- declVal]] — the inner group mirrors Command.theorem's arg layout exactly
+  -- (defnDoc reads its keyword from the atom); accept it as a def shape ONLY
+  -- under the `lemma` top so a stray `group` defn can't wander in
+  let defShape := isDefShape defn.getKind
+    || (stx.getKind == `lemma && defn.getKind == `group)
   let isEqns := valKind == some ``Lean.Parser.Command.declValEqns
   let isActiveVal := valKind == some ``Lean.Parser.Command.declValSimple || isEqns
   if defn.getKind == ``Lean.Parser.Command.instance then
@@ -1038,7 +1044,7 @@ def emit
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx)
-  if isDefShape defn.getKind && valKind == some ``Lean.Parser.Command.whereStructInst then
+  if defShape && valKind == some ``Lean.Parser.Command.whereStructInst then
     -- `def … where` (struct-instance value on a def)
     if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
       return (← verbatim stx)
@@ -1076,7 +1082,7 @@ def emit
     if Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then return none
     let cont := (← read).layout.continuationIndent
     return some (hd ++ .text " :" ++ .group (.nest cont (.line ++ tyDoc)))
-  if !isDefShape defn.getKind || !isActiveVal then
+  if !defShape || !isActiveVal then
     -- sig-only decls (axiom, opaque, variable …) and unported value forms:
     -- modifiers (docstring on its own line, attrs per the knob) place
     -- structurally; a SINGLE-LINE decl tail rides canonically respaced.

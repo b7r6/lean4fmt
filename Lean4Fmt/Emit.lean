@@ -47,7 +47,9 @@ partial def walkCore
     pure (.text (if t.isEmpty then n.toString else t))
   | .node _ kind _ =>
     if kind == ``Lean.Parser.Module.module then Module.emit walk stx
-    else if kind == ``Lean.Parser.Command.declaration then Decl.emit walk stx
+    else if kind == ``Lean.Parser.Command.declaration
+         || kind == `lemma then   -- mathlib's `lemma` command: theorem-shaped
+      Decl.emit walk stx
     else if kind == ``Lean.Parser.Command.structure || kind == ``Lean.Parser.Command.inductive
          || kind == ``Lean.Parser.Command.mutual
          || kind == ``Lean.Parser.Command.open
