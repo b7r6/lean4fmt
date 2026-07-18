@@ -595,10 +595,21 @@ private def defnDoc
   else
     -- broken value placement per the bodyOwnLine knob (skipped for span / glued do)
     let bodyOwnLine := (← read).breaking.bodyOwnLine
+    -- a glued head that would overflow the line (long `:= fun args =>`)
+    -- DEGRADES to the body break: mathlib demotes the body before breaking
+    -- the signature (`sig :=` inline, fun whole on the next line)
+    let glueOverflow := match vf with
+      | .body d true =>
+        prefixWidth + sigW + typeW
+            + (Lean4Fmt.Doc.firstLineWidth (.text (eqGapL ++ ":= ") ++ d)).1 > w
+          && prefixWidth + sigW + typeW + 3 ≤ w
+      | _ => false
     let valBroken : Doc := match vf with
       | .span d => .text eqGapL ++ d
       | .body d glue =>
-        if glue then
+        if glue && glueOverflow then
+          .text (eqGapL ++ ":=") ++ .nest 2 (.hardline ++ d)
+        else if glue then
           .text (eqGapL ++ ":= ") ++ (if bodyOwnLine then glueBodyBlank d else d)
         else if bodyOwnLine then .text (eqGapL ++ ":=") ++ .nest 2 (.blank 1 ++ d)
         else if alwaysBreak || preserveLB then
@@ -612,7 +623,9 @@ private def defnDoc
     let reserve := (Lean4Fmt.Doc.firstLineWidth valBroken).1
     let sig ← match sigExact? with
       | some _ =>
-        if preserveLB || prefixWidth + sigW + reserve ≤ w then pure sigInline
+        -- typeW was MISSING here (the eqns twin includes it): the sig-inline
+        -- decision ignored the return type's width
+        if preserveLB || prefixWidth + sigW + typeW + reserve ≤ w then pure sigInline
         else match sigStx with | some s => sigDoc walk nameCol prefixWidth reserve s | none => pure .nil
       | none =>
         match sigStx with | some s => sigDoc walk nameCol prefixWidth reserve s | none => pure .nil
