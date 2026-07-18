@@ -32,7 +32,7 @@ def straylight
 def mathlib
     : Style := { straylight with
   layout     := { straylight.layout with bodyFitWidth := 70 }
-  breaking   := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := true, bodyOwnLine := false, glueFun := true }
+  breaking   := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := true, bodyOwnLine := false, glueFun := true, opBreak := .trailing }
   alignment  := { structFields := .never, matchArms := .never, recordFields := .never, trailingComments := .never }
   blankLines := { straylight.blankLines with policy := .preserve }
 }

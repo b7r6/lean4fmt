@@ -166,6 +166,18 @@ partial def emit
         steps := steps + 1
       let rhs ← walk cur
       let cont := (← read).layout.continuationIndent
+      if (← read).breaking.opBreak == .trailing then
+        -- trailing operators (mathlib arrows): `a →\n  b →\n  c`. Flat form
+        -- identical to the leading build — only the broken shape differs.
+        let mut tailT : Doc := .nil
+        let mut cur2 := args[2]!
+        let mut steps2 := 0
+        while cur2.getKind == kind && cur2.getArgs.size == 3 && steps2 < 64 do
+          let ca := cur2.getArgs
+          tailT := tailT ++ .line ++ (← walk ca[0]!) ++ .space ++ op
+          cur2 := ca[2]!
+          steps2 := steps2 + 1
+        return .group (lhs ++ .space ++ op ++ .nest cont (tailT ++ .line ++ rhs))
       return .group (lhs ++ .nest cont (tail ++ .line ++ op ++ .space ++ rhs))
     else if kind == ``Lean.Parser.Term.app then
       -- `fn a b c` — width-aware: flat if it fits, else `fn` on its line with each

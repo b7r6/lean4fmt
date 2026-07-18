@@ -27,6 +27,12 @@ inductive BlankPolicy | preserve | impose | normalize
 inductive BinderLayout | oneLine | onePerLine | fill
   deriving Repr, Inhabited, BEq
 
+/-- Where a broken operator chain puts the operator: `leading` starts the
+    continuation line with it (house); `trailing` ends the previous line with
+    it (mathlib arrows). clang-format's BreakBeforeBinaryOperators. -/
+inductive OpBreak | leading | trailing
+  deriving Repr, Inhabited, BEq
+
 def AlignMode.ofString? : String → Option AlignMode
   | "always" => some .always | "whenShort" => some .whenShort
   | "never" => some .never | _ => none
@@ -41,6 +47,9 @@ def ColonPlacement.ofString? : String → Option ColonPlacement
 def BinderLayout.ofString? : String → Option BinderLayout
   | "oneLine" => some .oneLine | "onePerLine" => some .onePerLine
   | "fill" => some .fill | _ => none
+
+def OpBreak.ofString? : String → Option OpBreak
+  | "leading" => some .leading | "trailing" => some .trailing | _ => none
 
 -- ── grouped sub-records ─────────────────────────────────────────────────────
 
@@ -77,6 +86,8 @@ structure Breaking where
       decl, its body breaks below) — the mathlib idiom; off = the fun is an
       ordinary body (inline when it fits, else its own line). -/
   glueFun          : Bool := false
+  /-- Operator position when a binop/arrow chain breaks (see `OpBreak`). -/
+  opBreak          : OpBreak := .leading
   deriving Repr, Inhabited
 
 structure Alignment where
