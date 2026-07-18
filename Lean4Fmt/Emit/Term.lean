@@ -440,7 +440,10 @@ partial def emit
         -- anything else is width-aware after the `=>`
         let srcBroken := ((Lean4Fmt.Syntax.leading? body).getD "").any (· == '\n')
         let preserveLB := (← read).breaking.preserveLineBreaks
-        let bodyPart : Doc := if body.getKind == ``Lean.Parser.Term.do
+        let glueBody := body.getKind == ``Lean.Parser.Term.do
+          || (body.getKind == ``Lean.Parser.Term.byTactic
+              && Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc)
+        let bodyPart : Doc := if glueBody
           then .text " " ++ bodyDoc
           else if preserveLB then
             -- the author's `=>`-line decision is load-bearing

@@ -87,8 +87,14 @@ private def eqnsFormattable
   -- that way). Keep the mirror EXACT when touching either side.
   let mawd := (declVal.getArgs[0]?).getD .missing
   let margs := mawd.getArgs
-  if (margs.toList.drop 1).any (fun s => !(bareSrc s).trimAscii.toString.isEmpty) then
-    return false
+  -- suffixes (`termination_by`/`where`) are allowed as verbatim tails; the
+  -- MIRROR of the loop's bail: a suffix whose leading head segment carries
+  -- content (a comment leadingSep? cannot place) keeps whole-decl verbatim
+  for slot in margs.toList.drop 1 do
+    if (bareSrc slot).trimAscii.toString.isEmpty then continue
+    let isWsL (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
+    if !isWsL ((((Lean4Fmt.Syntax.leading? slot).getD "").splitOn "\n").headD "") then
+      return false
   let altsNode := (margs[0]?).getD .missing
   let mut alts : Array Lean.Syntax := #[]
   for g in altsNode.getArgs do
@@ -427,9 +433,16 @@ private def valForm
     -- safe verbatim span (the gate would otherwise trip on it).
     let mawd := (declVal.getArgs[0]?).getD .missing
     let margs := mawd.getArgs
-    let hasSuffix := (margs.toList.drop 1).any (fun s =>
-      !(bareSrc s).trimAscii.toString.isEmpty)
-    if hasSuffix then return .span (← verbatim declVal)
+    -- `termination_by`/`where` suffixes ride as own-line verbatim blocks
+    -- below the arms (the declValSimple suffix treatment); their leading
+    -- places via leadingSep? — head-content there is pre-checked in
+    -- eqnsFormattable (the mirror), so the bail below is unreachable
+    let mut sfxTail : Doc := .nil
+    for slot in margs.toList.drop 1 do
+      if (bareSrc slot).trimAscii.toString.isEmpty then continue
+      let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? slot).getD "")
+        | return .span (← verbatim declVal)
+      sfxTail := sfxTail ++ sep ++ (← verbatim slot)
     let altsNode := (margs[0]?).getD .missing
     let mut alts : Array Lean.Syntax := #[]
     for g in altsNode.getArgs do
@@ -458,7 +471,12 @@ private def valForm
       -- anything else is width-aware after the `=>`
       let srcBroken := ((Lean4Fmt.Syntax.leading? body).getD "").any (· == '\n')
       let preserveLB := (← read).breaking.preserveLineBreaks
-      let bodyPart : Doc := if body.getKind == ``Lean.Parser.Term.do
+      -- by glues like do: `=> by` + tactics at fixed indent — verbatim
+      -- members sit at sequence seams (the poison-relaxation invariant)
+      let glueBody := body.getKind == ``Lean.Parser.Term.do
+        || (body.getKind == ``Lean.Parser.Term.byTactic
+            && Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc)
+      let bodyPart : Doc := if glueBody
         then .text " " ++ bodyDoc
         else if preserveLB then
           if srcBroken then Doc.nest 2 (Doc.hardline ++ bodyDoc)
@@ -481,7 +499,7 @@ private def valForm
     -- the arms doc OWNS its leading break (defnDoc places it bare at +2):
     -- each section starts with its first arm's separator (a plain hardline
     -- for the seamless case), grids per visible-seam section
-    return .eqns (Lean4Fmt.Emit.armsAlignedRuns al.matchArms al.maxDelta pieces)
+    return .eqns (Lean4Fmt.Emit.armsAlignedRuns al.matchArms al.maxDelta pieces ++ sfxTail)
   else
     return .span (← verbatim declVal)   -- where-struct: literal span
 
@@ -557,10 +575,11 @@ private def defnDoc
   -- own lines at indent 2. There is never a one-liner form for eqns.
   match vf with
   | .eqns arms =>
-    -- An arm body reproduced as a multi-line opaque block (e.g. a not-yet-ported
-    -- `structInst`) re-anchors by column, which drifts under active layout and is
-    -- non-idempotent. Fall back to whole-`defn` verbatim (modifiers still active).
-    if Lean4Fmt.Doc.hasMultilineVerbatim arms then return (← verbatim defn)
+    -- multi-line verbatims inside arms are tolerated: glued by/do bodies put
+    -- them at sequence seams, and group-embedded ones always render broken
+    -- (flatWidth none) at a deterministic nest — the layout Term.match has
+    -- run gate/fuzz-green with. Idempotence failures would surface in the
+    -- corpus gate.
     let sigDocFinal ←
       if typeOK && prefixWidth + sigW + typeW ≤ w then
         let typeInline : Doc :=
