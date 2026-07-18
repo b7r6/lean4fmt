@@ -324,8 +324,14 @@ def emit
     -- per line at +2 with the seam loop owning inter-statement trivia
     if a.size < 2 then return (← Lean4Fmt.Emit.verbatim stx)
     let mut head := ""
-    for c in a.extract 0 (a.size - 1) do
-      if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then
+    for h : i in [0:a.size - 1] do
+      let c := a[i]!
+      -- first child's leading = the FORM's own leading — the enclosing seam
+      -- owns it (see exampleDoc?); interior comments still bail
+      let ownLead := if i == 0
+        then Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? c).getD "")
+        else 0
+      if Lean4Fmt.Syntax.countSubtreeLineComments c > ownLead then
         return (← Lean4Fmt.Emit.verbatim stx)
       let t := Lean4Fmt.Emit.canonTok c
       if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)

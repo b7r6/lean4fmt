@@ -735,8 +735,14 @@ private def defWhereDoc?
   let dargs := defn.getArgs
   if dargs.size < 4 then return none
   let mut head := ""
-  for c in dargs.extract 0 3 do
-    if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then return none
+  for h : i in [0:3] do
+    let c := dargs[i]!
+    -- first child's leading = the FORM's own leading — the enclosing seam
+    -- owns it (see exampleDoc?); interior comments still bail
+    let ownLead := if i == 0
+      then Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? c).getD "")
+      else 0
+    if Lean4Fmt.Syntax.countSubtreeLineComments c > ownLead then return none
     let t := Lean4Fmt.Emit.canonTok c
     if t.any (· == '\n') then return none
     if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
@@ -755,8 +761,15 @@ private def exampleDoc?
   let dargs := defn.getArgs
   if dargs.size != 3 then return none
   let mut head := ""
-  for c in dargs.extract 0 2 do
-    if Lean4Fmt.Syntax.countSubtreeLineComments c > 0 then return none
+  for h : i in [0:2] do
+    let c := dargs[i]!
+    -- the FIRST child's leading is the DECL's leading — the Module seam owns
+    -- it (a `-- note` above an example must not evict the inline path; found
+    -- as first-after-comment examples breaking while identical twins inline)
+    let ownLead := if i == 0
+      then Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? c).getD "")
+      else 0
+    if Lean4Fmt.Syntax.countSubtreeLineComments c > ownLead then return none
     let t := Lean4Fmt.Emit.canonTok c
     -- flatten-first: a multi-line signature's canonical one-line spelling
     let wLim := (← read).layout.lineWidth
