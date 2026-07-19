@@ -545,6 +545,12 @@ private def defnDoc
             (defn : Lean.Syntax)
             : EmitM Doc := do
   let a := defn.getArgs
+  -- content in slots past the value (a standalone `deriving` clause on a
+  -- def) has no placement yet — dropping it would DELETE code (gate-caught
+  -- on mathlib): whole-decl verbatim
+  for h : i in [4:a.size] do
+    if !(bareSrc a[i]).trimAscii.toString.isEmpty then
+      return (← verbatim defn)
   let kw := match a[0]? with | some (Lean.Syntax.atom _ v) => v | _ => "def"
   let declId := (a[1]?.map bareSrc).getD ""
   let vf ← match a[3]? with | some v => valForm walk v | none => pure (.body .nil false)

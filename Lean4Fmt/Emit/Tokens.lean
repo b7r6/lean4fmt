@@ -45,7 +45,7 @@ partial def hasChoice (stx : Lean.Syntax) : Bool :=
 private def gapRule (prev next : String) : Option Bool :=
   let identLike (t : String) := t.toList.all fun c =>
     c.isAlphanum || c == '_' || c == '\'' || c == '.' || c.toNat > 127
-  if prev == "(" || prev == "⟨" || prev == "‹" || prev == "⦃" then some false
+  if prev == "(" || prev == "⟨" || prev == "‹" || prev == "⦃" || prev == "¬" then some false
   else if next == ")" || next == "⟩" || next == "›" || next == "⦄"
       || next == "," || next == ";" then some false
   else if prev == "," || prev == ";" then some true

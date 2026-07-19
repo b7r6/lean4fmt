@@ -154,15 +154,23 @@ private def listItems?
             (slice : Array Lean.Syntax)
             : Option (Array Doc) := Id.run do
   let mut items : Array Doc := #[]
+  -- an authored TRAILING comma (`[a, b,]`) has no slot in the rebuilt list
+  -- (commas go BETWEEN items) — bail rather than drop the token (gate-caught)
+  let mut lastComma := false
   for c in slice do
-    if c.isAtom then continue
+    if c.isAtom then
+      if (Lean4Fmt.Emit.bareSrc c).trimAscii.toString == "," then lastComma := true
+      continue
     let subs := if c.getKind == Lean.nullKind then c.getArgs else #[c]
     for d in subs do
-      if d.isAtom then continue
+      if d.isAtom then
+        if (Lean4Fmt.Emit.bareSrc d).trimAscii.toString == "," then lastComma := true
+        continue
       let t := Lean4Fmt.Emit.canonTok d
       if t.isEmpty || t.any (· == '\n') then return none
       items := items.push (.text t)
-  if items.isEmpty then return none
+      lastComma := false
+  if items.isEmpty || lastComma then return none
   return some items
 
 /-- Generic token-line tactic: tokens single-spaced on ONE line, except
@@ -271,12 +279,17 @@ def emit
     if rs.getKind != ``Lean.Parser.Tactic.rwRuleSeq || rs.getArgs.size != 3 then
       return (← Lean4Fmt.Emit.verbatim stx)
     let mut ds : Array Doc := #[]
+    -- trailing comma (`rw [a, b, ]`): no slot in the rebuilt list — bail
+    let mut lastComma := false
     for r in (rs.getArgs[1]?.map (·.getArgs)).getD #[] do
-      if r.isAtom then continue
+      if r.isAtom then
+        if (Lean4Fmt.Emit.bareSrc r).trimAscii.toString == "," then lastComma := true
+        continue
       let t := Lean4Fmt.Emit.canonTok r
       if t.isEmpty || t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       ds := ds.push (.text t)
-    if ds.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+      lastComma := false
+    if ds.isEmpty || lastComma then return (← Lean4Fmt.Emit.verbatim stx)
     let locT := (a[3]?.map Lean4Fmt.Emit.canonTok).getD ""
     if locT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let locD : Doc := if locT.isEmpty then .nil else .text (" " ++ locT)
@@ -451,12 +464,10 @@ def emit
     if !kwTrail.trimAscii.toString.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
     let kwT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
     let some groups := tacticGroups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
-    if !kwTrail.any (· == '\n') && groups.size == 1 then
-      -- authored inline (`classical exact h`): keep the one-line form
-      let some gDoc ← groupDoc? walk groups[0]! | return (← Lean4Fmt.Emit.verbatim stx)
-      if (Lean4Fmt.Doc.flatWidth gDoc).isSome && !Lean4Fmt.Doc.hasMultilineVerbatim gDoc then
-        return .text (kwT ++ " ") ++ gDoc
-      return (← Lean4Fmt.Emit.verbatim stx)
+    -- ALWAYS the block form: the inline form (`classical exact h`) with a
+    -- tactic doc that breaks internally re-parses to a DIFFERENT tree (the
+    -- continuation lines fall out of the whitespace-sensitive block; error
+    -- recovery can silently drop them — gate-caught on Denumerable)
     match ← seqGroupsDoc? walk groups true with
     | some body => return .text kwT ++ body
     | none => return (← Lean4Fmt.Emit.verbatim stx)

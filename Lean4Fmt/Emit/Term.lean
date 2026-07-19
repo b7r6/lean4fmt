@@ -16,6 +16,7 @@ import Lean4Fmt.Emit.Tokens
 import Lean4Fmt.Emit.Binders
 import Lean4Fmt.Syntax.Kinds
 import Lean4Fmt.Syntax.Trivia
+import Lean4Fmt.Syntax.Query
 
 namespace Lean4Fmt.Emit.Term
 
@@ -120,6 +121,15 @@ private partial def structFieldDoc
   | some fd =>
     let da := fd.getArgs
     let v := da[da.size - 1]?.getD Lean.Syntax.missing        -- [":=", null?, value]
+    -- a field with BINDERS or type ascription (`symm _ _ h := …`) carries
+    -- tokens between the lval and the value — the lval++":="++value shape
+    -- would DELETE them (gate-caught on mathlib): token-exact join instead
+    let expected := Lean4Fmt.Syntax.leafToks lvalStx
+      ++ #[":="] ++ Lean4Fmt.Syntax.leafToks v
+    if Lean4Fmt.Syntax.leafToks field != expected then
+      let t := Lean4Fmt.Emit.canonTok field
+      if t.isEmpty || t.any (· == '\n') then return (← verbatim field)
+      return .text t
     return lval ++ .text " := " ++ (← walk v)
   | none => return lval
 
@@ -622,12 +632,13 @@ partial def emit
       let cont := (← read).layout.continuationIndent
       return .text head ++ .group (.nest cont (.line ++ bodyDoc))
     else if kind == `«term¬_» && args.size == 2 then
-      -- prefix negation over a (possibly multi-line) operand
+      -- prefix negation over a (possibly multi-line) operand; GLUED (`¬p`,
+      -- `¬(a = b)`) — the community convention, and mathlib's at 60:1
       let opT := (bareSrc args[0]!).trimAscii.toString
       if opT.isEmpty || opT.any (· == '\n') then return (← verbatim stx)
       let d ← walk args[1]!
       if Lean4Fmt.Doc.hasMultilineVerbatim d then return (← verbatim stx)
-      return .text (opT ++ " ") ++ d
+      return .text opT ++ d
     else if kind == ``Lean.Parser.Term.hole then
       return .text "_"
     else if kind == `str || kind == `num || kind == `scientific || kind == `char then

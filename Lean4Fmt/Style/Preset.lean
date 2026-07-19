@@ -56,7 +56,7 @@ def aniva
 def purtell
     : Style := {
   layout     := { lineWidth := 120, indent := 2, continuationIndent := 4 }
-  breaking   := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := false,
+  breaking   := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,
                   bodyOwnLine := false, compactDo := true, inlineBranches := true,
                   ctorsOneLine := true }
   alignment  := { structFields := .never, matchArms := .never, recordFields := .never,
