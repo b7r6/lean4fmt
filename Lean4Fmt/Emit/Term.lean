@@ -257,6 +257,11 @@ partial def emit
       -- conservative (plain group only)
       let srcT := if srcEmpty then "" else Lean4Fmt.Emit.canonTok (args[1]?.getD .missing)
       if srcT.any (· == '\n') || !ellipsisEmpty then return (← verbatim stx)
+      -- a `: T` ascription (any content between the ellipsis slot and the
+      -- closer) has no active placement — dropping it DELETED tokens
+      for i in [4:args.size - 1] do
+        if !((args[i]?.map bareSrc).getD "").trimAscii.toString.isEmpty then
+          return (← verbatim stx)
       let mut fields : Array Lean.Syntax := #[]
       let mut pairs : Array (Lean.Syntax × Option Lean.Syntax) := #[]
       let mut commas := 0
