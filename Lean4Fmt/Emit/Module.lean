@@ -192,7 +192,17 @@ def emit
   | none => pure ()
   let cmds := (args[1]?.map (·.getArgs)).getD #[]
   for c in cmds do
-    if c.getKind == ``Lean.Parser.Command.eoi then continue
+    if c.getKind == ``Lean.Parser.Command.eoi then
+      -- EOF trivia rides the eoi's LEADING — skipping it wholesale DELETED
+      -- trailing commented-out blocks (gate-caught on Squarefree). Comment-
+      -- bearing leading emits byte-exact with the held trailing; pure ws
+      -- stays with the normal EOF canonicalization below.
+      let lead := (Lean4Fmt.Syntax.leading? c).getD ""
+      if !lead.toList.all (·.isWhitespace) then
+        acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leadingRaw c
+        pendTrail := .nil
+        prev := none
+      continue
     let body ← walk c
     match prev with
     | some (p, pBody) =>

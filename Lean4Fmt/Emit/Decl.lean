@@ -95,6 +95,10 @@ private def eqnsFormattable
     let isWsL (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
     if !isWsL ((((Lean4Fmt.Syntax.leading? slot).getD "").splitOn "\n").headD "") then
       return false
+    -- a multi-line comment/docstring INSIDE the suffix: the verbatim tail
+    -- re-anchors by column and would SHIFT the token's interior bytes
+    let st := bareSrc slot
+    if st.any (· == '\n') && (st.splitOn "/-").length > 1 then return false
   let altsNode := (margs[0]?).getD .missing
   let mut alts : Array Lean.Syntax := #[]
   for g in altsNode.getArgs do
@@ -231,7 +235,10 @@ private def sigDoc
       d := d ++ (if i == 0 then .space ++ bd else .group (.line ++ bd ++ .pad tailPad))
     match ti with
     | some (term, colonType, _, multi) =>
-      if multi then return .nest cont (d ++ .space ++ colonType)
+      -- a MULTI-LINE (verbatim) type goes on its OWN line at the fixed
+      -- continuation indent: glued after `.space` its re-anchor base shifts
+      -- pass-to-pass (+4 each format — a fixed-point gate reject)
+      if multi then return .nest cont (d ++ .hardline ++ colonType)
       -- colon placement honored when the type breaks: breakAfter keeps the
       -- colon on the binder line (`… :` / type on the continuation — the
       -- mathlib shape); breakBefore leads the continuation with `: `
@@ -373,6 +380,12 @@ private def valForm
             if (bareSrc sfx).trimAscii.toString.isEmpty then continue
             let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? sfx).getD "")
               | return .span (← verbatim declVal)
+            -- a multi-line comment/docstring INSIDE the suffix: the verbatim
+            -- tail re-anchors by column and would SHIFT the token's interior
+            -- bytes (gate-caught on Nat.Log's docstringed where-decl)
+            let st := bareSrc sfx
+            if st.any (· == '\n') && (st.splitOn "/-").length > 1 then
+              return .span (← verbatim declVal)
             tail := tail ++ sep ++ (← verbatim sfx)
           | none => continue
         let glue := v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic
@@ -455,6 +468,10 @@ private def valForm
       if (bareSrc slot).trimAscii.toString.isEmpty then continue
       let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? slot).getD "")
         | return .span (← verbatim declVal)
+      -- mirror of eqnsFormattable: multi-line comment inside the suffix
+      let st := bareSrc slot
+      if st.any (· == '\n') && (st.splitOn "/-").length > 1 then
+        return .span (← verbatim declVal)
       sfxTail := sfxTail ++ sep ++ (← verbatim slot)
     let altsNode := (margs[0]?).getD .missing
     let mut alts : Array Lean.Syntax := #[]

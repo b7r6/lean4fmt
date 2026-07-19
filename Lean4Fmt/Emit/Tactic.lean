@@ -513,11 +513,14 @@ def emit
     let trail0T := ((Lean4Fmt.Syntax.trailing? g0[g0.size - 1]!).getD "").trimAscii.toString
     if groups.size == 1 then
       if !trail0T.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)   -- owned by parent seam
-      return .text (tkT ++ " ") ++ d0
+      -- align: d0's interior breaks must anchor at the bullet CONTENT column,
+      -- not the bullet line's indent — two columns shallow re-parses the
+      -- glued block's lines as bullet-seq SIBLINGS (gate-caught ×2)
+      return .text (tkT ++ " ") ++ .align d0
     if trail0T.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let trail0 : Doc := if trail0T.isEmpty then .nil else .text (" " ++ trail0T)
     match ← seqGroupsDoc? walk (groups.extract 1 groups.size) true with
-    | some rest => return .text (tkT ++ " ") ++ d0 ++ trail0 ++ .nest 2 rest
+    | some rest => return .text (tkT ++ " ") ++ .align d0 ++ trail0 ++ .nest 2 rest
     | none => return (← Lean4Fmt.Emit.verbatim stx)
   else if kind == ``Lean.Parser.Tactic.tacticRfl || kind == ``Lean.Parser.Tactic.omega
       || kind == ``Lean.Parser.Tactic.decide || kind == ``Lean.Parser.Tactic.nativeDecide
