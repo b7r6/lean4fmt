@@ -330,6 +330,9 @@ private def spanBodyBlank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : ValForm
         -- and the newline.
         let body := String.intercalate "\n" rest
         let skip := first.utf8ByteSize + 1
+        -- column-sensitive interior (newline-separated structInst): the ws
+        -- canon would shift alignment columns — keep the whole span byte-exact
+        if Lean4Fmt.Emit.hasColumnSensitiveStructInst declVal then return .span d
         if bodyOwnLine then
           -- prescriptive rewrite: `:=` line, one blank, body re-anchored
           return .span (.text ft ++ .blank 1
@@ -590,6 +593,12 @@ private def defnDoc
   let ti ← match sigStx with | some s => typeInfo walk s | none => pure none
   let typeOK := match ti with | some (_, _, _, multi) => !multi | none => true
   let typeW := match ti with | some (_, _, tw, false) => 3 + tw | _ => 0
+  -- fill mode cannot place a MULTI-LINE (verbatim) type safely: glued, its
+  -- re-anchor base drifts pass-to-pass (fixed-point reject); own-line, the
+  -- re-anchor changes the interior COLUMN RELATIONS and a letI-in-type
+  -- FAILED TO REPARSE (gate-caught on ZeroMorphisms) — whole-decl verbatim
+  if !typeOK && (← read).breaking.binders == Lean4Fmt.Style.BinderLayout.fill then
+    return (← verbatim defn)
   -- preserve mode: a single-line signature rides byte-exact (authors are
   -- inconsistent about `): T` vs `) : T` — no synthesized rule round-trips);
   -- the declId↔sig gap comes from the source too (`name: T` stays glued)
