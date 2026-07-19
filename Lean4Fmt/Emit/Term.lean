@@ -455,6 +455,10 @@ partial def emit
         let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
         let aa := alt.getArgs
         let patDoc ← walk (aa[1]?.getD .missing)
+        -- arrow spelling from SOURCE: mathlib spells `↦`, and the gate's token
+        -- check rightly refuses a silent `↦`→`=>` rewrite
+        let arrowT := (bareSrc (aa[2]?.getD .missing)).trimAscii.toString
+        let arrowT := if arrowT.isEmpty then "=>" else arrowT
         let body := aa[aa.size-1]?.getD .missing
         let bodyDoc ← walk body
         -- a `do` body glues to the `=>` (its statements bring their own hardline);
@@ -475,10 +479,12 @@ partial def emit
         let armDoc :=
           if preserveLB && !armSrc.isEmpty && !armSrc.any (· == '\n') then
             Doc.text armSrc
-          else .text "| " ++ patDoc ++ .text " =>" ++ bodyPart
+          else .text "| " ++ patDoc ++ .text (" " ++ arrowT) ++ bodyPart
         let inlineOk := body.getKind != ``Lean.Parser.Term.do
           && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
-        let row := if inlineOk && !hasTrail then some (patDoc, some bodyDoc) else none
+        -- the aligned grid pads a hardcoded `=>` column — a `↦` arm opts out
+        let row := if inlineOk && !hasTrail && arrowT == "=>"
+          then some (patDoc, some bodyDoc) else none
         pieces := pieces.push
           { sep := sep, plain := plainSep, doc := armDoc ++ trailDoc, gridRow := row }
       let al := (← read).alignment
@@ -528,12 +534,15 @@ partial def emit
       let tyT := (ba[1]?.map Lean4Fmt.Emit.canonTok).getD ""
       if tyT.any (· == '\n') then return (← verbatim stx)
       if !tyT.isEmpty then head := head ++ " " ++ tyT
+      -- arrow spelling from SOURCE (`=>` vs `↦` — same lesson as fun/λ above)
+      let arrowT := (bareSrc ba[2]!).trimAscii.toString
+      let arrowT := if arrowT.isEmpty then "=>" else arrowT
       let body := ba[3]!
       let bodyDoc ← walk body
       if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then return (← verbatim stx)
       if body.getKind == ``Lean.Parser.Term.do then
-        return .text (head ++ " => ") ++ bodyDoc
-      return .text (head ++ " =>") ++ .group (.nest 2 (.line ++ bodyDoc))
+        return .text (head ++ " " ++ arrowT ++ " ") ++ bodyDoc
+      return .text (head ++ " " ++ arrowT) ++ .group (.nest 2 (.line ++ bodyDoc))
     else if kind == ``Lean.Parser.Term.tuple then
       -- `(a, b, c)` — [hygienicLParen, elems, ")"] where elems RIGHT-NEST:
       -- null[e, ",", null[e₂, ",", e₃]] with the innermost tail a bare term.

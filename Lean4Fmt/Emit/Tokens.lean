@@ -49,7 +49,8 @@ private def gapRule (prev next : String) : Option Bool :=
   else if next == ")" || next == "⟩" || next == "›" || next == "⦄"
       || next == "," || next == ";" then some false
   else if prev == "," || prev == ";" then some true
-  else if prev == ":=" || next == ":=" || prev == "=>" || next == "=>" then some true
+  else if prev == ":=" || next == ":=" || prev == "=>" || next == "=>"
+      || prev == "↦" || next == "↦" then some true
   else if next == "(" && (identLike prev || prev == ")" ) then some true
   else none
 

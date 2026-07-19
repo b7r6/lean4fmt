@@ -88,6 +88,11 @@ structure Breaking where
   glueFun          : Bool := false
   /-- Operator position when a binop/arrow chain breaks (see `OpBreak`). -/
   opBreak          : OpBreak := .leading
+  /-- Over-width bracket lists (`simp only [...]`, `rw [...]`) FILL — items
+      pack per line and wrap at the width, the closer glued to the last item
+      (the mathlib shape); off = the all-or-nothing commaList (one item per
+      line when broken). -/
+  listFill         : Bool := false
   deriving Repr, Inhabited
 
 structure Alignment where

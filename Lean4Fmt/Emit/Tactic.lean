@@ -172,6 +172,7 @@ private def listItems?
     outside a bracket list. -/
 private partial def lineWords?
             (stx : Lean.Syntax)
+            (fill : Bool := false)
             : Option (Array Doc) := Id.run do
   let a := stx.getArgs
   let mut out : Array Doc := #[]
@@ -188,7 +189,8 @@ private partial def lineWords?
         j := j + 1
       let some jc := close | return none
       let some items := listItems? (a.extract (i + 1) jc) | return none
-      out := out.push (Lean4Fmt.Doc.commaList "[" "]" items)
+      out := out.push (if fill then Lean4Fmt.Doc.fillList "[" "]" items
+        else Lean4Fmt.Doc.commaList "[" "]" items)
       i := jc + 1
       continue
     let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
@@ -200,7 +202,7 @@ private partial def lineWords?
     if !t.any (· == '\n') && !hasBracket then
       out := out.push (.text ((Lean4Fmt.Emit.tokenJoin? c).getD t))
     else
-      match lineWords? c with
+      match lineWords? c fill with
       | some ws => out := out ++ ws
       | none => return none
     i := i + 1
@@ -278,7 +280,9 @@ def emit
     let locT := (a[3]?.map Lean4Fmt.Emit.canonTok).getD ""
     if locT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let locD : Doc := if locT.isEmpty then .nil else .text (" " ++ locT)
-    return .text "rw " ++ Lean4Fmt.Doc.commaList "[" "]" ds ++ locD
+    let listD := if (← read).breaking.listFill then Lean4Fmt.Doc.fillList "[" "]" ds
+      else Lean4Fmt.Doc.commaList "[" "]" ds
+    return .text "rw " ++ listD ++ locD
   else if kind == ``Lean.Parser.Tactic.tacticHave__
       || kind == `Lean.Parser.Tactic.tacticLet__ then
     -- ["have"/"let", letConfig, letDecl] — the doLet shape minus `mut`; the
@@ -297,16 +301,41 @@ def emit
     -- simp family + rwa: tokens on one line, bracket lists as width-aware
     -- commaLists (a long lemma list breaks instead of going verbatim)
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    match lineWords? stx with
+    match lineWords? stx ((← read).breaking.listFill) with
     | some ws => if ws.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
                  else return joinWords ws
     | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if kind == `Lean.Parser.Tactic.«tactic_<;>_» then
+    -- [lhs, <;>, rhs] left-nested chain: elements walked (active layouts
+    -- apply), packed width-aware; a break leads the continuation with
+    -- `<;> ` at +2 (the mathlib shape). Bounded spine walk keeps this total.
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut elems : Array Lean.Syntax := #[]
+    let mut cur := stx
+    for _ in [0:64] do
+      if cur.getKind == `Lean.Parser.Tactic.«tactic_<;>_» && cur.getArgs.size == 3 then
+        elems := elems.push cur.getArgs[2]!
+        cur := cur.getArgs[0]!
+    if cur.getKind == `Lean.Parser.Tactic.«tactic_<;>_» then
+      return (← Lean4Fmt.Emit.verbatim stx)   -- absurd depth: bail whole
+    elems := elems.push cur
+    let chain := elems.reverse
+    let mut head : Doc := .nil
+    let mut tail : Doc := .nil
+    for h : i in [0:chain.size] do
+      let eDoc ← walk chain[i]
+      if Lean4Fmt.Doc.hasMultilineVerbatim eDoc then return (← Lean4Fmt.Emit.verbatim stx)
+      if i == 0 then head := eDoc
+      else tail := tail ++ .group (.line ++ .text "<;> " ++ eDoc)
+    -- nest ONLY the continuation: nesting the head too would shift the whole
+    -- chain right when it lands after a pending newline (a seq seam)
+    return head ++ .nest 2 tail
   else if kind == `Lean.Parser.Tactic.first then
     -- single-line `first | a | b` rides the token line; the block form is
     -- `first` + one `| <body>` per alternative at the same indent
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
     if !(Lean4Fmt.Emit.bareSrc stx).any (· == '\n') then
-      match lineWords? stx with
+      match lineWords? stx ((← read).breaking.listFill) with
       | some ws => if ws.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
                    else return joinWords ws
       | none => return (← Lean4Fmt.Emit.verbatim stx)
@@ -396,15 +425,18 @@ def emit
         continue
       if rhs.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
       let some seq := rhs[1]? | return (← Lean4Fmt.Emit.verbatim stx)
+      -- arrow spelling from SOURCE (rhs[0] is the arrow atom; `=>` vs `↦`)
+      let arrowT := ((rhs[0]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString
+      let arrowT := if arrowT.isEmpty then "=>" else arrowT
       if seq.getKind == ``Lean.Parser.Term.syntheticHole
           || seq.getKind == ``Lean.Parser.Term.hole then
         -- hole RHS (`=> ?_`): the grammar's non-seq alternative — plain text
         let hT := Lean4Fmt.Emit.canonTok seq
         if hT.isEmpty || hT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-        d := d ++ .hardline ++ .text (lhsT ++ " => " ++ hT)
+        d := d ++ .hardline ++ .text (lhsT ++ " " ++ arrowT ++ " " ++ hT)
         continue
       let some bD ← armSeqDoc? walk seq | return (← Lean4Fmt.Emit.verbatim stx)
-      d := d ++ .hardline ++ .text (lhsT ++ " =>") ++ bD
+      d := d ++ .hardline ++ .text (lhsT ++ " " ++ arrowT) ++ bD
     return d
   else if kind == `Lean.Parser.Tactic.«tacticNext_=>_» || kind == ``Lean.Parser.Tactic.case
       || kind == ``Lean.Parser.Tactic.allGoals || kind == `Lean.Parser.Tactic.tacticRepeat_ then
@@ -487,7 +519,6 @@ def emit
       || kind == `Lean.Parser.Tactic.subst || kind == `Lean.Parser.Tactic.«tacticExists_,,»
       || kind == ``Lean.Parser.Tactic.change || kind == `«tacticBy_cases_:_»
       || kind == `Lean.Parser.Tactic.tacticSuffices_
-      || kind == `Lean.Parser.Tactic.«tactic_<;>_»
       || kind == `Lean.Parser.Tactic.congr || kind == `Lean.Parser.Tactic.renameI
       || kind == `Lean.Parser.Tactic.bvDecide || kind == `Lean.Parser.Tactic.left
       || kind == `Lean.Parser.Tactic.right || kind == `Lean.Parser.Tactic.revert

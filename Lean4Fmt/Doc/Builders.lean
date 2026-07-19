@@ -37,6 +37,16 @@ def brackets
 /-- Comma-and-line separated list inside `l`/`r` (breaks all-or-nothing). -/
 def commaList (l r : String) (ds : Array Doc) : Doc := brackets l r (sepBy (.text "," ++ .line) ds)
 
+/-- Fill-packed list inside `l`/`r`: items ride the line and wrap at the
+    width (continuation at +2), the closer GLUED to the last item — the
+    mathlib bracket-list shape. Items must be flat-capable (fillSep). -/
+def fillList (l r : String) (ds : Array Doc) : Doc := Id.run do
+  if ds.isEmpty then return .text (l ++ r)
+  let mut items : Array Doc := #[]
+  for i in [0:ds.size] do
+    items := items.push (if i + 1 == ds.size then ds[i]! ++ .text r else ds[i]! ++ .text ",")
+  return .text l ++ .nest 2 (.fillSep items.toList)
+
 /-- Join with a hard newline between each (own-line items). -/
 def vcat (ds : Array Doc) : Doc := sepBy .hardline ds
 

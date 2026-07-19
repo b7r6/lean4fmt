@@ -112,6 +112,7 @@ def applyEntry (s : Style) (e : ConfigEntry) : Except String Style := do
   | "breaking.inlineBranches" => pure { s with breaking.inlineBranches := ← asBool e }
   | "breaking.ctorsOneLine" => pure { s with breaking.ctorsOneLine := ← asBool e }
   | "breaking.glueFun" => pure { s with breaking.glueFun := ← asBool e }
+  | "breaking.listFill" => pure { s with breaking.listFill := ← asBool e }
   | "breaking.opBreak" =>
     match OpBreak.ofString? e.val with
     | some v => pure { s with breaking.opBreak := v }

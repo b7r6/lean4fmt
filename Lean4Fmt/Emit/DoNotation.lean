@@ -314,7 +314,10 @@ def emit
         if (← read).breaking.preserveLineBreaks && !armSrc.isEmpty
             && !armSrc.any (· == '\n') then
           .text armSrc
-        else .text "| " ++ patDoc ++ .text " =>" ++ bD
+        else
+          let arrowT := (Lean4Fmt.Emit.bareSrc (aa[2]?.getD .missing)).trimAscii.toString
+          let arrowT := if arrowT.isEmpty then "=>" else arrowT
+          .text "| " ++ patDoc ++ .text (" " ++ arrowT) ++ bD
       d := d ++ .hardline ++ armD
     return d
   else if kind == ``Lean.Parser.Term.doFor || kind == `Lean.Parser.Term.doWhile
