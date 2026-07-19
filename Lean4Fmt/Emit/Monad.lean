@@ -41,27 +41,6 @@ def bareSrc
 
   (stx.getSubstring? false false).map (·.toString) |>.getD ""
 
-/-- A multi-line structure instance WITHOUT comma separators relies on field
-    COLUMN alignment (`{  f := v\n    g := w }` — the two spaces after `{` put
-    the first field on the shared column): its interior spacing is
-    load-bearing, so ws canon must not touch an enclosing verbatim
-    (collapsing `{  ` → `{ ` shifted the first field off the column and the
-    output FAILED TO REPARSE — gate-caught on Submonoid/Defs). -/
-partial def hasColumnSensitiveStructInst (stx : Lean.Syntax) : Bool :=
-  match stx with
-  | .node _ k args => Id.run do
-    if k == ``Lean.Parser.Term.structInst then
-      let mut fields := 0
-      let mut commas := 0
-      for g in ((args[2]?.map (·.getArgs)).getD #[]) do
-        for c in g.getArgs do
-          if c.getKind == ``Lean.Parser.Term.structInstField then fields := fields + 1
-          else if c.isAtom && (bareSrc c).trimAscii.toString == "," then commas := commas + 1
-      let spanNl := (args[2]?.map (fun s => (bareSrc s).any (· == '\n'))).getD false
-      if fields ≥ 2 && commas < fields - 1 && spanNl then return true
-    return args.any hasColumnSensitiveStructInst
-  | _ => false
-
 /-- `canonVerbatimWs` applied PIECEWISE around embedded quotation TERMS: the
     quotation interiors ride byte-exact (the quasiquotation pin), everything
     around them still collapses — a sibling statement's gap must not escape
@@ -128,8 +107,7 @@ def verbatimQuiet
   -- by range, templates via canonVerbatimWs' own template mode — everything
   -- else collapses
   let canon := fun (t : String) =>
-    if preserve || hasColumnSensitiveStructInst stx then t
-    else canonWsPiecewise stx t
+    if preserve then t else canonWsPiecewise stx t
   let s := bareSrc stx
   if s.isEmpty then
     match stx.reprint with

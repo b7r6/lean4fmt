@@ -525,7 +525,12 @@ def canonVerbatimWs (s : String) : String := Id.run do
         while _hj : j < n && a[j]! == ' ' do j := j + 1
         let commentNext := (a[j]? == some '-' && a[j+1]? == some '-')
           || (a[j]? == some '/' && a[j+1]? == some '-')
-        if lineStart || j - i == 1 || commentNext then
+        -- the run after a `{` is exempt: a newline-separated structInst
+        -- aligns its fields by COLUMN and `{  f := v` sets that column —
+        -- collapsing it shifted the first field and the output failed to
+        -- reparse (Submonoid/Defs)
+        let afterBrace := !out.isEmpty && out.back! == '{'
+        if lineStart || j - i == 1 || commentNext || afterBrace then
           for k in [i:j] do out := out.push a[k]!
         else if a[j]? != some '\n' && j < n then
           out := out.push ' '

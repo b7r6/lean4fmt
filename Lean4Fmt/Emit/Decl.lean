@@ -330,9 +330,6 @@ private def spanBodyBlank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : ValForm
         -- and the newline.
         let body := String.intercalate "\n" rest
         let skip := first.utf8ByteSize + 1
-        -- column-sensitive interior (newline-separated structInst): the ws
-        -- canon would shift alignment columns — keep the whole span byte-exact
-        if Lean4Fmt.Emit.hasColumnSensitiveStructInst declVal then return .span d
         if bodyOwnLine then
           -- prescriptive rewrite: `:=` line, one blank, body re-anchored
           return .span (.text ft ++ .blank 1

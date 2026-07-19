@@ -40,7 +40,9 @@ for ln in lines:
             toks = code.split(' ')
             if len(toks) > 3:
                 i = random.randint(1, len(toks) - 2)
-                if toks[i] and toks[i-1]:
+                # the gap after `{` is CONTENT (column-aligned structInst
+                # fields) -- the emitter's ws canon exempts it too
+                if toks[i] and toks[i-1] and not toks[i-1].endswith('{'):
                     toks[i] = ' ' + toks[i]              # double an inner gap
                 s = ' '.join(toks) + tail
     out.append(s)
