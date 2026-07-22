@@ -203,7 +203,12 @@ partial def emit
           let t := opOf args
           if t.isEmpty || t.any (· == '\n') then return (← verbatim stx "chain-op-shape")
           pure (Doc.text t)
+      -- LEADING rows pair each piece with the PARENT level's op (`M →ₛₗ[ρ] N
+      -- →ₛₗ[σ] P` = ρ before N, σ before P): thread prevOp — pairing the
+      -- link's OWN op swapped bracket interiors one position (gate-caught on
+      -- BilinearMap, tokens: ρ₁₂/σ₁₂ transposed)
       let mut tail : Doc := .nil
+      let mut prevOp := op
       let mut cur := args[args.size - 1]!
       let mut steps := 0
       while cur.getKind == kind && cur.getArgs.size == args.size && steps < 64 do
@@ -214,7 +219,8 @@ partial def emit
             let t := opOf ca
             if t.isEmpty || t.any (· == '\n') then return (← verbatim stx "chain-op-shape")
             pure (Doc.text t)
-        tail := tail ++ .line ++ linkOp ++ .space ++ (← walk ca[0]!)
+        tail := tail ++ .line ++ prevOp ++ .space ++ (← walk ca[0]!)
+        prevOp := linkOp
         cur := ca[ca.size - 1]!
         steps := steps + 1
       let rhs ← walk cur
@@ -227,7 +233,7 @@ partial def emit
           && (Lean4Fmt.Doc.flatWidth lhs).isSome && (Lean4Fmt.Doc.flatWidth op).isSome
           && (Lean4Fmt.Doc.flatWidth tail).isSome
           && !(match rhs with | .verbatim _ _ => true | _ => false) then
-        return .flatten (lhs ++ tail ++ .line ++ op) ++ .space ++ rhs
+        return .flatten (lhs ++ tail ++ .line ++ prevOp) ++ .space ++ rhs
       -- ws-sensitivity (fixed-point class): a multi-line RE-ANCHORING piece
       -- glued mid-chain re-indents its interior by its placement column,
       -- which the previous pass just moved — never a fixed point. A base-0
@@ -257,7 +263,7 @@ partial def emit
           cur2 := ca[ca.size - 1]!
           steps2 := steps2 + 1
         return .group (lhs ++ .space ++ op ++ .nest cont (tailT ++ .line ++ rhs))
-      return .group (lhs ++ .nest cont (tail ++ .line ++ op ++ .space ++ rhs))
+      return .group (lhs ++ .nest cont (tail ++ .line ++ prevOp ++ .space ++ rhs))
     else if kind == ``Lean.Parser.Term.app then
       -- `fn a b c` — width-aware: flat if it fits, else `fn` on its line with each
       -- argument on a continuation line indented by `layout.indent`. All-or-
