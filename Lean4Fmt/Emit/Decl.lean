@@ -734,17 +734,28 @@ private def whereFieldDoc?
   let some fdef := fd | return none
   let da := fdef.getArgs
   let some v := da[da.size - 1]? | return none
+  -- comment accounting: the VALUE's leading is the one placeable zone (the
+  -- own-line seam carries it — the `-- Porting note:` idiom); the field's
+  -- tail trailing is the body loop's zone; a comment anywhere ELSE has no
+  -- seam and keeps the whole decl verbatim
+  let vLead := (Lean4Fmt.Syntax.leading? v).getD ""
+  let vLeadCmts := Lean4Fmt.Syntax.countLineComments vLead
+  let tailCmts := Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.lastTokenTrailing? f).getD "")
+  if Lean4Fmt.Syntax.countSubtreeLineComments f > vLeadCmts + tailCmts then return none
   let vdoc ← walk v
+  if vLeadCmts > 0 then
+    let some sep := Lean4Fmt.Emit.leadingSep? vLead | return none
+    return some (.text head ++ .text " :=" ++ .nest 2 (sep ++ vdoc))
   if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic then
     -- glued `:= by` / `:= do` FIELD values tolerate interior multi-line
     -- verbatims exactly like decl values do (the poison-relaxation
     -- invariant: members sit at sequence-seam hardlines) — this was the
     -- 26KB defwhere-shape class on mathlib (Equiv/Iso instances whose
     -- left_inv/right_inv are multi-line proofs). A WHOLE-VALUE verbatim
-    -- (the by emitter itself bailed) still bails the field: glued mid-line
-    -- it is the master fixed-point class.
+    -- (the by emitter itself bailed) places OWN-LINE (a deterministic
+    -- seam), never glued mid-line (the master fixed-point class).
     match vdoc with
-    | .verbatim _ _ => return none
+    | .verbatim _ _ => return some (.text head ++ .text " :=" ++ .nest 2 (.hardline ++ vdoc))
     | _ => return some (.text (head ++ " := ") ++ vdoc)
   if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
     -- multi-line opaque value: OWN-LINE placement at +2. A line-start anchor
@@ -810,7 +821,9 @@ private def whereBodyDoc?
     let f := fields[i]
     if (bareSrc f).trimAscii.toString.isEmpty then continue -- separator slot
     if f.isAtom then return none
-    if Lean4Fmt.Syntax.interiorHasLineComment f then return none
+    -- field-interior comments: whereFieldDoc? owns the accounting now (the
+    -- VALUE's leading is a placeable zone — mathlib's `-- Porting note:`
+    -- idiom); anything it cannot place still bails there
     n := n + 1
     let trailT := ((Lean4Fmt.Syntax.trailing? f).getD "").trimAscii.toString
     let last := i + 1 == fields.size
