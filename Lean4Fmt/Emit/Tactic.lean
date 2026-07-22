@@ -368,14 +368,39 @@ def emit
         if (Lean4Fmt.Emit.bareSrc r).trimAscii.toString == "," then lastComma := true
         continue
       let t := Lean4Fmt.Emit.canonTok r
-      if t.isEmpty || t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-      ds := ds.push (.text t)
+      if t.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+      if t.any (· == '\n') then
+        -- a MULTI-LINE rule (a `<|` chain, an app with `(by …)` — 10K of
+        -- the wide census) WALKS its TERM (rwRule = [←?, term]; the arrow
+        -- reattaches as text): newlines are free inside the brackets, so an
+        -- active rule doc breaking at its own group is parse-safe; only an
+        -- opaque piece (bare verbatim / midline hazard) keeps the whole
+        let (arrowT, term) :=
+          if r.getKind == ``Lean.Parser.Tactic.rwRule && r.getArgs.size == 2 then
+            ((((r.getArgs[0]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString),
+              r.getArgs[1]!)
+          else ("", r)
+        let rDoc ← walk term
+        if (match rDoc with | .verbatim _ _ => true | _ => false)
+            || Lean4Fmt.Doc.hasMidlineReanchor rDoc then
+          return (← Lean4Fmt.Emit.verbatim stx)
+        ds := ds.push ((if arrowT.isEmpty then Doc.nil else .text (arrowT ++ " ")) ++ rDoc)
+      else
+        ds := ds.push (.text t)
       lastComma := false
     if ds.isEmpty || lastComma then return (← Lean4Fmt.Emit.verbatim stx)
     let locT := (a[3]?.map Lean4Fmt.Emit.canonTok).getD ""
     if locT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let locD : Doc := if locT.isEmpty then .nil else .text (" " ++ locT)
-    let listD := if (← read).breaking.listFill then Lean4Fmt.Doc.fillList "[" "]" ds
+    -- fillList force-flattens items: a rule too wide to fit flat (a walked
+    -- multi-line chain) must route to commaList, where its own group breaks
+    let w := (← read).layout.lineWidth
+    let anyWide := ds.any (fun d => ((Lean4Fmt.Doc.flatWidth d).getD (w + 1)) + 12 > w)
+    -- a SINGLE wide rule glues the bracket and breaks inside its own group
+    -- (`rw [long_app\n  arg …]`) — the vertical bracket is for lists
+    if ds.size == 1 && anyWide then
+      return .text "rw [" ++ ds[0]! ++ .text "]" ++ locD
+    let listD := if (← read).breaking.listFill && !anyWide then Lean4Fmt.Doc.fillList "[" "]" ds
       else Lean4Fmt.Doc.commaList "[" "]" ds
     return .text "rw " ++ listD ++ locD
   else if kind == ``Lean.Parser.Tactic.tacticHave__
