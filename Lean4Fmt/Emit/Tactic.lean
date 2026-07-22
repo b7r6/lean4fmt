@@ -440,12 +440,28 @@ def emit
     if patT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     if !patT.isEmpty then head := head ++ " " ++ patT
     let tyT := Lean4Fmt.Emit.canonTok a[2]!
-    if tyT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-    if !tyT.isEmpty then head := head ++ " " ++ tyT
+    let headDoc : Doc ← do
+      if tyT.isEmpty then pure (.text head)
+      else if !tyT.any (· == '\n') then pure (.text (head ++ " " ++ tyT))
+      else
+        -- multi-line TYPE: the broken-head recipe (the letIdDecl dual) —
+        -- `obtain ⟨…⟩ :` + the walked type at +4, the := tail glues after
+        -- the type's last line
+        let ta := a[2]!.getArgs
+        let tyNode :=
+          if ta.size == 2 && (Lean4Fmt.Emit.bareSrc ta[0]!).trimAscii.toString == ":" then
+            ta[1]!
+          else .missing
+        if tyNode.isMissing then return (← Lean4Fmt.Emit.verbatim stx)
+        let tyDoc ← walk tyNode
+        if (match tyDoc with | .verbatim _ _ => true | _ => false)
+            || Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then
+          return (← Lean4Fmt.Emit.verbatim stx)
+        pure (.text (head ++ " :") ++ .group (.nest 4 (.line ++ tyDoc)))
     let asgn := a[3]!
     if (Lean4Fmt.Emit.bareSrc asgn).trimAscii.toString.isEmpty then
       -- no := tail: the head IS the tactic
-      return .text head
+      return headDoc
     -- [":=", sepBy(casesTarget)]: exactly one target this round (a comma
     -- list of targets keeps the whole verbatim)
     if asgn.getArgs.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
@@ -466,14 +482,14 @@ def emit
     if vIsBlock then
       match vdoc with
       | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
-      | _ => return .text (head ++ " := ") ++ vdoc
+      | _ => return headDoc ++ .text " := " ++ vdoc
     if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
       match vdoc with
       | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
       | _ =>
         if Lean4Fmt.Doc.hasMidlineReanchor vdoc then return (← Lean4Fmt.Emit.verbatim stx)
-        return .text (head ++ " :=") ++ .nest 2 (.hardline ++ vdoc)
-    return .text (head ++ " :=") ++ .group (.nest 2 (.line ++ vdoc))
+        return headDoc ++ .text " :=" ++ .nest 2 (.hardline ++ vdoc)
+    return headDoc ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
   else if kind == ``Lean.Parser.Tactic.simp || kind == ``Lean.Parser.Tactic.simpAll
       || kind == `Lean.Parser.Tactic.dsimp || kind == `Lean.Parser.Tactic.simpa
       || kind == `Lean.Parser.Tactic.tacticRwa__
