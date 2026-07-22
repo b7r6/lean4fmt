@@ -36,6 +36,16 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-23 | 55 (2/dir) | 78.0% | 78.0% | 90.1% of code | **86.7%** | 0 (suffices position-split + tacticHave over-guard drop; run's stopping point — residue queue in the memory/next-round notes) |
 | 2026-07-23 | **249 (10/dir)** | 74.0% | 71.8% | 88.2% of code | **81.4%** | 5: 3 tokens, 1 fixed-point, 1 comments (the wide baseline — 55-sample was ~5pt flattering; drill list: Fixed, CosetCover, Determinant, Induced, Algebraize) |
 | 2026-07-23 | **249 (10/dir)** | 74.3% | 74.3% | 88.2% of code | **84.2%** | **0 — GATE 1 CLOSED** (seven mechanisms: anonymous-ident injection, byTactic' descent, head-ws law, simpa naive-join, paren master-class, doMatch block-blindness, + round-1 pair) |
+| 2026-07-23 | 249 (10/dir) | 75.0% | 75.0% | 88.2% of code | **85.1%** | 0 (comma-less structInst vertical form + leftEdgeText? brace glue at 3 seams; sepByIndent colGe law) |
+| 2026-07-23 | 249 (10/dir) | 76.2% | 76.2% | 88.2% of code | **86.4%** | 0 (obtain port + isBinOp namespace-blind — the scoped-operator sleeper: ≫/⟶ families + every chain containing one) |
+| 2026-07-24 | 249 (10/dir) | 74.4% | 74.4% | 88.2% of code | 84.4 REGRESSION | 0 (induction shadow-handler: wrong arm shape sent every arm verbatim — census caught it; always grep for an existing handler) |
+| 2026-07-24 | 249 (10/dir) | 77.1% | 76.1% | 88.2% of code | 86.3 | 1 tree (semicolon-let; + per-arm induction seams, calc port w/ tokenJoinFlat? decision + step-column law) |
+| 2026-07-24 | 249 (10/dir) | 77.1% | 77.1% | 88.2% of code | **87.4%** | 0 (paren-by glue + calc head-ws guard; Divisors cleared) |
+| 2026-07-24 | 249 (10/dir) | 77.3% | 77.3% | 88.2% of code | **87.7%** | 0 (the fun round: glueFun in straylight, trailing-lambda + match-body glue, vertical relaxation; 58 home files re-canonicalized, fuzz 5→4) |
+| 2026-07-24 | 249 (10/dir) | 77.6% | 77.6% | 88.1% of code | **88.0%** | 0 (broken-head port + anon-have fix after a caught -1.1; cdot bullet comments; listFill house knob) |
+| 2026-07-24 | 249 (10/dir) | 78.3% | 78.3% | 88.1% of code | **88.8%** | 0 (simp_rw family + induction arm comment seams; Ackermann 54.7→80.3) |
+| 2026-07-24 | 249 (10/dir) | 78.6% | 78.6% | 88.1% of code | **89.2%** | 0 (rw multi-line rules walk) |
+| 2026-07-24 | 249 (10/dir) | 78.7% | 78.7% | 88.1% of code | **89.3%** | 0 (tacticHave blanket comment bail dropped — the over-guard class) |
 
 Phase 1 closed in three rounds (nine mechanisms; see the round commits):
 the mid-line verbatim drift law (chain/arm/let sites), the align effective
