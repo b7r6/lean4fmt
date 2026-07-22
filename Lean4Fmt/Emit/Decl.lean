@@ -838,7 +838,12 @@ private def defWhereDoc?
   let idT := Lean4Fmt.Emit.canonTok dargs[1]!
   if kwT.isEmpty || kwT.any (· == '\n') || idT.any (· == '\n') then return none
   let hd0 := kwT ++ (if idT.isEmpty then "" else " " ++ idT)
-  let sigT := Lean4Fmt.Emit.canonTok dargs[2]!
+  -- the inline-vs-broken decision must be ORIGIN-INDEPENDENT: flatten-first
+  -- (newline gaps → spaces), never the source bytes — deciding on canonTok
+  -- made pass 1 break a source-multi-line sig that pass 2 then re-inlined
+  -- (gate-caught fixed-point on mathlib SetAlgebra/Action)
+  let sigT := (Lean4Fmt.Emit.tokenJoinFlat? dargs[2]!).getD
+    ((bareSrc dargs[2]!).trimAscii.toString)
   let flatHead := if sigT.isEmpty then hd0 else hd0 ++ " " ++ sigT
   if !flatHead.any (· == '\n') && flatHead.length + 6 ≤ (← read).layout.lineWidth then
     return some (.text (flatHead ++ " where") ++ .nest 2 body)
