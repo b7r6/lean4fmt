@@ -168,6 +168,12 @@ partial def emit
       --   a = true
       --       ∧ b = true
       --       ∧ c = true
+      -- comment hazard: the chain reflow walks its pieces BARE — a line
+      -- comment in a piece's leading has no seam here and would silently
+      -- drop (gate-caught on mathlib ContextInfo: comments inside a nested
+      -- `<|` chain). Whole-chain verbatim carries it byte-exact.
+      if Lean4Fmt.Syntax.interiorHasLineComment stx then
+        return (← verbatim stx "chain-comment")
       let lhs ← walk args[0]!
       let op ← walk args[1]!
       let mut tail : Doc := .nil

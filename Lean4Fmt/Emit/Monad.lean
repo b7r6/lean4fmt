@@ -293,6 +293,12 @@ def armPieces?
     let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
     let aa := alt.getArgs
     let patDoc ← walk (aa[1]?.getD .missing)
+    -- ws-sensitivity (fixed-point class): a multi-line re-anchoring PATTERN
+    -- (alternative-pattern alts) glued after "| " re-indents by its placement
+    -- column, which the previous pass just moved (gate-caught on mathlib
+    -- Applicative + List/Basic, +2/pass) — the whole set is the caller's to
+    -- verbatim
+    if Lean4Fmt.Doc.hasMultilineReanchor patDoc then return none
     let arrowT := (bareSrc (aa[2]?.getD .missing)).trimAscii.toString
     let arrowT := if arrowT.isEmpty then "=>" else arrowT
     let body := aa[aa.size-1]?.getD .missing

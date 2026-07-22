@@ -87,6 +87,21 @@ unsafe def formatSafe
                 message  := "not formatted: output failed to reparse (gate fallback)" }
           )
       | some stx2 =>
+        -- FRONTEND ALIGNMENT: a reformat can change which parser path a file
+        -- takes (a sig-break moved a scoped-notation atom and the cheap
+        -- parser gave up where it handled the source) — and the cheap and
+        -- elaborating frontends can TOKENIZE such atoms differently, so
+        -- comparing across paths spuriously rejects (gate-caught on mathlib
+        -- PiSystem: source cheap / output Session → phantom "tokens").
+        -- When the OUTPUT needed the elaborating frontend, re-parse the
+        -- SOURCE through it too and compare like with like; if that parse
+        -- fails, keep the conservative reject.
+        let stx ← do
+          if elabFallback
+              && (← parseModule? env path active).isNone
+              && (← parseModule? env path contents).isSome then
+            pure ((← Session.parseModule? env path contents).getD stx)
+          else pure stx
         let (active2, _) := Lean4Fmt.Emit.format style stx2.updateLeading
         let toksOk := Lean4Fmt.Syntax.leafToks stx == Lean4Fmt.Syntax.leafToks stx2 -- tokens preserved
         let spineOk := Lean4Fmt.Syntax.kindSpine stx == Lean4Fmt.Syntax.kindSpine stx2 -- tree shape kept: in

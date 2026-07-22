@@ -545,7 +545,15 @@ def emit
     if trail0T.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let trail0 : Doc := if trail0T.isEmpty then .nil else .text (" " ++ trail0T)
     match ← seqGroupsDoc? walk (groups.extract 1 groups.size) true with
-    | some rest => return .text (tkT ++ " ") ++ .align d0 ++ trail0 ++ .nest 2 rest
+    | some rest =>
+      -- ws-sensitivity CLASS 2 (Emit/WsSensitivity): the rest-groups' nest
+      -- must anchor at the BULLET column, not the line indent — glued
+      -- placements (`<;> · intro` + a second tactic) otherwise land the
+      -- continuation SHALLOWER than the bullet content and the reparse's
+      -- recovery silently drops it (gate-caught on mathlib
+      -- ArchimedeanDensely, tokens). The outer `.align` re-anchors the whole
+      -- bullet at its own start column; at line start it is a no-op.
+      return .align (.text (tkT ++ " ") ++ .align d0 ++ trail0 ++ .nest 2 rest)
     | none => return (← Lean4Fmt.Emit.verbatim stx)
   else if kind == ``Lean.Parser.Tactic.tacticRfl || kind == ``Lean.Parser.Tactic.omega
       || kind == ``Lean.Parser.Tactic.decide || kind == ``Lean.Parser.Tactic.nativeDecide
