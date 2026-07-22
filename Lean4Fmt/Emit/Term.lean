@@ -325,8 +325,21 @@ partial def emit
       match args[1]? with
       | some c =>
         let d ← walk c
-        -- ws-sensitivity (fixed-point master class): the content glues after
-        -- `(` MID-LINE — a multi-line re-anchoring piece drifts by its
+        -- `(by …)` / `(do …)` — the mathlib-pervasive tactic-arg idiom: the
+        -- block's members sit at sequence-seam hardlines (deterministic
+        -- re-anchor), so only a MID-LINE multiline verbatim is a hazard —
+        -- hasMidlineReanchor, exact here because the doc STARTS with the
+        -- keyword text (the initial line-start state is irrelevant). A bare
+        -- whole-verbatim block still bails.
+        if c.getKind == ``Lean.Parser.Term.byTactic || c.getKind == ``Lean.Parser.Term.do then
+          match d with
+          | .verbatim _ _ => return (← verbatim stx "paren-multiline-piece")
+          | _ =>
+            if Lean4Fmt.Doc.hasMidlineReanchor d then
+              return (← verbatim stx "paren-multiline-piece")
+            return .text "(" ++ d ++ .text ")"
+        -- ws-sensitivity (fixed-point master class): other content glues
+        -- after `(` MID-LINE — a multi-line re-anchoring piece drifts by its
         -- placement (+10/pass on mathlib Induced: a bailed ∘ₗ chain inside a
         -- paren app-arg). Whole-paren verbatim gets a line-start seam from
         -- its own placement instead.

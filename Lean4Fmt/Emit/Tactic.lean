@@ -658,6 +658,11 @@ def emit
     let w := (← read).layout.lineWidth
     let mut flats : Option (Array String) := some #[]
     for st in steps do
+      -- head-ws law: a step containing by/do/let (newline-SEMANTIC kinds)
+      -- must not flatten-join — joining two tactics without `;` reparses as
+      -- an application (tree class, gate-caught on mathlib Divisors:
+      -- `:= by apply f` + `simp […]` joined into `apply f simp […]`)
+      if headWsSensitive (1 <<< 60) st then flats := none else
       match Lean4Fmt.Emit.tokenJoinFlat? st with
       | some t => if t.isEmpty || t.length + 7 > w then flats := none
                   else flats := flats.map (·.push t)
