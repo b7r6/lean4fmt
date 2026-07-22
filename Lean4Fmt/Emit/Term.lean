@@ -179,6 +179,17 @@ partial def emit
         cur := ca[2]!
         steps := steps + 1
       let rhs ← walk cur
+      -- ws-sensitivity (fixed-point class): a multi-line RE-ANCHORING piece
+      -- glued mid-chain re-indents its interior by its placement column,
+      -- which the previous pass just moved — never a fixed point. A base-0
+      -- (mid-line-anchored) verbatim is the worst case: its interior indent
+      -- ADDS to the placement (gate-caught on mathlib Abel: `pure <| ←` +
+      -- app drifted +8 per pass). Whole-chain verbatim; porting the piece's
+      -- kind is the coverage fix, this is the correctness floor.
+      if Lean4Fmt.Doc.hasMultilineReanchor lhs || Lean4Fmt.Doc.hasMultilineReanchor op
+          || Lean4Fmt.Doc.hasMultilineReanchor tail
+          || Lean4Fmt.Doc.hasMultilineReanchor rhs then
+        return (← verbatim stx "chain-multiline-piece")
       let cont := (← read).layout.continuationIndent
       if (← read).breaking.opBreak == .trailing then
         -- trailing operators (mathlib arrows): `a →\n  b →\n  c`. Flat form
