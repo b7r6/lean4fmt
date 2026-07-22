@@ -33,6 +33,7 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-23 | 55 (2/dir) | 77.1% | 77.1% | 90.1% of code | **85.7%** | 0 (instance class closed: broken heads + own-line fields + Porting-note seams; 11.6KB → 0.7KB) |
 | 2026-07-23 | 55 (2/dir) | 77.2% | 77.2% | 90.1% of code | **85.8%** | 0 (Phase 2 closed: shape payload 42KB → 5.3KB; structure defaults fix-forward after a caught -3.1 regression) |
 | 2026-07-23 | 55 (2/dir) | 78.0% | 78.0% | 90.1% of code | **86.7%** | 0 (Phase 3: variable port + bracketed-binop family w/ per-link parent-op threading) |
+| 2026-07-23 | 55 (2/dir) | 78.0% | 78.0% | 90.1% of code | **86.7%** | 0 (suffices position-split + tacticHave over-guard drop; run's stopping point — residue queue in the memory/next-round notes) |
 
 Phase 1 closed in three rounds (nine mechanisms; see the round commits):
 the mid-line verbatim drift law (chain/arm/let sites), the align effective
