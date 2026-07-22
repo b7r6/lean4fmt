@@ -30,6 +30,7 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-23 | 55 (2/dir) | 72.2% | 72.2% | 90.1% of code | **80.1%** | **0** (Phase 1 closed) |
 | 2026-07-23 | 55 (2/dir) | 74.9% | 74.9% | 90.1% of code | **83.2%** | 0 (defwhere round: by-field glue + sigDoc broken heads + flatten-first decision) |
 | 2026-07-23 | 55 (2/dir) | 75.7% | 75.7% | 90.1% of code | **84.1%** | 0 (own-line opaque field values; defwhere-shape 26.0KB → 0.8KB total arc) |
+| 2026-07-23 | 55 (2/dir) | 77.1% | 77.1% | 90.1% of code | **85.7%** | 0 (instance class closed: broken heads + own-line fields + Porting-note seams; 11.6KB → 0.7KB) |
 
 Phase 1 closed in three rounds (nine mechanisms; see the round commits):
 the mid-line verbatim drift law (chain/arm/let sites), the align effective
