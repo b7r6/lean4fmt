@@ -342,8 +342,15 @@ def emit
     let cfgT := Lean4Fmt.Emit.canonTok a[1]!
     if cfgT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let dDoc ← walk a[2]!
-    if Lean4Fmt.Doc.hasMultilineVerbatim dDoc then return (← Lean4Fmt.Emit.verbatim stx)
-    return .text (kwT ++ " ") ++ (if cfgT.isEmpty then Doc.nil else .text (cfgT ++ " ")) ++ dDoc
+    -- trust the letDecl path's OWN guards: a glued-by value's interior
+    -- verbatims sit at sequence seams (an undispatched multi-line tactic
+    -- inside `have h : T := by …` wrongly killed the whole have via the old
+    -- blanket hasMultilineVerbatim — the 5.2KB mathlib tacticHave class);
+    -- only a BARE whole-verbatim binding (the inner path bailed) stays out
+    match dDoc with
+    | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
+    | _ =>
+      return .text (kwT ++ " ") ++ (if cfgT.isEmpty then Doc.nil else .text (cfgT ++ " ")) ++ dDoc
   else if kind == ``Lean.Parser.Tactic.simp || kind == ``Lean.Parser.Tactic.simpAll
       || kind == `Lean.Parser.Tactic.dsimp || kind == `Lean.Parser.Tactic.simpa
       || kind == `Lean.Parser.Tactic.tacticRwa__ then
@@ -568,8 +575,7 @@ def emit
       -- bullet at its own start column; at line start it is a no-op.
       return .align (.text (tkT ++ " ") ++ .align d0 ++ trail0 ++ .nest 2 rest)
     | none => return (← Lean4Fmt.Emit.verbatim stx)
-  else if (kind == `Lean.Parser.Tactic.tacticSuffices_
-        || kind == ``Lean.Parser.Tactic.tacticHave__)
+  else if kind == `Lean.Parser.Tactic.tacticSuffices_
       && (Lean4Fmt.Emit.bareSrc stx).any (· == '\n') then
     -- POSITION-SPLIT port: `suffices h : T by tac` / `have h : T := by tac`
     -- — find the final by-block descendant (last-child descent), slice the
