@@ -137,9 +137,24 @@ private partial def structFieldDoc
     let v := da[da.size - 1]?.getD Lean.Syntax.missing -- [":=", null?, value]
     -- a field with BINDERS or type ascription (`symm _ _ h := …`) carries
     -- tokens between the lval and the value — the lval++":="++value shape
-    -- would DELETE them (gate-caught on mathlib): token-exact join instead
+    -- would DELETE them (gate-caught on mathlib): join the HEAD (lval +
+    -- binders + type) single-line and walk the VALUE, same shape as the
+    -- plain field. The old whole-field token join required the VALUE
+    -- single-line too — the functor-instance idiom (`map {X Y} f := <app
+    -- with (by …)>`) rode verbatim on it.
     let expected := Lean4Fmt.Syntax.leafToks lvalStx ++ #[":="] ++ Lean4Fmt.Syntax.leafToks v
     if Lean4Fmt.Syntax.leafToks field != expected then
+      let mut headT := Lean4Fmt.Emit.canonTok lvalStx
+      let mut ok := !headT.isEmpty && !headT.any (· == '\n')
+      for r in rest do
+        if !ok then break
+        if r.getKind == ``Lean.Parser.Term.structInstFieldDef then continue
+        let t := Lean4Fmt.Emit.canonTok r
+        if t.any (· == '\n') then ok := false
+        else if !t.isEmpty then headT := headT ++ " " ++ t
+      -- the def node must be exactly the assign shape (`:=` + value)
+      if ok && Lean4Fmt.Syntax.leafToks fd == #[":="] ++ Lean4Fmt.Syntax.leafToks v then
+        return .text (headT ++ " := ") ++ (← walk v)
       let t := Lean4Fmt.Emit.canonTok field
       if t.isEmpty || t.any (· == '\n') then
         return (← verbatim field)
