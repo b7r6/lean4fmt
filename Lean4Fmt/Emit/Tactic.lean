@@ -398,6 +398,55 @@ def emit
     | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
     | _ =>
       return .text (kwT ++ " ") ++ (if cfgT.isEmpty then Doc.nil else .text (cfgT ++ " ")) ++ dDoc
+  else if kind == `Lean.Parser.Tactic.obtain then
+    -- ["obtain", pat?, (":" type)?, (":=" target,+)?] (Batteries rcases).
+    -- The letIdDecl dual in tactic position: head token-for-token (pattern
+    -- and type single-line), the := VALUE walked — `by`/`do` glues (its
+    -- body brings the hardlines; interior verbatims sit at sequence
+    -- seams), else flat-or-broken at +2. 32.2KB of the wide census rode
+    -- verbatim through the token-line path (any newline bailed).
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    if a.size != 4 then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut head := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
+    if head != "obtain" then return (← Lean4Fmt.Emit.verbatim stx)
+    let patT := Lean4Fmt.Emit.canonTok a[1]!
+    if patT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+    if !patT.isEmpty then head := head ++ " " ++ patT
+    let tyT := Lean4Fmt.Emit.canonTok a[2]!
+    if tyT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+    if !tyT.isEmpty then head := head ++ " " ++ tyT
+    let asgn := a[3]!
+    if (Lean4Fmt.Emit.bareSrc asgn).trimAscii.toString.isEmpty then
+      -- no := tail: the head IS the tactic
+      return .text head
+    -- [":=", sepBy(casesTarget)]: exactly one target this round (a comma
+    -- list of targets keeps the whole verbatim)
+    if asgn.getArgs.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
+    let targets := asgn.getArgs[1]!.getArgs
+    if targets.size != 1 then return (← Lean4Fmt.Emit.verbatim stx)
+    let v0 := targets[0]!
+    -- a casesTarget wraps `(ident " : ")? term` — an unnamed one unwraps to
+    -- its term; a NAMED target (`h : e`) keeps the wrapper and rides the
+    -- bare-verbatim bails below
+    let v :=
+      if v0.getKind == `Lean.Parser.Tactic.casesTarget && v0.getArgs.size == 2
+          && (Lean4Fmt.Emit.bareSrc v0.getArgs[0]!).trimAscii.toString.isEmpty then
+        v0.getArgs[1]!
+      else v0
+    let vdoc ← walk v
+    let vIsBlock := v.getKind == ``Lean.Parser.Term.do
+        || v.getKind == ``Lean.Parser.Term.byTactic
+    if vIsBlock then
+      match vdoc with
+      | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
+      | _ => return .text (head ++ " := ") ++ vdoc
+    if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
+      match vdoc with
+      | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
+      | _ =>
+        if Lean4Fmt.Doc.hasMidlineReanchor vdoc then return (← Lean4Fmt.Emit.verbatim stx)
+        return .text (head ++ " :=") ++ .nest 2 (.hardline ++ vdoc)
+    return .text (head ++ " :=") ++ .group (.nest 2 (.line ++ vdoc))
   else if kind == ``Lean.Parser.Tactic.simp || kind == ``Lean.Parser.Tactic.simpAll
       || kind == `Lean.Parser.Tactic.dsimp || kind == `Lean.Parser.Tactic.simpa
       || kind == `Lean.Parser.Tactic.tacticRwa__ then
@@ -663,7 +712,7 @@ def emit
       || kind == ``Lean.Parser.Tactic.contradiction || kind == ``Lean.Parser.Tactic.assumption
       || kind == ``Lean.Parser.Tactic.tacticAnd_intros || kind == ``Lean.Parser.Tactic.simpAll
       || kind == ``Lean.Parser.Tactic.intro || kind == ``Lean.Parser.Tactic.intros
-      || kind == ``Lean.Parser.Tactic.split || kind == `Lean.Parser.Tactic.obtain
+      || kind == ``Lean.Parser.Tactic.split
       || kind == `Lean.Parser.Tactic.rcases || kind == ``Lean.Parser.Tactic.show
       || kind == `Lean.Parser.Tactic.subst || kind == `Lean.Parser.Tactic.«tacticExists_,,»
       || kind == ``Lean.Parser.Tactic.change || kind == `«tacticBy_cases_:_»
