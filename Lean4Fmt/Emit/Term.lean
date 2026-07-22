@@ -191,6 +191,16 @@ partial def emit
         cur := ca[2]!
         steps := steps + 1
       let rhs ← walk cur
+      -- the `lhs <| by …` idiom (mathlib-pervasive): a by/do TAIL glues —
+      -- flat head (`injective <| by`), the block's members at sequence-seam
+      -- hardlines below (deterministic, same as decl `:= by` glue). Only the
+      -- TAIL: a by mid-chain has no seam. A whole-block verbatim by (the
+      -- emitter bailed) falls through to the guard below.
+      if (cur.getKind == ``Lean.Parser.Term.byTactic || cur.getKind == ``Lean.Parser.Term.do)
+          && (Lean4Fmt.Doc.flatWidth lhs).isSome && (Lean4Fmt.Doc.flatWidth op).isSome
+          && (Lean4Fmt.Doc.flatWidth tail).isSome
+          && !(match rhs with | .verbatim _ _ => true | _ => false) then
+        return .flatten (lhs ++ tail ++ .line ++ op) ++ .space ++ rhs
       -- ws-sensitivity (fixed-point class): a multi-line RE-ANCHORING piece
       -- glued mid-chain re-indents its interior by its placement column,
       -- which the previous pass just moved — never a fixed point. A base-0
