@@ -162,6 +162,7 @@ partial def walkCore
       if !t.isEmpty && !t.any (· == '\n') then pure (.text t)
       else verbatim stx
     else if Lean4Fmt.Syntax.isBinOp kind
+         || Lean4Fmt.Syntax.isBinderComma kind
          || Lean4Fmt.Syntax.walkTermKinds.contains kind then
       Term.emit walk stx
     -- default: a SINGLE-LINE construct rides as active text — byte-exact

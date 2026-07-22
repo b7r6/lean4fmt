@@ -57,6 +57,25 @@ def isBinOp
 #guard isBinOp `CategoryTheory.«term_≫_»
 #guard !isBinOp `Lean.Parser.Term.app
 
+/-- A BINDER-COMMA notation (`∑ x ∈ s, body` / `⨆ i, f i` / `∀ᵐ x ∂μ, p` —
+    the big-operator and measure families, namespaced or not): a prefix-op
+    head, binders, then the BODY after the final comma. Recognized by name
+    shape on the last component; binops are excluded (they start `«term_`).
+    These all share the binder-predicate layout: head tokens canonical, body
+    width-aware at the continuation. -/
+def isBinderComma
+    (kind : SyntaxNodeKind)
+    : Bool :=
+
+  let s := ((kind.components.getLast?.map toString).getD "")
+  s.startsWith "«term" && s.endsWith "_,_»" && !isBinOp kind
+
+#guard isBinderComma `Finset.«term∑_∈_,_»
+#guard isBinderComma `«term⨆_,_»
+#guard isBinderComma `MeasureTheory.«term∀ᵐ_∂_,_»
+#guard !isBinderComma `«term_=_»
+#guard !isBinderComma `Lean.Parser.Term.app
+
 /-- Term kinds with an ACTIVE MULTI-LINE layout: their `walk` produces a
     width-aware breaking group, so a decl value of one of these may lay out
     actively even when it spans lines. `Decl.isActiveMultiline` consumes

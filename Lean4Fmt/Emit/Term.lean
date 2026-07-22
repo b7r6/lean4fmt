@@ -876,7 +876,8 @@ partial def emit
       let cont := (← read).layout.continuationIndent
       return hd ++ .text "," ++ .group (.nest cont (.line ++ bodyDoc))
     else if kind == `Lean.«term∀__,_» || kind == `Lean.«term∃__,_»
-        || kind == `«term∃_,_» || kind == `«term∀_,_» then
+        || kind == `«term∃_,_» || kind == `«term∀_,_»
+        || Lean4Fmt.Syntax.isBinderComma kind then
       -- binder-predicate quantifiers (`∀ x ∈ s, p` / `∃ x ∈ s, p`): head
       -- tokens canonical (comma glued), body width-aware at the continuation
       let n := args.size
