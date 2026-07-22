@@ -29,8 +29,14 @@ private def commaGroup
             (walk : Walk)
             (l r : String)
             (children : Array Lean.Syntax)
-            : EmitM Doc := do
+            : EmitM (Option Doc) := do
 
+  -- an authored TRAILING comma (`[a, b,]`) has no slot in the rebuilt list
+  -- (commas go BETWEEN items) — `none` rather than drop the token
+  -- (gate-caught on aleph CLI.lean, tokens; the listItems? lesson again)
+  if (children.back?.map (fun c =>
+      c.isAtom && (bareSrc c).trimAscii.toString == ",")).getD false then
+    return none
   let mut ds : Array Doc := #[]
   for c in children do
     if c.isAtom then continue
@@ -41,8 +47,8 @@ private def commaGroup
     let items :=
       ((Array.range ds.size).map
         (fun i => ds[i]! ++ (if i + 1 == ds.size then Doc.nil else Doc.text ","))).toList
-    return .text l ++ .nest 2 (Doc.fillSep items) ++ .text r
-  return Lean4Fmt.Doc.commaList l r ds
+    return some (.text l ++ .nest 2 (Doc.fillSep items) ++ .text r)
+  return some (Lean4Fmt.Doc.commaList l r ds)
 
 /-- Comment-bearing comma list, FORCED broken (a line comment cannot flatten,
     §0.4): one element per line at +2, each element's leading comment/blank
@@ -260,7 +266,9 @@ partial def emit
         match ← seamCommaList? walk "⟨" "⟩" (args[0]?.getD .missing) pairs (args[2]?.getD .missing) with
         | some d => return d
         | none => return (← verbatim stx)
-      return (← commaGroup walk "⟨" "⟩" children)
+      match ← commaGroup walk "⟨" "⟩" children with
+      | some d => return d
+      | none => return (← verbatim stx "trailing-comma")
     else if kind == ``Lean.Parser.Term.structInst then
       -- `{ f₁ := v₁, f₂ := v₂ }` — width-aware: flat if it fits, else one field
       -- per line, aligned under the first (which sits on the `{ ` line). Guarded:
@@ -351,7 +359,9 @@ partial def emit
         match ← seamCommaList? walk l "]" (args[0]?.getD .missing) pairs (args[2]?.getD .missing) with
         | some d => return d
         | none => return (← verbatim stx)
-      return (← commaGroup walk l "]" children)
+      match ← commaGroup walk l "]" children with
+      | some d => return d
+      | none => return (← verbatim stx "trailing-comma")
     else if kind == Lean4Fmt.Syntax.iteKind then
       -- [if, cond, then, thenBranch, else, elseBranch]; a width-aware group:
       -- flat `if c then a else b`, or broken with 2-space branches, `else` at
@@ -363,6 +373,12 @@ partial def emit
       for slot in [args[1]?, args[3]?] do
         let t := ((slot.bind Lean4Fmt.Syntax.lastTokenTrailing?).getD "").trimAscii.toString
         if !t.isEmpty then return (← verbatim stx)
+      -- a full-line comment in a BRANCH's leading (`else⏎  -- note⏎  body`)
+      -- has no seam in this layout either — the branch walk drops leading
+      -- trivia (gate-caught on evring HttpConn, comments class)
+      for slot in [args[3]?, args[5]?] do
+        if Lean4Fmt.Syntax.countLineComments ((slot.bind Lean4Fmt.Syntax.leading?).getD "") > 0 then
+          return (← verbatim stx "ite-branch-leading-comment")
       let cond ← walk (args[1]?.getD .missing)
       let thenB ← walk (args[3]?.getD .missing)
       let elseB ← walk (args[5]?.getD .missing)
@@ -412,6 +428,13 @@ partial def emit
         if cfgT.any (· == '\n') then return (← verbatim stx)
         let decl := a[2]?.getD .missing
         let declDoc ← walk decl
+        -- ws-sensitivity (fixed-point master class): the binding glues after
+        -- `let ` mid-line — a multi-line re-anchoring declDoc drifts by its
+        -- placement column (gate-caught on SSP/Trust.Protocol home files:
+        -- comma-less structInst values, +4/pass). Whole-chain verbatim keeps
+        -- the source's column alignment byte-exact.
+        if Lean4Fmt.Doc.hasMultilineReanchor declDoc then
+          return (← verbatim stx "let-multiline-binding")
         let sepT := (((a[3]?.map bareSrc).getD "").trimAscii.toString)
         if sepT.any (· == '\n') then return (← verbatim stx)
         -- same-line trailing comment on the binding (the gap to the next
@@ -488,6 +511,10 @@ partial def emit
       for slot in [args[3]?, args[5]?] do
         let t := ((slot.bind Lean4Fmt.Syntax.lastTokenTrailing?).getD "").trimAscii.toString
         if !t.isEmpty then return (← verbatim stx)
+      -- and the branch-LEADING comment bail (see termIfThenElse)
+      for slot in [args[5]?, args[args.size - 1]?] do
+        if Lean4Fmt.Syntax.countLineComments ((slot.bind Lean4Fmt.Syntax.leading?).getD "") > 0 then
+          return (← verbatim stx "ite-branch-leading-comment")
       let binder ← walk (args[1]?.getD .missing)
       let cond ← walk (args[3]?.getD .missing)
       let thenB ← walk (args[5]?.getD .missing)

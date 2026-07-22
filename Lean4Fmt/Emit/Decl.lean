@@ -363,6 +363,13 @@ private def valForm
 
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
     let a := declVal.getArgs
+    -- a same-line comment after `:=` lives in the ASSIGN ATOM's trailing
+    -- (Lean trivia: same-line comments attach to the preceding token) — no
+    -- layout here has a seam for it, and the value's leading never sees it
+    -- (gate-caught on aleph EDSL.lean: `Claim :=   -- needs hardware`,
+    -- comments class). The slot-tail-trailing rule, applied to `:=` itself.
+    if !(((a[0]?.bind Lean4Fmt.Syntax.trailing?).getD "").trimAscii.toString.isEmpty) then
+      return .span (← verbatim declVal "assign-trailing-comment")
     let hasSuffix := (a[2]?.map (fun s => !(bareSrc s).trimAscii.toString.isEmpty)).getD false
     let hasWhere := (a[3]?.map (fun s => !s.getArgs.isEmpty)).getD false
     match a[1]? with

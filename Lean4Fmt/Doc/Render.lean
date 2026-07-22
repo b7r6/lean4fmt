@@ -255,10 +255,92 @@ def wrLines (indent base : Nat) : List (List Char) → RSt → RSt
   | [], st      => st
   | l :: ls, st => wrLines indent base ls (wrLine st indent base l)
 
+/-- Which lines of a block START inside a multi-line STRING token (string or
+    raw string — a string-gap `\⏎` continuation keeps string mode across the
+    newline). Such lines are TOKEN INTERIOR: their leading whitespace is part
+    of the token's raw bytes (the gate's token equality compares them), so
+    re-anchoring must emit them at their ORIGINAL absolute column. One Bool
+    per `splitLines` line, first line `false` (a verbatim starts at a token
+    boundary). Mirrors the `stripTrailingWs` mode machine. -/
+def inStringLineMask
+    (cs : List Char)
+    : List Bool := Id.run do
+  let a : Array Char := cs.toArray
+  let n := a.size
+  let isIdChar := fun (c : Char) =>
+    c.isAlphanum || c == '_' || c == '\'' || c == '!' || c == '?' || c.val > 127
+  -- modes: 0 code, 1 line comment, 2 block comment, 3 string, 4 raw string, 5 char
+  let mut mode : Nat := 0
+  let mut depth : Nat := 0
+  let mut prev : Char := ' '
+  let mut mask : Array Bool := #[false]
+  let mut i := 0
+  while _h : i < n do
+    let c := a[i]!
+    let c1 := a[i + 1]?
+    if c == '\n' then
+      -- line comments close at the newline; char-literal recovery likewise
+      if mode == 1 || mode == 5 then mode := 0
+      mask := mask.push (mode == 3 || mode == 4)
+    else
+      match mode with
+      | 0 =>
+        if c == '-' && c1 == some '-' then mode := 1; i := i + 1
+        else if c == '/' && c1 == some '-' then mode := 2; depth := 1; i := i + 1
+        else if c == '"' then mode := 3
+        else if c == 'r' && !isIdChar prev && (c1 == some '"' || c1 == some '#') then
+          let mut j := i + 1
+          let mut hs := 0
+          while _hj : j < n && a[j]! == '#' do hs := hs + 1; j := j + 1
+          if a[j]? == some '"' then mode := 4; depth := hs; i := j
+        else if c == '\'' && !isIdChar prev then mode := 5
+      | 1 => pure ()
+      | 2 =>
+        if c == '/' && c1 == some '-' then depth := depth + 1; i := i + 1
+        else if c == '-' && c1 == some '/' then
+          depth := depth - 1; i := i + 1
+          if depth == 0 then mode := 0
+      | 3 =>
+        if c == '\\' then
+          -- a string gap (`\⏎`): the escape consumes the newline — the LINE
+          -- BOUNDARY must still land in the mask (in-string: true)
+          if c1 == some '\n' then mask := mask.push true
+          i := i + 1
+        else if c == '"' then mode := 0
+      | 4 =>
+        if c == '"' then
+          let mut j := i + 1
+          let mut hs := 0
+          while _hj : j < n && a[j]! == '#' && hs < depth do hs := hs + 1; j := j + 1
+          if hs == depth then mode := 0; i := j - 1
+      | _ =>
+        if c == '\\' then
+          if c1 == some '\n' then mask := mask.push false
+          i := i + 1
+        else if c == '\'' then mode := 0
+    prev := c
+    i := i + 1
+  return mask.toList
+
+/-- `wrLines` with the in-string mask: a masked line is STRING-TOKEN INTERIOR
+    and emits byte-exact at its original absolute column (indent 0, no
+    dedent) — re-indenting it would rewrite the token's bytes (gate-caught on
+    aleph FindBytesGate: a string-gap continuation, tokens class). -/
+def wrLinesM (indent base : Nat) : List (List Char) → List Bool → RSt → RSt
+  | [], _, st => st
+  | l :: ls, m, st =>
+    let st :=
+      if m.headD false then
+        wr { st with pend := st.pend + 1 } 0 (String.ofList l)
+      else
+        wrLine st indent base l
+    wrLinesM indent base ls (m.drop 1) st
+
 /-- Emit a possibly-multi-line block (verbatim/comment), re-anchored to `indent`:
     dedent every continuation by the block's OWN base column `base`, re-indent to
-    `indent` (§0.3). Trailing whitespace is trimmed (so trailing blank lines
-    cannot exist); leading blank lines are dropped. -/
+    `indent` (§0.3) — EXCEPT lines inside a multi-line string token, which keep
+    their absolute column byte-exact (`wrLinesM`). Trailing whitespace is trimmed
+    (so trailing blank lines cannot exist); leading blank lines are dropped. -/
 def wrBlock
     (st : RSt)
     (indent : Nat)
@@ -266,9 +348,12 @@ def wrBlock
     (raw : String)
     : RSt :=
 
-  match (splitLines (trimEndWs raw.toList)).dropWhile isBlankLine with
-  | []        => st
-  | l :: rest => wrLines indent base rest (wr st indent (String.ofList l))
+  let cs := trimEndWs raw.toList
+  let ls := splitLines cs
+  let k := (ls.takeWhile isBlankLine).length
+  match ls.drop k, (inStringLineMask cs).drop k with
+  | [], _        => st
+  | l :: rest, m => wrLinesM indent base rest (m.drop 1) (wr st indent (String.ofList l))
 
 /-- Pad-and-join one table row from rendered cell strings: every cell but the
     last is padded to its column width and followed by `sep`. Recursive (not a
@@ -330,7 +415,13 @@ def go (width maxPend : Nat) : Doc → Nat → Bool → RSt → RSt
   | .flatten d, indent, _, st => go width maxPend d indent true st
   | .pad _, _, _, st => st
   | .nest n d, indent, flat, st => go width maxPend d (Int.toNat ((indent : Int) + n)) flat st
-  | .align d, _, flat, st => go width maxPend d st.col flat st
+  | .align d, indent, flat, st =>
+    -- anchor at the EFFECTIVE column: with newlines pending the next content
+    -- lands at `indent`, and the stale `st.col` is the PREVIOUS line's end
+    -- (the group fit-check learned this first; align re-learned it via the
+    -- bullet outer-align, which anchored member bullets at the prior line's
+    -- end column — gate-caught on mathlib PiSystem, tokens)
+    go width maxPend d (if st.pend > 0 then indent else st.col) flat st
   | .fillSep items, indent, flat, st =>
     -- pack items with single spaces, wrapping at the width; in FLAT mode
     -- everything stays on one line (the flatten contract — flatWidth is exact
