@@ -20,7 +20,10 @@ namespace Lean4Fmt.Driver
 open Lean4Fmt.Style
 
 /-- The chain of fmt.lean files governing `path`, outermost first. -/
-partial def configChain (path : System.FilePath) : IO (List System.FilePath) := do
+partial def configChain
+            (path : System.FilePath)
+            : IO (List System.FilePath) := do
+
   let rec up (dir : System.FilePath) (acc : List System.FilePath) : IO (List System.FilePath) := do
     let acc ← do
       let f := dir / "fmt.lean"
@@ -34,7 +37,11 @@ partial def configChain (path : System.FilePath) : IO (List System.FilePath) := 
 
 /-- Resolve the effective style for one file: CLI base, then each fmt.lean on
     the chain applied outermost → innermost. -/
-def styleFor (base : Style) (path : System.FilePath) : IO Style := do
+def styleFor
+    (base : Style)
+    (path : System.FilePath)
+    : IO Style := do
+
   let mut s := base
   for cfg in (← configChain path) do
     match applyConfigText s (← IO.FS.readFile cfg) with

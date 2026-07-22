@@ -17,13 +17,13 @@ namespace Lean4Fmt.Driver
 partial def findLean
             (root : System.FilePath)
             : IO (Array System.FilePath) := do
+
   let mut acc : Array System.FilePath := #[]
   if ← root.isDir then
     for entry in ← root.readDir do
       if entry.fileName == ".lake" then continue
       acc := acc ++ (← findLean entry.path)
-  else if root.extension == some "lean" then
-    acc := acc.push root
+  else if root.extension == some "lean" then acc := acc.push root
   return acc
 
 end Lean4Fmt.Driver

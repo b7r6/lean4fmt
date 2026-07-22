@@ -24,6 +24,7 @@ def quietly
     {α}
     (act : IO α)
     : IO α := do
+
   let buf ← IO.mkRef { : IO.FS.Stream.Buffer }
   IO.withStdout (IO.FS.Stream.ofBuffer buf) act
 
@@ -32,6 +33,7 @@ unsafe def parseModule?
            (env : Environment)
            (path contents : String)
            : IO (Option Lean.Syntax) :=
+
   quietly do
     try
       let stx ← Parser.testParseModule env path contents
@@ -45,6 +47,6 @@ def headerToks
 
   match stx.getArgs[0]? with
   | some h => Lean4Fmt.Syntax.leafToks h
-  | none => #[]
+  | none   => #[]
 
 end Lean4Fmt.Frontend

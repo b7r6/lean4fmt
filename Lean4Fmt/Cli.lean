@@ -12,16 +12,16 @@
 namespace Lean4Fmt.Cli
 
 inductive Mode
-  | format   -- print to stdout (default)
-  | check    -- exit 1 if any file would change
-  | write    -- overwrite in place
-  | stats    -- coverage accounting: active/verbatim/trivia bytes per file + total
+  | format -- print to stdout (default)
+  | check  -- exit 1 if any file would change
+  | write  -- overwrite in place
+  | stats  -- coverage accounting: active/verbatim/trivia bytes per file + total
   deriving Repr, Inhabited, BEq
 
 structure Options where
   mode   : Mode := .format
   preset : String := "straylight"
-  width  : Option Nat := none   -- explicit --width overrides the preset
+  width  : Option Nat := none     -- explicit --width overrides the preset
   /-- Fall back to the interleaved elaborating frontend when the cheap parse
       can't handle a file (same-file notation/macros). Measured warm marginal
       cost is 5–20ms/file on the continuity corpus — hence the default; `--elab
@@ -38,7 +38,7 @@ structure Options where
       append its `lake env` LEAN_PATH to the olean search path. `--lake off`
       keeps the explicit-LEAN_PATH-only behavior. -/
   lakeEnv : Bool := true
-  files  : List String := []
+  files : List String := []
   deriving Repr, Inhabited
 
 /-- Parse argv into `Options`. -/

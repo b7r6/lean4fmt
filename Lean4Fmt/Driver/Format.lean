@@ -24,6 +24,7 @@ unsafe def formatFile
            (preset : String := "straylight")
            (elabFallback : Bool := true)
            : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
+
   let contents ← IO.FS.readFile path
   let base := (Lean4Fmt.Style.byName? preset).getD Lean4Fmt.Style.straylight
   let base := { base with layout := { base.layout with lineWidth := width } }

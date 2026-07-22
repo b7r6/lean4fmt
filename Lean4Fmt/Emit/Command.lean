@@ -31,6 +31,7 @@ private def ctorDoc?
             (c : Lean.Syntax)
             (preserve : Bool)
             : Lean4Fmt.Emit.EmitM (Option (Doc × String × Option Doc)) := do
+
   let ctor := c
   if c.getKind != ``Lean.Parser.Command.ctor then return none
   let a := c.getArgs
@@ -64,22 +65,30 @@ private def ctorDoc?
       pure (some t)
     | [] => pure (none : Option String)
     | _ => return none
-  let joined := "| " ++ (if modsT.isEmpty then "" else modsT ++ " ") ++ nameT
-    ++ (parts.foldl (fun s p => s ++ " " ++ p) "")
-    ++ (match tyT with | some t => " : " ++ t | none => "")
+  let joined :=
+    "| " ++ (if modsT.isEmpty then "" else modsT ++ " ") ++ nameT
+        ++ (parts.foldl (fun s p => s ++ " " ++ p) "")
+        ++ (match tyT with
+        | some t => " : " ++ t
+        | none   => "")
   -- exact tail: the ctor bytes AFTER the doc comment (docD carries the doc)
   let exact := (Lean4Fmt.Emit.bareSrc (Lean.mkNullNode (a.extract 1 a.size))).trimAscii.toString
-  let line := if preserve && !exact.isEmpty && !exact.any (· == '\n')
-      then "| " ++ exact else joined
+  let line := if preserve && !exact.isEmpty && !exact.any (· == '\n') then "| " ++ exact else joined
   -- a ctor whose joined line cannot fit gets FILL mode: params packed and
   -- wrapped at the continuation (deterministic; grid-ineligible)
   let w := (← read).layout.lineWidth
   let lineDoc? : Option Doc :=
     if (needFill || joined.length + 4 > w) && !fillDocs.isEmpty then
-      some (.text ("| " ++ (if modsT.isEmpty then "" else modsT ++ " ") ++ nameT ++ " ")
-        ++ .nest 6 (Doc.fillSep fillDocs.toList
-             ++ (match tyT with | some t => Doc.text (" : " ++ t) | none => Doc.nil)))
-    else none
+      some
+        (.text ("| " ++ (if modsT.isEmpty then "" else modsT ++ " ") ++ nameT ++ " ")
+            ++ .nest
+              6
+              (Doc.fillSep fillDocs.toList
+                  ++ (match tyT with
+                  | some t => Doc.text (" : " ++ t)
+                  | none   => Doc.nil)))
+    else
+      none
   -- the doc comment is byte-exact on its own line above (it may be multi-line;
   -- it sits at a hardline position, literal emission is the stable choice)
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
@@ -96,13 +105,13 @@ private structure Item where
   hasPrefix : Bool
   line      : String
   /-- Doc-valued line (multi-line types walk); excluded from grids. -/
-  lineDoc   : Option Doc := none
+  lineDoc : Option Doc := none
   /-- the `name (binders)` segment of `line`, when the site aligns name columns
       (§7 structFields); empty when the site aligns trailing comments only -/
-  nameSeg   : String := ""
+  nameSeg : String := ""
   /-- the `: τ (:= v)` remainder matching `nameSeg` -/
-  restSeg   : String := ""
-  trailT    : String
+  restSeg : String := ""
+  trailT : String
   deriving Inhabited
 
 /-- Assemble body items, aligning RUNS of consecutive plain items that carry
@@ -186,6 +195,7 @@ def inductiveDoc?
     (alignDelta : Nat)
     (preserve : Bool := false)
     : Lean4Fmt.Emit.EmitM (Option Doc) := do
+
   let a := defn.getArgs
   if a.size != 7 then return none
   -- head: `inductive Name <binders> (: τ)? where` — one line, token-for-token
@@ -275,6 +285,7 @@ private def fieldDoc?
             (f : Lean.Syntax)
             (preserve : Bool)
             : Lean4Fmt.Emit.EmitM (Option (Doc × String × String × String × Option Doc)) := do
+
   if f.getKind != ``Lean.Parser.Command.structSimpleBinder then return none
   let a := f.getArgs
   if a.size != 4 then return none
@@ -325,13 +336,16 @@ private def fieldDoc?
   if defT.any (· == '\n') then return none
   if tyDoc?.isSome && !defT.isEmpty then return none
   let nameSeg := modsT ++ nameT ++ (parts.foldl (fun s p => s ++ " " ++ p) "")
-  let restSeg := (match tyT with | some t => ": " ++ t | none => "")
-    ++ (if defT.isEmpty then "" else (if tyT.isSome then " " else "") ++ defT)
+  let restSeg :=
+    (match tyT with
+    | some t => ": " ++ t
+    | none   => "")
+        ++ (if defT.isEmpty then "" else (if tyT.isSome then " " else "") ++ defT)
   let joined := nameSeg ++ (if restSeg.isEmpty then "" else " " ++ restSeg)
   -- exact tail: the field bytes from the name onward (doc rides docD)
   let exact := (Lean4Fmt.Emit.bareSrc (Lean.mkNullNode (a.extract 1 a.size))).trimAscii.toString
-  let line := if preserve && modsT.isEmpty && !exact.isEmpty && !exact.any (· == '\n')
-      then exact else joined
+  let line :=
+    if preserve && modsT.isEmpty && !exact.isEmpty && !exact.any (· == '\n') then exact else joined
   let lineDoc? := tyDoc?.map (fun d => Doc.text (nameSeg ++ " : ") ++ d)
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
   return some (docD, nameSeg, restSeg, line, lineDoc?)
@@ -350,6 +364,7 @@ def structureDoc?
     (alignDelta : Nat)
     (preserve : Bool := false)
     : Lean4Fmt.Emit.EmitM (Option Doc) := do
+
   let a := defn.getArgs
   if a.size != 6 then return none
   let kwT := (bareSrc a[0]!).trimAscii.toString
@@ -429,6 +444,7 @@ def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
     : Lean4Fmt.Emit.EmitM Doc := do
+
   let kind := stx.getKind
   if kind == ``Lean.Parser.Command.open || kind == ``Lean.Parser.Command.namespace
       || kind == ``Lean.Parser.Command.end || kind == ``Lean.Parser.Command.section
@@ -477,19 +493,16 @@ def emit
     let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? a[2]!).getD "")
       | return (← Lean4Fmt.Emit.verbatim stx)
     return .text (preT ++ " in") ++ sep ++ (← walk a[2]!)
-  if kind != ``Lean.Parser.Command.mutual then
-    return (← Lean4Fmt.Emit.verbatim stx)
+  if kind != ``Lean.Parser.Command.mutual then return (← Lean4Fmt.Emit.verbatim stx)
   let a := stx.getArgs
-  if a.size != 3 then
-    return (← Lean4Fmt.Emit.verbatim stx)
+  if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
   if ((a[2]?.map bareSrc).getD "").trimAscii.toString != "end" then
     return (← Lean4Fmt.Emit.verbatim stx)
   -- a comment on the `mutual` line itself has no home in the layout
   if !((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString.isEmpty then
     return (← Lean4Fmt.Emit.verbatim stx)
   let decls := (a[1]?.map (·.getArgs)).getD #[]
-  if decls.isEmpty then
-    return (← Lean4Fmt.Emit.verbatim stx)
+  if decls.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
   let mut body : Doc := .nil
   for d in decls do
     let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? d).getD "")

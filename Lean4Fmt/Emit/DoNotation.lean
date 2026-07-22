@@ -36,6 +36,7 @@ private def idDeclDoc?
             (walk : Lean4Fmt.Emit.Walk)
             (d : Lean.Syntax)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
+
   if d.getKind != ``Lean.Parser.Term.doIdDecl then return none
   let a := d.getArgs
   if a.size != 4 then return none
@@ -58,18 +59,21 @@ private def idDeclDoc?
     the bracketed `{ … }` shape or any structural surprise. -/
 private def stmts?
             (seq : Lean.Syntax)
-            : Option (Array Lean.Syntax) := Id.run do
-  if seq.getKind != ``Lean.Parser.Term.doSeqIndent then return none
-  let mut items : Array Lean.Syntax := #[]
-  for g in seq.getArgs do
-    for c in g.getArgs do
-      if c.getKind == ``Lean.Parser.Term.doSeqItem then items := items.push c
-  if items.isEmpty then return none
-  for it in items do
-    let ia := it.getArgs
-    if ia.size > 1 && !((Lean4Fmt.Emit.bareSrc (ia[ia.size-1]!)).trimAscii.toString.isEmpty) then
-      return none
-  return some (items.map (fun it => it.getArgs[0]?.getD Lean.Syntax.missing))
+            : Option (Array Lean.Syntax) :=
+
+  Id.run
+    do
+      if seq.getKind != ``Lean.Parser.Term.doSeqIndent then return none
+      let mut items : Array Lean.Syntax := #[]
+      for g in seq.getArgs do
+        for c in g.getArgs do
+          if c.getKind == ``Lean.Parser.Term.doSeqItem then items := items.push c
+      if items.isEmpty then return none
+      for it in items do
+        let ia := it.getArgs
+        if ia.size > 1 && !((Lean4Fmt.Emit.bareSrc (ia[ia.size-1]!)).trimAscii.toString.isEmpty) then
+          return none
+      return some (items.map (fun it => it.getArgs[0]?.getD Lean.Syntax.missing))
 
 /-- The statement LINES of a sequence: each statement preceded by its structural
     leading (comments/blanks — `leadingSep?`) and followed by its same-line
@@ -79,10 +83,11 @@ private def stmts?
     false there is NO seam for it (a then-branch before `else`) — any content
     there aborts to `none`. -/
 def seqLinesDoc?
-            (walk : Lean4Fmt.Emit.Walk)
-            (ss : Array Lean.Syntax)
-            (lastOwned : Bool)
-            : Lean4Fmt.Emit.EmitM (Option Doc) := do
+    (walk : Lean4Fmt.Emit.Walk)
+    (ss : Array Lean.Syntax)
+    (lastOwned : Bool)
+    : Lean4Fmt.Emit.EmitM (Option Doc) := do
+
   let mut body : Doc := .nil
   for h : i in [0:ss.size] do
     let stmt := ss[i]
@@ -114,6 +119,7 @@ private def branchDoc?
             (seq : Lean.Syntax)
             (lastOwned : Bool)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
+
   let some ss := stmts? seq | return none
   if ss.size == 1 then
     let lead := (Lean4Fmt.Syntax.leading? ss[0]!).getD ""
@@ -149,6 +155,7 @@ def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
     : Lean4Fmt.Emit.EmitM Doc := do
+
   -- preserveLineBreaks: a single-line do-statement is byte-exact (the
   -- author's `let x: T ← …` spacing survives); the do BLOCK itself and
   -- multi-line statements stay structural

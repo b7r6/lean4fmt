@@ -15,41 +15,64 @@ namespace Lean4Fmt.Style
 
 -- ── choice knobs ────────────────────────────────────────────────────────────
 
-inductive ColonPlacement | breakBefore | breakAfter
+inductive ColonPlacement
+  | breakBefore
+  | breakAfter
   deriving Repr, Inhabited, BEq
 
-inductive AlignMode | always | whenShort | never
+inductive AlignMode
+  | always
+  | whenShort
+  | never
   deriving Repr, Inhabited, BEq
 
-inductive BlankPolicy | preserve | impose | normalize
+inductive BlankPolicy
+  | preserve
+  | impose
+  | normalize
   deriving Repr, Inhabited, BEq
 
-inductive BinderLayout | oneLine | onePerLine | fill
+inductive BinderLayout
+  | oneLine
+  | onePerLine
+  | fill
   deriving Repr, Inhabited, BEq
 
 /-- Where a broken operator chain puts the operator: `leading` starts the
     continuation line with it (house); `trailing` ends the previous line with
     it (mathlib arrows). clang-format's BreakBeforeBinaryOperators. -/
-inductive OpBreak | leading | trailing
+inductive OpBreak
+  | leading
+  | trailing
   deriving Repr, Inhabited, BEq
 
 def AlignMode.ofString? : String → Option AlignMode
-  | "always" => some .always | "whenShort" => some .whenShort
-  | "never" => some .never | _ => none
+  | "always"    => some .always
+  | "whenShort" => some .whenShort
+  | "never"     => some .never
+  | _           => none
 
 def BlankPolicy.ofString? : String → Option BlankPolicy
-  | "preserve" => some .preserve | "impose" => some .impose
-  | "normalize" => some .normalize | _ => none
+  | "preserve"  => some .preserve
+  | "impose"    => some .impose
+  | "normalize" => some .normalize
+  | _           => none
 
 def ColonPlacement.ofString? : String → Option ColonPlacement
-  | "breakBefore" => some .breakBefore | "breakAfter" => some .breakAfter | _ => none
+  | "breakBefore" => some .breakBefore
+  | "breakAfter"  => some .breakAfter
+  | _             => none
 
 def BinderLayout.ofString? : String → Option BinderLayout
-  | "oneLine" => some .oneLine | "onePerLine" => some .onePerLine
-  | "fill" => some .fill | _ => none
+  | "oneLine"    => some .oneLine
+  | "onePerLine" => some .onePerLine
+  | "fill"       => some .fill
+  | _            => none
 
 def OpBreak.ofString? : String → Option OpBreak
-  | "leading" => some .leading | "trailing" => some .trailing | _ => none
+  | "leading"  => some .leading
+  | "trailing" => some .trailing
+  | _          => none
 
 -- ── grouped sub-records ─────────────────────────────────────────────────────
 
@@ -62,37 +85,37 @@ structure Layout where
       it the body breaks to its own line even though the line would fit.
       Mathlib-shaped corpora inline short decls but break bodies well before
       the hard width. Default = effectively off. -/
-  bodyFitWidth       : Nat := 1000
+  bodyFitWidth : Nat := 1000
   deriving Repr, Inhabited
 
 structure Breaking where
-  colon            : ColonPlacement := .breakAfter
-  binders          : BinderLayout := .oneLine
-  attributesOwnLine : Bool := false   -- `@[…]` on its own line above the keyword
-  bodyOwnLine      : Bool := false   -- broken decls: `:=` ends the sig, blank, body at indent
-  bodyAlwaysBreak  : Bool := false   -- body on its own line even when it fits inline (purtell)
+  colon : ColonPlacement := .breakAfter
+  binders : BinderLayout := .oneLine
+  attributesOwnLine : Bool := false -- `@[…]` on its own line above the keyword
+  bodyOwnLine : Bool := false -- broken decls: `:=` ends the sig, blank, body at indent
+  bodyAlwaysBreak : Bool := false -- body on its own line even when it fits inline (purtell)
   /-- Author line breaks are load-bearing: a construct written multi-line
       stays multi-line (no width-collapse); single-line stays byte-exact. -/
   preserveLineBreaks : Bool := false
-  compactDo        : Bool := true
-  elseIfChain      : Bool := true
+  compactDo   : Bool := true
+  elseIfChain : Bool := true
   /-- A single clean branch statement rides inline after its keyword when it
       fits (`if ok then pure true`); off = always on its own line. -/
-  inlineBranches   : Bool := true
+  inlineBranches : Bool := true
   /-- Bare (typeless, docless) inductive constructors join on ONE line when
       they fit (`| GET | POST | PUT`); off = one per line. -/
-  ctorsOneLine     : Bool := false
+  ctorsOneLine : Bool := false
   /-- `:= fun … =>` GLUES to the signature line (the lambda head rides the
       decl, its body breaks below) — the mathlib idiom; off = the fun is an
       ordinary body (inline when it fits, else its own line). -/
-  glueFun          : Bool := false
+  glueFun : Bool := false
   /-- Operator position when a binop/arrow chain breaks (see `OpBreak`). -/
-  opBreak          : OpBreak := .leading
+  opBreak : OpBreak := .leading
   /-- Over-width bracket lists (`simp only [...]`, `rw [...]`) FILL — items
       pack per line and wrap at the width, the closer glued to the last item
       (the mathlib shape); off = the all-or-nothing commaList (one item per
       line when broken). -/
-  listFill         : Bool := false
+  listFill : Bool := false
   deriving Repr, Inhabited
 
 structure Alignment where
@@ -135,7 +158,7 @@ structure Imports where
   deriving Repr, Inhabited
 
 structure Comments where
-  spaceAfterDashes : Bool := true   -- `--foo` → `-- foo`
+  spaceAfterDashes : Bool := true -- `--foo` → `-- foo`
   deriving Repr, Inhabited
 
 /-- The fully-resolved style. -/

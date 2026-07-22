@@ -58,10 +58,16 @@ private def seqGroupsCore?
   if groups.isEmpty then return none
   return some groups
 
-private def tacticGroups? (seq : Lean.Syntax) : Option (Array (Array Lean.Syntax)) :=
+private def tacticGroups?
+            (seq : Lean.Syntax)
+            : Option (Array (Array Lean.Syntax)) :=
+
   seqGroupsCore? ``Lean.Parser.Tactic.tacticSeq ``Lean.Parser.Tactic.tacticSeq1Indented seq
 
-private def convGroups? (seq : Lean.Syntax) : Option (Array (Array Lean.Syntax)) :=
+private def convGroups?
+            (seq : Lean.Syntax)
+            : Option (Array (Array Lean.Syntax)) :=
+
   seqGroupsCore? `Lean.Parser.Tactic.Conv.convSeq `Lean.Parser.Tactic.Conv.convSeq1Indented seq
 
 /-- One `;`-joined run as a single line: items token-for-token joined by
@@ -70,23 +76,25 @@ private def convGroups? (seq : Lean.Syntax) : Option (Array (Array Lean.Syntax))
     comment out the rest of the joined line). -/
 private def groupText?
             (g : Array Lean.Syntax)
-            : Option String := Id.run do
-  let mut txt := ""
-  for j in [0:g.size] do
-    let it := g[j]!
-    if Lean4Fmt.Syntax.interiorHasLineComment it then return none
-    let t := (Lean4Fmt.Emit.tokenJoin? it).getD
-      ((Lean4Fmt.Emit.bareSrc it).trimAscii.toString)
-    if t.isEmpty || t.any (· == '\n') then return none
-    if j + 1 < g.size then
-      let tr := (Lean4Fmt.Syntax.trailing? it).getD ""
-      if !tr.trimAscii.toString.isEmpty || tr.any (· == '\n') then return none
-    if j > 0 then
-      let ld := (Lean4Fmt.Syntax.leading? it).getD ""
-      if !ld.trimAscii.toString.isEmpty || ld.any (· == '\n') then return none
-    txt := if txt.isEmpty then t else txt ++ "; " ++ t
-  if txt.isEmpty then return none
-  return some txt
+            : Option String :=
+
+  Id.run
+    do
+      let mut txt := ""
+      for j in [0:g.size] do
+        let it := g[j]!
+        if Lean4Fmt.Syntax.interiorHasLineComment it then return none
+        let t := (Lean4Fmt.Emit.tokenJoin? it).getD ((Lean4Fmt.Emit.bareSrc it).trimAscii.toString)
+        if t.isEmpty || t.any (· == '\n') then return none
+        if j + 1 < g.size then
+          let tr := (Lean4Fmt.Syntax.trailing? it).getD ""
+          if !tr.trimAscii.toString.isEmpty || tr.any (· == '\n') then return none
+        if j > 0 then
+          let ld := (Lean4Fmt.Syntax.leading? it).getD ""
+          if !ld.trimAscii.toString.isEmpty || ld.any (· == '\n') then return none
+        txt := if txt.isEmpty then t else txt ++ "; " ++ t
+      if txt.isEmpty then return none
+      return some txt
 
 /-- One group's doc: a single tactic walks (active layouts apply); a
     `;`-joined run rides as one text line. -/
@@ -94,6 +102,7 @@ private def groupDoc?
             (walk : Lean4Fmt.Emit.Walk)
             (g : Array Lean.Syntax)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
+
   if g.size == 1 then return some (← walk g[0]!)
   return (groupText? g).map Doc.text
 
@@ -106,6 +115,7 @@ private def seqGroupsDoc?
             (groups : Array (Array Lean.Syntax))
             (lastOwned : Bool)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
+
   let mut body : Doc := .nil
   for h : i in [0:groups.size] do
     let g := groups[i]
@@ -135,6 +145,7 @@ private def armSeqDoc?
             (seq : Lean.Syntax)
             (conv : Bool := false)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
+
   let some groups := (if conv then convGroups? seq else tacticGroups? seq) | return none
   if groups.size == 1 then
     let lead := (Lean4Fmt.Syntax.leading? groups[0]![0]!).getD ""
@@ -152,26 +163,29 @@ private def armSeqDoc?
     skipped, one level of null nesting flattened; `none` on a multi-line item. -/
 private def listItems?
             (slice : Array Lean.Syntax)
-            : Option (Array Doc) := Id.run do
-  let mut items : Array Doc := #[]
-  -- an authored TRAILING comma (`[a, b,]`) has no slot in the rebuilt list
-  -- (commas go BETWEEN items) — bail rather than drop the token (gate-caught)
-  let mut lastComma := false
-  for c in slice do
-    if c.isAtom then
-      if (Lean4Fmt.Emit.bareSrc c).trimAscii.toString == "," then lastComma := true
-      continue
-    let subs := if c.getKind == Lean.nullKind then c.getArgs else #[c]
-    for d in subs do
-      if d.isAtom then
-        if (Lean4Fmt.Emit.bareSrc d).trimAscii.toString == "," then lastComma := true
-        continue
-      let t := Lean4Fmt.Emit.canonTok d
-      if t.isEmpty || t.any (· == '\n') then return none
-      items := items.push (.text t)
-      lastComma := false
-  if items.isEmpty || lastComma then return none
-  return some items
+            : Option (Array Doc) :=
+
+  Id.run
+    do
+      let mut items : Array Doc := #[]
+      -- an authored TRAILING comma (`[a, b,]`) has no slot in the rebuilt list
+      -- (commas go BETWEEN items) — bail rather than drop the token (gate-caught)
+      let mut lastComma := false
+      for c in slice do
+        if c.isAtom then
+          if (Lean4Fmt.Emit.bareSrc c).trimAscii.toString == "," then lastComma := true
+          continue
+        let subs := if c.getKind == Lean.nullKind then c.getArgs else #[c]
+        for d in subs do
+          if d.isAtom then
+            if (Lean4Fmt.Emit.bareSrc d).trimAscii.toString == "," then lastComma := true
+            continue
+          let t := Lean4Fmt.Emit.canonTok d
+          if t.isEmpty || t.any (· == '\n') then return none
+          items := items.push (.text t)
+          lastComma := false
+      if items.isEmpty || lastComma then return none
+      return some items
 
 /-- Generic token-line tactic: tokens single-spaced on ONE line, except
     bracket lists (`[a, b, c]` — simp lemmas, rw rules) which render as
@@ -179,9 +193,9 @@ private def listItems?
     tactic (and its enclosing body) verbatim. `none` on a multi-line piece
     outside a bracket list. -/
 private partial def lineWords?
-            (stx : Lean.Syntax)
-            (fill : Bool := false)
-            : Option (Array Doc) := Id.run do
+                    (stx : Lean.Syntax)
+                    (fill : Bool := false)
+                    : Option (Array Doc) := Id.run do
   let a := stx.getArgs
   let mut out : Array Doc := #[]
   let mut i := 0
@@ -217,8 +231,16 @@ private partial def lineWords?
   return some out
 
 /-- Join line words with single spaces. -/
-private def joinWords (ws : Array Doc) : Doc :=
-  ws.foldl (fun d w => match d with | .nil => w | _ => d ++ .text " " ++ w) .nil
+private def joinWords
+            (ws : Array Doc)
+            : Doc :=
+
+  ws.foldl
+    (fun d w =>
+      match d with
+      | .nil => w
+      | _    => d ++ .text " " ++ w)
+    .nil
 
 /-- A head-block tactic (`next h => …`, `case foo => …`, `all_goals …`,
     `repeat …`, `conv at x => …`): head tokens single-line joined, the body
@@ -230,6 +252,7 @@ private def headBlockDoc?
             (stx : Lean.Syntax)
             (conv : Bool := false)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
+
   let a := stx.getArgs
   if a.size < 2 then return none
   let mut head := ""
@@ -237,9 +260,8 @@ private def headBlockDoc?
     let c := a[i]!
     -- first child's leading = the FORM's own leading — the enclosing seam
     -- owns it (see exampleDoc?); interior comments still bail
-    let ownLead := if i == 0
-      then Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? c).getD "")
-      else 0
+    let ownLead :=
+      if i == 0 then Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? c).getD "") else 0
     if Lean4Fmt.Syntax.countSubtreeLineComments c > ownLead then return none
     let t := Lean4Fmt.Emit.canonTok c
     if t.any (· == '\n') then return none
@@ -258,6 +280,7 @@ def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
     : Lean4Fmt.Emit.EmitM Doc := do
+
   let kind := stx.getKind
   let a := stx.getArgs
   if kind == ``Lean.Parser.Tactic.exact || kind == ``Lean.Parser.Tactic.apply

@@ -56,6 +56,7 @@ unsafe def runJob
            (elabFallback : Bool := true)
            (retry : Option (String × Array String) := none)
            : IO Result := do
+
   let original ← IO.FS.readFile path
   try
     -- per-file config: `style` is the CLI base; fmt.lean chain overrides
@@ -79,7 +80,10 @@ unsafe def runJob
 /-- Whether a result is a candidate for the subprocess retry: unchanged output
     with a parse diagnostic (a superset-env conflict, an own-notation file the
     union could not help, or a genuinely broken file — the retry sorts them). -/
-private def Result.retryable (r : Result) : Bool :=
+private def Result.retryable
+            (r : Result)
+            : Bool :=
+
   r.output == r.original && r.diagnostics.any (·.rule == "parse")
 
 /-- The scheduler seam. The main pass is SEQUENTIAL today — the single place a
@@ -100,6 +104,7 @@ unsafe def runAll
            (elabFallback : Bool := true)
            (retry : Option (String × Array String) := none)
            : IO (Array Result) := do
+
   let env ← Frontend.batchEnv paths
   -- main pass: IO tasks over the shared frozen env (default task priority = the
   -- runtime's core-sized pool; the env is `leakEnv`-persistent, shared
@@ -111,9 +116,12 @@ unsafe def runAll
     match t.get with
     | .ok r => results := results.push r
     | .error e =>
-      results := results.push
-        { path := p, original := "", output := "",
-          diagnostics := #[{ severity := .error, rule := "io", message := toString e }] }
+      results :=
+        results.push
+          { path        := p,
+            original    := "",
+            output      := "",
+            diagnostics := #[{ severity := .error, rule := "io", message := toString e }] }
   let some (exe, extraArgs) := retry | return results
   let conflicted := (Array.range results.size).filter (fun i => results[i]!.retryable)
   if conflicted.isEmpty then return results
@@ -148,6 +156,7 @@ unsafe def runAll
 def expand
     (inputs : Array System.FilePath)
     : IO (Array System.FilePath) := do
+
   let mut acc : Array System.FilePath := #[]
   for p in inputs do
     if ← p.isDir then acc := acc ++ (← findLean p)

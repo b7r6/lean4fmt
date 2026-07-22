@@ -16,10 +16,13 @@ namespace Lean4Fmt.Config
 partial def discover
             (start : System.FilePath)
             : IO (Option System.FilePath) := do
+
   let cand := start / ".lean4fmt.lean"
   if ← cand.pathExists then return some cand
   match start.parent with
-  | some p => if p == start then return none else discover p
+  | some p =>
+    if p == start then return none
+    else discover p
   | none => return none
 
 end Lean4Fmt.Config

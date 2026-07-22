@@ -21,8 +21,9 @@ open Lean4Fmt
 
 unsafe def initEnvImpl
            : IO Unit := do
+
   initSearchPath (← findSysroot)
-  enableInitializersExecution   -- required before importing modules with syntax extensions
+  enableInitializersExecution -- required before importing modules with syntax extensions
 
 @[implemented_by initEnvImpl]
 opaque initEnv : IO Unit
@@ -33,7 +34,10 @@ opaque initEnv : IO Unit
     hand-built symlink farm. Additive and failure-tolerant: entries APPEND
     to the search path (an explicit LEAN_PATH keeps first-match priority),
     and a missing or failing `lake` is a silent skip, never an error. -/
-unsafe def addLakePathsImpl (files : List String) : IO Unit := do
+unsafe def addLakePathsImpl
+           (files : List String)
+           : IO Unit := do
+
   -- an explicit LEAN_PATH is the caller taking control (corpus-gate's farm,
   -- batch loops): skip the ~1.6s/root lake startup — discovery is the
   -- ZERO-CONFIG path, not an override
@@ -50,8 +54,7 @@ unsafe def addLakePathsImpl (files : List String) : IO Unit := do
       if (← (dir / "lakefile.lean").pathExists) || (← (dir / "lakefile.toml").pathExists) then
         if !roots.contains dir then roots := roots.push dir
         dir? := none
-      else
-        dir? := dir.parent
+      else dir? := dir.parent
       steps := steps + 1
   for root in roots do
     try
@@ -83,10 +86,12 @@ unsafe def runJobsImpl
            (logLevel : String)
            (lakeEnv : Bool)
            : IO (Array Driver.Result) := do
+
   let base := (Style.byName? preset).getD Style.straylight
-  let style := match width with
+  let style :=
+    match width with
     | some w => { base with layout := { base.layout with lineWidth := w } }
-    | none => base
+    | none   => base
   let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
   let retryCfg ← do
     if retry then
@@ -102,10 +107,8 @@ unsafe def runJobsImpl
   Driver.runAll style expanded elabFallback retryCfg
 
 @[implemented_by runJobsImpl]
-opaque runJobs
-    (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool)
-    (logLevel : String) (lakeEnv : Bool)
-    : IO (Array Driver.Result)
+opaque runJobs (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool) (logLevel : String) (lakeEnv : Bool) :
+    IO (Array Driver.Result)
 
 /-- Coverage accounting (`--stats`, DESIGN_V2 §15): per-file
     active/verbatim/trivia byte rows plus the aggregate. Files the shared env
@@ -118,10 +121,12 @@ unsafe def runStatsImpl
            (elabFallback : Bool)
            (retry : Bool)
            : IO (Array (Nat × Nat × Nat × String)) := do
+
   let base := (Style.byName? preset).getD Style.straylight
-  let style := match width with
+  let style :=
+    match width with
     | some w => { base with layout := { base.layout with lineWidth := w } }
-    | none => base
+    | none   => base
   let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
   let env ← Frontend.batchEnv expanded
   let exe ← IO.appPath
@@ -151,13 +156,13 @@ unsafe def runStatsImpl
   return rows
 
 @[implemented_by runStatsImpl]
-opaque runStats
-    (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool)
-    : IO (Array (Nat × Nat × Nat × String))
+opaque runStats (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool) :
+    IO (Array (Nat × Nat × Nat × String))
 
 def main
     (argv : List String)
     : IO Unit := do
+
   let o := Cli.parse argv
   if o.files.isEmpty then
     (← IO.getStderr).putStrLn Cli.usage
@@ -181,7 +186,8 @@ def main
     let pct (n d : Nat) : String :=
       if d == 0 then "-" else s!"{(n * 1000 / d) / 10}.{(n * 1000 / d) % 10}%"
     IO.println s!"// files {rows.size}  bytes active={ta} verbatim={tv} trivia={tt}"
-    IO.println s!"// coverage: code-active {pct ta code}  (of all output: active {pct ta (code + tt)}, trivia {pct tt (code + tt)})"
+    IO.println
+      s!"// coverage: code-active {pct ta code}  (of all output: active {pct ta (code + tt)}, trivia {pct tt (code + tt)})"
     return
 
   let results ← runJobs o.files o.width o.preset o.elabFallback o.retry o.logLevel o.lakeEnv
@@ -189,11 +195,12 @@ def main
   let mut failed := false
   for r in results do
     for d in r.diagnostics do
-      let lvl : Lean4Fmt.Log.Level := match d.severity with
-        | .debug => .debug
-        | .info => .info
+      let lvl : Lean4Fmt.Log.Level :=
+        match d.severity with
+        | .debug   => .debug
+        | .info    => .info
         | .warning => .warn
-        | .error => .error
+        | .error   => .error
       Lean4Fmt.Log.log lvl s!"{r.path}:{d.render}"
       if d.severity == .error then failed := true
     match o.mode with

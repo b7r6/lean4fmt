@@ -14,26 +14,29 @@ open Lean
 set_option maxRecDepth 100000
 
 structure StyleConfig where
-  lineWidth : Nat := 100
-  indent : Nat := 2
-  maxBlankLines : Nat := 1
+  lineWidth       : Nat := 100
+  indent          : Nat := 2
+  maxBlankLines   : Nat := 1
   trailingNewline : Bool := true
   deriving Repr, Inhabited
 
-inductive Severity where | warning | error deriving Repr, Inhabited
+inductive Severity where
+  | warning
+  | error
+  deriving Repr, Inhabited
 
 structure Diagnostic where
   severity : Severity
-  pos : Nat
-  message : String
+  pos      : Nat
+  message  : String
   deriving Repr, Inhabited
 
 structure EmitterState where
-  output : String := ""
-  column : Nat := 0
-  indentLevel : Nat := 0
+  output          : String := ""
+  column          : Nat := 0
+  indentLevel     : Nat := 0
   pendingNewlines : Nat := 0
-  pendingSpace : Bool := false
+  pendingSpace    : Bool := false
   /-- When true, suppress newlines (for inline expressions like match arm bodies) -/
   inlineMode : Bool := false
   lints : Array Diagnostic := #[]
@@ -58,6 +61,7 @@ def modifyState (f : EmitterState → EmitterState) : EmitterM Unit := modify f
 def emit
     (s : String)
     : EmitterM Unit := do
+
   if s.isEmpty then return
   let config ← getConfig
   let st ← getState
@@ -69,15 +73,22 @@ def emit
     out := out ++ spaces; col := spaces.length
   if st.pendingSpace && col > 0 then out := out.push ' '; col := col + 1
   out := out ++ s
-  for c in s.toList do if c == '\n' then col := 0 else col := col + 1
+  for c in s.toList do
+    if c == '\n' then col := 0
+    else col := col + 1
   set { st with output := out, column := col, pendingNewlines := 0, pendingSpace := false }
 
 def newline
     : EmitterM Unit := do
+
   let st ← getState
-  if st.inlineMode then return  -- suppress newlines in inline mode
+  if st.inlineMode then return -- suppress newlines in inline mode
   let config ← getConfig
-  modifyState fun st => { st with pendingNewlines := min (st.pendingNewlines + 1) (config.maxBlankLines + 1), pendingSpace := false }
+  modifyState
+    fun st =>
+      { st with
+        pendingNewlines := min (st.pendingNewlines + 1) (config.maxBlankLines + 1),
+        pendingSpace := false }
 
 def blankLine : EmitterM Unit := do newline; newline
 def space : EmitterM Unit := modifyState fun st => { st with pendingSpace := true }
@@ -89,6 +100,7 @@ def withInline
     {α : Type}
     (m : EmitterM α)
     : EmitterM α := do
+
   let oldInline := (← getState).inlineMode
   modifyState fun st => { st with inlineMode := true }
   let result ← m
@@ -103,6 +115,7 @@ def withInline
 def emitVerbatimStr
     (s : String)
     : EmitterM Unit := do
+
   let nonblank (l : String) : Bool := l.any (· != ' ')
   -- split; drop leading/trailing blank lines
   let mut ls := s.splitOn "\n"
@@ -131,12 +144,13 @@ def emitVerbatimStr
 def emitVerbatim
     (stx : Syntax)
     : EmitterM Unit := do
+
   -- Prefer reprint; fall back to the exact original source slice (reliable even
   -- when reprint is unavailable, e.g. some nodes after `updateLeading`).
   let src? : Option String :=
     match stx.reprint with
     | some s => some s
-    | none => (stx.getSubstring? true false).map (·.toString)
+    | none   => (stx.getSubstring? true false).map (·.toString)
   match src? with
   | some s =>
     -- Strip only trailing whitespace; KEEP the first line's leading indentation
@@ -152,13 +166,11 @@ def emitVerbatim
       -- Emit at the CURRENT indent level (no extra nesting): a verbatim body
       -- must stay column-aligned with its enclosing let-chain / continuation,
       -- which some column-sensitive custom syntaxes require.
-      modifyState fun st => { st with pendingNewlines := Nat.max st.pendingNewlines 1, pendingSpace := false }
+      modifyState
+        fun st => { st with pendingNewlines := Nat.max st.pendingNewlines 1, pendingSpace := false }
       emitVerbatimStr sTrim
-    else
-      emitVerbatimStr sTrim
+    else emitVerbatimStr sTrim
   | none => pure ()
-
-
 
 def getLeading
     (stx : Syntax)
@@ -180,6 +192,7 @@ open EmitterM
 def processLeading
     (stx : Syntax)
     : EmitterM Unit := do
+
   if let some leading := getLeading stx then
     if leading.isEmpty then return
     let st ← getState
@@ -197,13 +210,15 @@ def processLeading
           -- Only add newlines if we don't already have pending ones
           -- (or if trivia has MORE newlines than we have pending)
           if newlines > st.pendingNewlines then
-            if newlines > 1 then blankLine else newline
+            if newlines > 1 then blankLine
+            else newline
         emit trimmed
         newline
     else
       -- Just whitespace — convert to newlines (but not at start, and not if already pending)
       if !atStart && st.pendingNewlines == 0 then
-        if newlines > 1 then blankLine else if newlines > 0 then newline
+        if newlines > 1 then blankLine
+        else if newlines > 0 then newline
 
 /-- Check if a syntax kind is a binary operator (like «term_+_», «term_<_», etc.) -/
 def isBinOp
@@ -219,6 +234,7 @@ def isBinOp
 partial def hasLineComment
             (stx : Syntax)
             : Bool :=
+
   let inTrivia (info : SourceInfo) : Bool :=
     match info with
     | .original l _ t _ =>
@@ -227,15 +243,16 @@ partial def hasLineComment
       (ls.splitOn "--").length > 1 || (ts.splitOn "--").length > 1
     | _ => false
   match stx with
-  | .atom info _ => inTrivia info
+  | .atom info _      => inTrivia info
   | .ident info _ _ _ => inTrivia info
   | .node info _ args => inTrivia info || args.any hasLineComment
-  | .missing => false
+  | .missing          => false
 
 /-- Check if a syntax should be emitted inline (simple expressions without control flow) -/
 partial def isSimpleExpr
             (stx : Syntax)
             : Bool :=
+
   if hasLineComment stx then false else
   match stx with
   | .missing => true
@@ -269,6 +286,7 @@ partial def isSimpleExpr
 partial def emitSyntax
             (stx : Syntax)
             : EmitterM Unit := do
+
   match stx with
   | .missing => pure ()
   | .atom _info val => processLeading stx; emit val
@@ -787,7 +805,7 @@ where
     if h : 1 < args.size then emitSyntax args[1]!
 
   emitInstance (args : Array Syntax) : EmitterM Unit := do
-    -- args[0] = attrKind, args[1] = "instance", args[2] = priority?, args[3] = name?, 
+    -- args[0] = attrKind, args[1] = "instance", args[2] = priority?, args[3] = name?,
     -- args[4] = sig, args[5] = whereStructInst
     if args.size > 1 then processLeading args[1]!
     emit "instance"
@@ -1341,7 +1359,8 @@ def format
     : String × Array Diagnostic :=
 
   let ((), st) := EmitterM.run Unit config (Emitter.emitSyntax stx)
-  let output := if config.trailingNewline && !st.output.endsWith "\n" then st.output ++ "\n" else st.output
+  let output :=
+    if config.trailingNewline && !st.output.endsWith "\n" then st.output ++ "\n" else st.output
   (output, st.lints)
 
 end Lean4Fmt

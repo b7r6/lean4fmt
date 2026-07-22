@@ -78,7 +78,6 @@ namespace Lean4Fmt.Emit
     carrying span must stay whole-decl verbatim. (The probe string is the
     comment OPENER; spelling it here would nest — this docstring is itself
     such a token.) -/
-def reanchorsMultilineToken (s : String) : Bool :=
-  s.any (· == '\n') && (s.splitOn "/-").length > 1
+def reanchorsMultilineToken (s : String) : Bool := s.any (· == '\n') && (s.splitOn "/-").length > 1
 
 end Lean4Fmt.Emit

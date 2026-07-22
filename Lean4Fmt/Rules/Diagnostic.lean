@@ -11,7 +11,10 @@
 namespace Lean4Fmt.Rules
 
 inductive Severity where
-  | debug | info | warning | error
+  | debug
+  | info
+  | warning
+  | error
   deriving Repr, Inhabited, BEq
 
 structure Diagnostic where
@@ -25,8 +28,12 @@ def Diagnostic.render
     (d : Diagnostic)
     : String :=
 
-  let sev := match d.severity with
-    | .debug => "debug" | .info => "info" | .warning => "warning" | .error => "error"
+  let sev :=
+    match d.severity with
+    | .debug   => "debug"
+    | .info    => "info"
+    | .warning => "warning"
+    | .error   => "error"
   let tag := if d.rule.isEmpty then "" else s!" [{d.rule}]"
   s!"{d.pos}: {sev}{tag}: {d.message}"
 

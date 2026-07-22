@@ -30,6 +30,7 @@ private def commaGroup
             (l r : String)
             (children : Array Lean.Syntax)
             : EmitM Doc := do
+
   let mut ds : Array Doc := #[]
   for c in children do
     if c.isAtom then continue
@@ -37,8 +38,9 @@ private def commaGroup
   -- literal pools (§5 fill): many short flat items — byte tables, opcode
   -- lists — pack and wrap at the width instead of exploding one per line
   if ds.size ≥ 8 && ds.all (fun d => ((Lean4Fmt.Doc.flatWidth d).getD 1000) ≤ 12) then
-    let items := ((Array.range ds.size).map (fun i =>
-      ds[i]! ++ (if i + 1 == ds.size then Doc.nil else Doc.text ","))).toList
+    let items :=
+      ((Array.range ds.size).map
+        (fun i => ds[i]! ++ (if i + 1 == ds.size then Doc.nil else Doc.text ","))).toList
     return .text l ++ .nest 2 (Doc.fillSep items) ++ .text r
   return Lean4Fmt.Doc.commaList l r ds
 
@@ -55,6 +57,7 @@ private def seamCommaList?
             (pairs : Array (Lean.Syntax × Option Lean.Syntax))
             (closer : Lean.Syntax)
             : EmitM (Option Doc) := do
+
   if pairs.isEmpty then return none
   -- a comment on the opener's own line (`[ -- note`) is OUR zone
   let openTrail := ((Lean4Fmt.Syntax.trailing? opener).getD "").trimAscii.toString
@@ -106,9 +109,10 @@ private def seamCommaList?
     `structInstFieldDef` in «rest») is walked so it lays out actively. A shorthand
     field `{ x }` (no `:=`) is just its LVal. -/
 private partial def structFieldDoc
-            (walk : Walk)
-            (field : Lean.Syntax)
-            : EmitM Doc := do
+                    (walk : Walk)
+                    (field : Lean.Syntax)
+                    : EmitM Doc := do
+
   let fa := field.getArgs
   let lvalStx := fa[0]?.getD .missing
   let lvalT := bareSrc lvalStx
@@ -120,12 +124,11 @@ private partial def structFieldDoc
   match fd? with
   | some fd =>
     let da := fd.getArgs
-    let v := da[da.size - 1]?.getD Lean.Syntax.missing        -- [":=", null?, value]
+    let v := da[da.size - 1]?.getD Lean.Syntax.missing -- [":=", null?, value]
     -- a field with BINDERS or type ascription (`symm _ _ h := …`) carries
     -- tokens between the lval and the value — the lval++":="++value shape
     -- would DELETE them (gate-caught on mathlib): token-exact join instead
-    let expected := Lean4Fmt.Syntax.leafToks lvalStx
-      ++ #[":="] ++ Lean4Fmt.Syntax.leafToks v
+    let expected := Lean4Fmt.Syntax.leafToks lvalStx ++ #[":="] ++ Lean4Fmt.Syntax.leafToks v
     if Lean4Fmt.Syntax.leafToks field != expected then
       let t := Lean4Fmt.Emit.canonTok field
       if t.isEmpty || t.any (· == '\n') then return (← verbatim field)
@@ -140,6 +143,7 @@ partial def emit
             (walk : Walk)
             (stx : Lean.Syntax)
             : EmitM Doc := do
+
   -- comment hazard (§0.4): never restructure a subtree carrying a line comment.
   -- The tail token's TRAILING is exempt: it belongs to the enclosing seam
   -- (whoever places this form also places its trailing — Module for commands,

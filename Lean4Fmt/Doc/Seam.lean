@@ -33,16 +33,20 @@ def seamSep (blanks : Nat) : Doc := if blanks > 0 then .blank blanks else .hardl
 def seamLines (base : Nat) : Nat → List (List Char) → Doc
   | blanks, [] => seamSep blanks
   | blanks, l :: ls =>
-    if wsLine l then seamLines base (blanks + 1) ls
+    if wsLine l then
+      seamLines base (blanks + 1) ls
     else
-      seamSep blanks ++ .textRaw (String.ofList (trimEndWs (dedent base l)))
-        ++ seamLines base 0 ls
+      seamSep blanks ++ .textRaw (String.ofList (trimEndWs (dedent base l))) ++ seamLines base 0 ls
 
 /-- The dedent column of a seam run: the minimum space-indent over its comment
     lines (relative offsets between comments survive the re-anchoring). -/
-def seamBase (full : List (List Char)) : Nat :=
+def seamBase
+    (full : List (List Char))
+    : Nat :=
+
   (full.filter (fun l => !wsLine l)).foldl
-    (fun m l => Nat.min m (l.takeWhile (· == ' ')).length) 1000000
+    (fun m l => Nat.min m (l.takeWhile (· == ' ')).length)
+    1000000
 
 /-- Structural placement of a form's leading trivia, as the separator doc that
     goes BEFORE the form in a vertical sequence (a do-statement, an inductive
@@ -55,11 +59,19 @@ def seamBase (full : List (List Char)) : Nat :=
     content (e.g. a block comment on the form's line), there is no seam that
     owns it and the answer is `none` — the caller goes verbatim. Pure
     single-newline trivia degenerates to the plain `.hardline` separator. -/
-def leadingSep? (lead : String) : Option Doc :=
-  if !wsLine ((splitLines lead.toList).headD []) then none
-  else if !wsLine ((splitLines lead.toList).getLastD []) then none
+def leadingSep?
+    (lead : String)
+    : Option Doc :=
+
+  if !wsLine ((splitLines lead.toList).headD []) then
+    none
+  else if !wsLine ((splitLines lead.toList).getLastD []) then
+    none
   else
-    some (seamLines (seamBase (((splitLines lead.toList).drop 1).dropLast)) 0
-      (((splitLines lead.toList).drop 1).dropLast))
+    some
+      (seamLines
+        (seamBase (((splitLines lead.toList).drop 1).dropLast))
+        0
+        (((splitLines lead.toList).drop 1).dropLast))
 
 end Lean4Fmt.Doc

@@ -29,13 +29,13 @@ structure StylePatch where
 
 /-- Right-biased merge: the later patch wins per group. -/
 instance : Append StylePatch := ⟨fun a b => {
-  layout     := b.layout <|> a.layout
-  breaking   := b.breaking <|> a.breaking
-  alignment  := b.alignment <|> a.alignment
+  layout := b.layout <|> a.layout
+  breaking := b.breaking <|> a.breaking
+  alignment := b.alignment <|> a.alignment
   blankLines := b.blankLines <|> a.blankLines
-  spacing    := b.spacing <|> a.spacing
-  imports    := b.imports <|> a.imports
-  comments   := b.comments <|> a.comments
+  spacing := b.spacing <|> a.spacing
+  imports := b.imports <|> a.imports
+  comments := b.comments <|> a.comments
 }⟩
 
 /-- Apply a patch to a base style (patch wins where present). -/
@@ -43,13 +43,13 @@ def Style.apply
     (base : Style)
     (p : StylePatch)
     : Style := {
-  layout     := p.layout.getD base.layout
-  breaking   := p.breaking.getD base.breaking
-  alignment  := p.alignment.getD base.alignment
+  layout := p.layout.getD base.layout
+  breaking := p.breaking.getD base.breaking
+  alignment := p.alignment.getD base.alignment
   blankLines := p.blankLines.getD base.blankLines
-  spacing    := p.spacing.getD base.spacing
-  imports    := p.imports.getD base.imports
-  comments   := p.comments.getD base.comments
+  spacing := p.spacing.getD base.spacing
+  imports := p.imports.getD base.imports
+  comments := p.comments.getD base.comments
 }
 
 end Lean4Fmt.Style

@@ -16,26 +16,43 @@
 namespace Lean4Fmt.Log
 
 inductive Level where
-  | trace | debug | info | warn | error
+  | trace
+  | debug
+  | info
+  | warn
+  | error
   deriving Repr, DecidableEq, Inhabited
 
 def Level.rank : Level → Nat
-  | .trace => 0 | .debug => 1 | .info => 2 | .warn => 3 | .error => 4
+  | .trace => 0
+  | .debug => 1
+  | .info  => 2
+  | .warn  => 3
+  | .error => 4
 
 def Level.tag : Level → String
-  | .trace => "trace" | .debug => "debug" | .info => "info"
-  | .warn => "warning" | .error => "error"
+  | .trace => "trace"
+  | .debug => "debug"
+  | .info  => "info"
+  | .warn  => "warning"
+  | .error => "error"
 
 def Level.ofString : String → Level
-  | "trace" => .trace | "debug" => .debug | "info" => .info
-  | "error" => .error | _ => .warn
+  | "trace" => .trace
+  | "debug" => .debug
+  | "info"  => .info
+  | "error" => .error
+  | _       => .warn
 
 initialize levelRef : IO.Ref Level ← IO.mkRef .warn
 
 def setLevel (l : Level) : IO Unit := levelRef.set l
 
-def log (l : Level) (msg : String) : IO Unit := do
-  if l.rank ≥ (← levelRef.get).rank then
-    (← IO.getStderr).putStrLn s!"[{l.tag}] {msg}"
+def log
+    (l : Level)
+    (msg : String)
+    : IO Unit := do
+
+  if l.rank ≥ (← levelRef.get).rank then (← IO.getStderr).putStrLn s!"[{l.tag}] {msg}"
 
 end Lean4Fmt.Log

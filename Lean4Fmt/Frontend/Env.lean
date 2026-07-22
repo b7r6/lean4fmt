@@ -24,6 +24,7 @@ open Lean
 unsafe def fileImports
            (path : System.FilePath)
            : IO (Array Import) := do
+
   try
     let contents ← IO.FS.readFile path
     let ictx := Parser.mkInputContext contents path.toString
@@ -40,6 +41,7 @@ unsafe def fileImports
 unsafe def importsEnv
            (imports : Array Import)
            : IO Environment := do
+
   let mut seen : NameSet := {}
   let mut resolved : Array Import := #[]
   for imp in imports do
@@ -72,6 +74,7 @@ def importsKey
 unsafe def batchEnv
            (paths : Array System.FilePath)
            : IO Environment := do
+
   let mut all : Array Import := #[]
   for p in paths do
     all := all ++ (← fileImports p)
@@ -87,6 +90,7 @@ unsafe def statsFor
            (style : Lean4Fmt.Style.Style)
            (elabFallback : Bool := true)
            : IO (Option (Nat × Nat × Nat)) := do
+
   match ← parseFull? env path contents elabFallback with
   | none => pure none
   | some stx =>

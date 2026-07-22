@@ -58,9 +58,9 @@ private def headerDoc?
     clamp to policy). `none` when the trivia has a shape no seam owns
     (a same-line head segment with content). -/
 private def moduleTrivia?
-    (lead : String)
-    (atFileStart : Bool)
-    : Option Doc := Id.run do
+            (lead : String)
+            (atFileStart : Bool)
+            : Option Doc := Id.run do
   let ls := lead.splitOn "\n"
   if ls.isEmpty then return some .nil
   -- head segment: remainder of the previous line (must be ws) — except at
@@ -128,10 +128,10 @@ private def moduleTrivia?
 /-- Drop the leftmost separator of a seam doc (the file head has no previous
     line — a leading hardline/blank would open the file with a stray newline). -/
 private partial def dropLeadingSep : Doc → Doc
-  | .cat a b => .cat (dropLeadingSep a) b
+  | .cat a b  => .cat (dropLeadingSep a) b
   | .hardline => .nil
-  | .blank _ => .nil
-  | d => d
+  | .blank _  => .nil
+  | d         => d
 
 /-- Emit a whole module: each form (header + commands) as
     `leading ++ walk(bare) ++ trailing`. Since leading[next] and trailing[prev]
@@ -149,6 +149,7 @@ def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
     : Lean4Fmt.Emit.EmitM Doc := do
+
   let style ← read
   let args := stx.getArgs
   -- multi-line form ⇢ participates in the imposed top-level rhythm. Decided
@@ -159,16 +160,15 @@ def emit
   let multi (body : Doc) : Bool :=
     match Lean4Fmt.Doc.flatWidth body with
     | some w => w > style.layout.lineWidth
-    | none => true
+    | none   => true
   -- normalizable gap: whitespace-only, has a newline, a multi-line neighbor
-  let gapOk (p c : Lean.Syntax) (pBody cBody : Doc) : Bool := Id.run do
-    if style.blankLines.policy != Lean4Fmt.Style.BlankPolicy.normalize then
-      return false
-    let gap := ((Lean4Fmt.Syntax.trailing? p).getD "")
-      ++ ((Lean4Fmt.Syntax.leading? c).getD "")
-    let nls := (gap.toList.filter (· == '\n')).length
-    return gap.toList.all (·.isWhitespace) && nls ≥ 1
-      && (multi pBody || multi cBody || nls ≥ 2)
+  let gapOk (p c : Lean.Syntax) (pBody cBody : Doc) : Bool :=
+    Id.run
+      do
+        if style.blankLines.policy != Lean4Fmt.Style.BlankPolicy.normalize then return false
+        let gap := ((Lean4Fmt.Syntax.trailing? p).getD "") ++ ((Lean4Fmt.Syntax.leading? c).getD "")
+        let nls := (gap.toList.filter (· == '\n')).length
+        return gap.toList.all (·.isWhitespace) && nls ≥ 1 && (multi pBody || multi cBody || nls ≥ 2)
   -- file-head leading (banner comments, blanks): structural under normalize —
   -- prepending a virtual newline makes the seam kit treat every banner line
   -- as a full line; the artificial first separator is dropped
@@ -176,10 +176,11 @@ def emit
     if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize then
       match moduleTrivia? lead (atFileStart := true) with
       | some d => d
-      | none => .textRaw lead
-    else .textRaw lead
+      | none   => .textRaw lead
+    else
+      .textRaw lead
   let mut acc : Doc := .nil
-  let mut prev : Option (Lean.Syntax × Doc) := none   -- previous form + its body; trailing HELD
+  let mut prev : Option (Lean.Syntax × Doc) := none -- previous form + its body; trailing HELD
   let mut pendTrail : Doc := .nil
   match args[0]? with
   | some h =>
@@ -242,17 +243,16 @@ def emit
           match gapDoc? with
           | some g => acc := acc ++ g ++ body
           | none => acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leadingRaw c ++ body
-    | none =>
-      acc := acc ++ fileHead ((Lean4Fmt.Syntax.leading? c).getD "") ++ body
+    | none => acc := acc ++ fileHead ((Lean4Fmt.Syntax.leading? c).getD "") ++ body
     prev := some (c, body)
     pendTrail := Lean4Fmt.Emit.trailingRaw c
   -- the FINAL trailing (EOF region): whitespace-only canonicalizes to nothing
   -- (the renderer supplies the final newline); comments stay byte-exact
-  let finalWs := match prev with
+  let finalWs :=
+    match prev with
     | some (p, _) => (((Lean4Fmt.Syntax.trailing? p).getD "").toList.all (·.isWhitespace))
-    | none => false
-  if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize && finalWs then
-    return acc
+    | none        => false
+  if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize && finalWs then return acc
   return acc ++ pendTrail
 
 end Lean4Fmt.Emit.Module

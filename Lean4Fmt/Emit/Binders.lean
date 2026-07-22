@@ -22,9 +22,9 @@ open Lean Lean4Fmt.Doc
     on anything else, a multi-line piece, or a comment (a line comment forces a
     newline into its segment, so the '\n' guard covers it). -/
 def binderText?
-            (b : Lean.Syntax)
-            (preserve : Bool := false)
-            : Option String := Id.run do
+    (b : Lean.Syntax)
+    (preserve : Bool := false)
+    : Option String := Id.run do
   let k := b.getKind
   if k != ``Lean.Parser.Term.explicitBinder && k != ``Lean.Parser.Term.implicitBinder
       && k != ``Lean.Parser.Term.strictImplicitBinder && k != ``Lean.Parser.Term.instBinder then
@@ -51,9 +51,10 @@ def binderText?
     a MULTI-LINE binder walks its type (chains/apps lay out actively inside
     the brackets); verbatim only when the shape offers no seam. -/
 def binderDoc
-            (walk : Lean4Fmt.Emit.Walk)
-            (b : Lean.Syntax)
-            : EmitM Doc := do
+    (walk : Lean4Fmt.Emit.Walk)
+    (b : Lean.Syntax)
+    : EmitM Doc := do
+
   match binderText? b (← read).spacing.preserveBinders with
   | some t => pure (.text t)
   | none =>
@@ -87,6 +88,5 @@ def binderDoc
         if ok && !head.isEmpty then
           return .text (l ++ head) ++ tyDoc ++ .text r
     verbatim b
-
 
 end Lean4Fmt.Emit

@@ -31,43 +31,45 @@ abbrev BlankReq := Nat
 inductive Doc where
   -- Wadler/Leijen core
   | nil
-  | text       (s : String)
-  | cat        (a b : Doc)
-  | line                                    -- flat: " "  ; break: newline+indent
-  | softline                                -- flat: ""   ; break: newline+indent
-  | hardline                                -- always newline+indent
-  | group      (d : Doc)                    -- try flat; break whole group if it won't fit
-  | nest       (n : Int) (d : Doc)          -- shift break-indent of `d` by n
-  | align      (d : Doc)                    -- set break-indent to the current column
+  | text (s : String)
+  | cat (a b : Doc)
+  | line -- flat: " "  ; break: newline+indent
+  | softline -- flat: ""   ; break: newline+indent
+  | hardline -- always newline+indent
+  | group (d : Doc) -- try flat; break whole group if it won't fit
+  | nest (n : Int) (d : Doc) -- shift break-indent of `d` by n
+  | align (d : Doc) -- set break-indent to the current column
   -- extensions
   -- container payloads are LISTS (not arrays) so the Doc walkers get
   -- structural nested recursion — total by construction, provable in Proofs
-  | alignTable (spec : ColSpec) (rows : List (List Doc))   -- §7
+  | alignTable (spec : ColSpec) (rows : List (List Doc)) -- §7
   -- §7 with composition: the padded table WHEN the run's column delta is under
   -- spec.maxDelta AND every padded row fits the line width — otherwise the
   -- ordinary fallback layout ("a cell that must wrap opts out of the grid").
-  | alignOr    (spec : ColSpec) (rows : List (List Doc)) (fallback : Doc)
+  | alignOr (spec : ColSpec) (rows : List (List Doc)) (fallback : Doc)
   -- §5: pack flat items separated by single spaces, wrapping at the width
   -- (literal pools — byte tables, opcode lists). Items must be flat-capable.
-  | fillSep    (items : List Doc)
-  | blank      (req : BlankReq)                              -- §8
-  | flatten    (d : Doc)                                     -- force flat
+  | fillSep (items : List Doc)
+  | blank (req : BlankReq) -- §8
+  | flatten (d : Doc)      -- force flat
   -- phantom width: renders NOTHING (flat width 0 — T2 exactness holds), but a
   -- group fit counts it via `padWidth` — the reserve for un-breakable text the
   -- CALLER appends after the group on the same line (` := by` after a sig)
-  | pad        (n : Nat)
-  | textRaw    (s : String)                                  -- verbatim comment (may contain '\n')
-  | verbatim   (src : String) (baseIndent : Nat)             -- opaque reproduction (§4.1)
+  | pad (n : Nat)
+  | textRaw (s : String) -- verbatim comment (may contain '\n')
+  | verbatim (src : String) (baseIndent : Nat) -- opaque reproduction (§4.1)
   deriving Inhabited
 
 namespace Doc
 
 /-- `cat`/`nil` form a monoid; this instance is that monoid's `<>`. -/
 instance : Append Doc := ⟨Doc.cat⟩
+
 instance : HAdd Doc Doc Doc := ⟨Doc.cat⟩
 
 @[inline]
 def empty : Doc := .nil
+
 @[inline]
 def space : Doc := .text " "
 

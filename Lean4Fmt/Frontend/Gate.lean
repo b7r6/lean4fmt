@@ -40,10 +40,12 @@ unsafe def parseFull?
            (path contents : String)
            (elabFallback : Bool := true)
            : IO (Option Lean.Syntax) := do
+
   match ← parseModule? env path contents with
   | some stx => pure (some stx)
   | none =>
-    if elabFallback then Session.parseModule? env path contents else pure none
+    if elabFallback then Session.parseModule? env path contents
+    else pure none
 
 /-- The safety gate: return the text to emit — the actively-formatted output when
     it provably preserves meaning and is a fixed point, else the original — paired
@@ -57,39 +59,59 @@ unsafe def formatSafe
            (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
            (elabFallback : Bool := true)
            : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
+
   match ← parseFull? env path contents elabFallback with
   | none =>
-    let msg := if elabFallback
-      then "not formatted: could not parse (unresolved imports or unsupported syntax)"
-      else "not formatted: needs the elaborating frontend (rerun with --elab auto)"
+    let msg :=
+      if elabFallback then
+        "not formatted: could not parse (unresolved imports or unsupported syntax)"
+      else
+        "not formatted: needs the elaborating frontend (rerun with --elab auto)"
     pure (contents, #[{ severity := .warning, rule := "parse", message := msg }])
   | some stx =>
     let lintDiags := Lean4Fmt.Rules.lint stx
     let (active, emitDiags) := Lean4Fmt.Emit.format style stx.updateLeading
     let diags := lintDiags ++ emitDiags
     if active == contents then pure (contents, diags)
-    else match ← parseFull? env path active elabFallback with
-    | none =>
-      -- gate fallback is NEVER silent: an emitter bug that breaks the reparse
-      -- would otherwise masquerade as a byte-identical "OK" in --check
-      pure (contents, diags.push
-        { severity := .warning, rule := "gate", message := "not formatted: output failed to reparse (gate fallback)" })
-    | some stx2 =>
-      let (active2, _) := Lean4Fmt.Emit.format style stx2.updateLeading
-      let toksOk := Lean4Fmt.Syntax.leafToks stx == Lean4Fmt.Syntax.leafToks stx2  -- tokens preserved
-      let spineOk := Lean4Fmt.Syntax.kindSpine stx == Lean4Fmt.Syntax.kindSpine stx2  -- tree shape kept: in
-            -- whitespace-sensitive regions (tactic bullets, branches) identical
-            -- tokens can parse to a DIFFERENT tree — re-scoped meaning the token
-            -- check alone cannot see
-      let cmtOk := Lean4Fmt.Syntax.commentContent stx == Lean4Fmt.Syntax.commentContent stx2  -- comments kept
-      let hdrOk := headerToks stx == headerToks stx2                                -- imports in header
-      let fixOk := active2 == active                                                -- fixed point
-      if toksOk && spineOk && cmtOk && hdrOk && fixOk then pure (active, diags)
-      else
-        let why := if !toksOk then "tokens" else if !spineOk then "tree"
-          else if !cmtOk then "comments" else if !hdrOk then "header" else "fixed-point"
-        pure (contents, diags.push
-          { severity := .warning, rule := "gate", message := s!"not formatted: gate rejected output ({why})" })
+    else
+      match ← parseFull? env path active elabFallback with
+      | none =>
+        -- gate fallback is NEVER silent: an emitter bug that breaks the reparse
+        -- would otherwise masquerade as a byte-identical "OK" in --check
+        pure
+          (
+            contents,
+            diags.push
+              { severity := .warning,
+                rule     := "gate",
+                message  := "not formatted: output failed to reparse (gate fallback)" }
+          )
+      | some stx2 =>
+        let (active2, _) := Lean4Fmt.Emit.format style stx2.updateLeading
+        let toksOk := Lean4Fmt.Syntax.leafToks stx == Lean4Fmt.Syntax.leafToks stx2 -- tokens preserved
+        let spineOk := Lean4Fmt.Syntax.kindSpine stx == Lean4Fmt.Syntax.kindSpine stx2 -- tree shape kept: in
+        -- whitespace-sensitive regions (tactic bullets, branches) identical
+        -- tokens can parse to a DIFFERENT tree — re-scoped meaning the token
+        -- check alone cannot see
+        let cmtOk := Lean4Fmt.Syntax.commentContent stx == Lean4Fmt.Syntax.commentContent stx2 -- comments kept
+        let hdrOk := headerToks stx == headerToks stx2 -- imports in header
+        let fixOk := active2 == active -- fixed point
+        if toksOk && spineOk && cmtOk && hdrOk && fixOk then pure (active, diags)
+        else
+          let why :=
+            if !toksOk then
+              "tokens"
+            else if !spineOk then
+              "tree"
+            else if !cmtOk then "comments" else if !hdrOk then "header" else "fixed-point"
+          pure
+            (
+              contents,
+              diags.push
+                { severity := .warning,
+                  rule     := "gate",
+                  message  := s!"not formatted: gate rejected output ({why})" }
+            )
 
 /-- Build the environment for a file (loads its imports) and format it. -/
 unsafe def formatFile
@@ -97,6 +119,7 @@ unsafe def formatFile
            (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
            (elabFallback : Bool := true)
            : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
+
   let ictx := Parser.mkInputContext contents path
   let (hdr, _, msgs) ← Parser.parseHeader ictx
   let (env, _) ← Elab.processHeader hdr {} msgs ictx (trustLevel := 1024)

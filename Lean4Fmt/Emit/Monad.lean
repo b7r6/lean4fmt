@@ -50,7 +50,11 @@ def bareSrc
     `skipBytes` shifts the range base when `s` is a SUFFIX of the node's bare
     source (spanBodyBlank hands us the tail lines). Whole-node fallbacks: no
     substring/position info, or range geometry that doesn't land inside `s`. -/
-def canonWsPiecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) : String := Id.run do
+def canonWsPiecewise
+    (stx : Lean.Syntax)
+    (s : String)
+    (skipBytes : Nat := 0)
+    : String := Id.run do
   if Lean4Fmt.Syntax.hasQuotationCommand stx then return s
   let some ranges := Lean4Fmt.Syntax.quotTermRanges? stx | return s
   if ranges.isEmpty then return Lean4Fmt.Doc.canonVerbatimWs s
@@ -81,9 +85,15 @@ def canonWsPiecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) : S
     `verbatim` emits it; PROBE constructions (docs built speculatively and
     possibly discarded) use `verbatimQuiet` and log at their decision site —
     the trail reports what is EMITTED, not what was considered. -/
-def logOptOut (stx : Lean.Syntax) : EmitM Unit :=
-  emitDiag { severity := .debug, pos := (stx.getPos?.map (·.byteIdx)).getD 0,
-             rule := "verbatim", message := s!"opt-out: {stx.getKind}" }
+def logOptOut
+    (stx : Lean.Syntax)
+    : EmitM Unit :=
+
+  emitDiag
+    { severity := .debug,
+      pos      := (stx.getPos?.map (·.byteIdx)).getD 0,
+      rule     := "verbatim",
+      message  := s!"opt-out: {stx.getKind}" }
 
 /-- Opaque reproduction (§4.1): the safe default for any construct not yet
     actively formatted. Reproduces the BARE source as a re-anchorable `verbatim`
@@ -94,10 +104,13 @@ def logOptOut (stx : Lean.Syntax) : EmitM Unit :=
 def verbatimQuiet
     (stx : Lean.Syntax)
     : EmitM Doc := do
+
   let lead := (Lean4Fmt.Syntax.leading? stx).getD ""
-  let base := if lead.any (· == '\n')
-    then (((lead.splitOn "\n").getLastD "").toList.takeWhile (· == ' ')).length
-    else 0
+  let base :=
+    if lead.any (· == '\n') then
+      (((lead.splitOn "\n").getLastD "").toList.takeWhile (· == ' ')).length
+    else
+      0
   -- zero-passthrough closure for the opaque tail: interior ws-run collapse
   -- (canonVerbatimWs) makes even UNPORTED content a canonical function of the
   -- tokens+comments — spacing preservation is exactly what preservation mode
@@ -107,8 +120,7 @@ def verbatimQuiet
   -- subtrees ride whole-node byte-exact, embedded quotation TERMS byte-exact
   -- by range, templates via canonVerbatimWs' own template mode — everything
   -- else collapses
-  let canon := fun (t : String) =>
-    if preserve then t else canonWsPiecewise stx t
+  let canon := fun (t : String) => if preserve then t else canonWsPiecewise stx t
   let s := bareSrc stx
   if s.isEmpty then
     match stx.reprint with
@@ -120,6 +132,7 @@ def verbatimQuiet
 def verbatim
     (stx : Lean.Syntax)
     : EmitM Doc := do
+
   if !(bareSrc stx).isEmpty then   -- an empty node emits nothing: not an opt-out
     logOptOut stx
   verbatimQuiet stx
@@ -128,8 +141,12 @@ def verbatim
 def passthrough
     (stx : Lean.Syntax)
     : EmitM Doc := do
-  emitDiag { severity := .debug, pos := (stx.getPos?.map (·.byteIdx)).getD 0,
-             rule := "passthrough", message := s!"opt-out: {stx.getKind}" }
+
+  emitDiag
+    { severity := .debug,
+      pos      := (stx.getPos?.map (·.byteIdx)).getD 0,
+      rule     := "passthrough",
+      message  := s!"opt-out: {stx.getKind}" }
   pure (.textRaw ((stx.getSubstring? true false).map (·.toString) |>.getD ""))
 
 /-- Structural placement of a form's leading trivia, as the separator doc that
@@ -144,10 +161,7 @@ def passthrough
     trivia degenerates to the plain `.hardline` separator. `none` when the head
     segment carries content (a comment the previous line's trailing did not
     capture — no seam for it; the caller goes verbatim). -/
-def leadingSep?
-    (lead : String)
-    : Option Doc :=
-  Lean4Fmt.Doc.leadingSep? lead
+def leadingSep? (lead : String) : Option Doc := Lean4Fmt.Doc.leadingSep? lead
 
 /-- §7 matchArms: the aligned form `| pat => body` with the arrow column padded
     across a whole arm set — offered via `alignOr`, so the delta guardrail and
@@ -196,39 +210,49 @@ def armsAlignedRuns
     (mode : Lean4Fmt.Style.AlignMode)
     (maxDelta : Nat)
     (pieces : Array ArmPiece)
-    : Doc := Id.run do
-  let flush := fun (out sectLead : Doc) (sect : Array ArmPiece) => Id.run do
-    if sect.isEmpty then return out
-    let mut plainJ : Doc := .nil
-    let mut rows : Array (Doc × Option Doc) := #[]
-    let mut allGrid := true
-    for h : j in [0:sect.size] do
-      let p := sect[j]
-      plainJ := plainJ ++ (if j == 0 then Doc.nil else Doc.hardline) ++ p.doc
-      match p.gridRow with
-      | some r => rows := rows.push r
-      | none => allGrid := false
-    let body := if allGrid then armsAligned mode maxDelta rows plainJ else plainJ
-    return out ++ sectLead ++ body
-  let mut out : Doc := .nil
-  let mut sect : Array ArmPiece := #[]
-  let mut sectLead : Doc := .nil
-  for p in pieces do
-    if p.plain && !sect.isEmpty then
-      sect := sect.push p
-    else
-      out := flush out sectLead sect
-      sect := #[p]
-      sectLead := p.sep
-  return flush out sectLead sect
+    : Doc :=
+
+  Id.run
+    do
+      let flush :=
+        fun (out sectLead : Doc) (sect : Array ArmPiece) =>
+          Id.run
+            do
+              if sect.isEmpty then return out
+              let mut plainJ : Doc := .nil
+              let mut rows : Array (Doc × Option Doc) := #[]
+              let mut allGrid := true
+              for h : j in [0:sect.size] do
+                let p := sect[j]
+                plainJ := plainJ ++ (if j == 0 then Doc.nil else Doc.hardline) ++ p.doc
+                match p.gridRow with
+                | some r => rows := rows.push r
+                | none => allGrid := false
+              let body := if allGrid then armsAligned mode maxDelta rows plainJ else plainJ
+              return out ++ sectLead ++ body
+      let mut out : Doc := .nil
+      let mut sect : Array ArmPiece := #[]
+      let mut sectLead : Doc := .nil
+      for p in pieces do
+        if p.plain && !sect.isEmpty then sect := sect.push p
+        else
+          out := flush out sectLead sect
+          sect := #[p]
+          sectLead := p.sep
+      return flush out sectLead sect
 
 /-- The `matchAlt` nodes of a `matchAlts` node (groups flattened). -/
-def matchAltsOf (altsNode : Lean.Syntax) : Array Lean.Syntax := Id.run do
-  let mut alts : Array Lean.Syntax := #[]
-  for g in altsNode.getArgs do
-    for c in g.getArgs do
-      if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
-  return alts
+def matchAltsOf
+    (altsNode : Lean.Syntax)
+    : Array Lean.Syntax :=
+
+  Id.run
+    do
+      let mut alts : Array Lean.Syntax := #[]
+      for g in altsNode.getArgs do
+        for c in g.getArgs do
+          if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+      return alts
 
 /-- THE shared arm loop: the `ArmPiece`s of a `| pat => body` arm set —
     `Term.match` arms and the Decl `declValEqns` value are the same shape, and
@@ -249,6 +273,7 @@ def armPieces?
     (walk : Walk)
     (alts : Array Lean.Syntax)
     : EmitM (Option (Array ArmPiece)) := do
+
   let mut pieces : Array ArmPiece := #[]
   for h : i in [0:alts.size] do
     let alt := alts[i]

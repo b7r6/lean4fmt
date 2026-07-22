@@ -20,9 +20,9 @@ namespace Lean4Fmt.Style
 /-- Straylight house style (§6). -/
 def straylight
     : Style := {
-  layout     := { lineWidth := 100, indent := 2, continuationIndent := 4 }
-  breaking   := { colon := .breakBefore, binders := .onePerLine, attributesOwnLine := true, bodyOwnLine := true, compactDo := true }
-  alignment  := { structFields := .whenShort, matchArms := .whenShort,
+  layout := { lineWidth := 100, indent := 2, continuationIndent := 4 }
+  breaking := { colon := .breakBefore, binders := .onePerLine, attributesOwnLine := true, bodyOwnLine := true, compactDo := true }
+  alignment := { structFields := .whenShort, matchArms := .whenShort,
                   trailingComments := .whenShort, maxDelta := 16 }
   blankLines := { policy := .normalize, betweenTopLevelDecls := 1, maxConsecutive := 1 }
 }
@@ -31,9 +31,9 @@ def straylight
     with the mathlib-ish binder fill (pack + wrap) and blank preservation. -/
 def mathlib
     : Style := { straylight with
-  layout     := { straylight.layout with bodyFitWidth := 70 }
-  breaking   := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := true, bodyOwnLine := false, glueFun := true, opBreak := .trailing, listFill := true }
-  alignment  := { structFields := .never, matchArms := .never, recordFields := .never, trailingComments := .never }
+  layout := { straylight.layout with bodyFitWidth := 70 }
+  breaking := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := true, bodyOwnLine := false, glueFun := true, opBreak := .trailing, listFill := true }
+  alignment := { structFields := .never, matchArms := .never, recordFields := .never, trailingComments := .never }
   blankLines := { straylight.blankLines with policy := .preserve }
 }
 
@@ -43,10 +43,10 @@ def mathlib
     no alignment grids. -/
 def aniva
     : Style := {
-  layout     := { lineWidth := 120, indent := 2, continuationIndent := 4 }
-  breaking   := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,
+  layout := { lineWidth := 120, indent := 2, continuationIndent := 4 }
+  breaking := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,
                   bodyOwnLine := false, compactDo := true }
-  alignment  := { structFields := .never, matchArms := .never, recordFields := .never,
+  alignment := { structFields := .never, matchArms := .never, recordFields := .never,
                   trailingComments := .never }
   blankLines := { policy := .normalize, betweenTopLevelDecls := 1, maxConsecutive := 1 }
 }
@@ -55,11 +55,11 @@ def aniva
     attributes on the declaration line, inline-when-fits bodies, no grids. -/
 def purtell
     : Style := {
-  layout     := { lineWidth := 120, indent := 2, continuationIndent := 4 }
-  breaking   := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,
+  layout := { lineWidth := 120, indent := 2, continuationIndent := 4 }
+  breaking := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,
                   bodyOwnLine := false, compactDo := true, inlineBranches := true,
                   ctorsOneLine := true }
-  alignment  := { structFields := .never, matchArms := .never, recordFields := .never,
+  alignment := { structFields := .never, matchArms := .never, recordFields := .never,
                   trailingComments := .never }
   blankLines := { policy := .normalize, betweenTopLevelDecls := 1, maxConsecutive := 1 }
 }

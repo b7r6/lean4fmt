@@ -18,6 +18,7 @@ unsafe def isFormatted
            (path : String)
            (width : Nat := 100)
            : IO Bool := do
+
   let (out, _) ← formatFile path width
   let orig ← IO.FS.readFile path
   return out == orig

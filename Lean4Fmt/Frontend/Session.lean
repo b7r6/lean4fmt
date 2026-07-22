@@ -21,7 +21,7 @@
       • the parse-parallelism strategy (§12: superset-env vs process-per-file).
 
     Deferred with mathlib. SCAFFOLD ONLY.
-    
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
@@ -34,9 +34,9 @@ open Lean
 
 /-- How much of a file to elaborate to keep parsing faithful (§14.7). -/
 inductive ElabDepth
-  | importsOnly       -- floor: load imports; enough for import-provided notation
-  | tablesOnly        -- elaborate just far enough to extend parser tables (skip proofs)
-  | full              -- fully elaborate (heaviest; always faithful)
+  | importsOnly -- floor: load imports; enough for import-provided notation
+  | tablesOnly  -- elaborate just far enough to extend parser tables (skip proofs)
+  | full        -- fully elaborate (heaviest; always faithful)
   deriving Repr, Inhabited, BEq
 
 /-- Interleaved parse+elaborate a module against an already-imported `env`: run the
@@ -55,6 +55,7 @@ unsafe def parseModule?
            (env : Environment)
            (path contents : String)
            : IO (Option Lean.Syntax) := do
+
   let ictx := Parser.mkInputContext contents path
   let (hdr, mps, msgs) ← Parser.parseHeader ictx
   -- the tablesOnly depth (§14.7), shipped: `debug.byAsSorry` stubs every
@@ -64,11 +65,12 @@ unsafe def parseModule?
   -- mathlib CategoryTheory file burned 9+ CPU-minutes elaborating proofs
   -- it splits "to avoid timeouts" in its own build)
   let opts : Options := Options.empty.setBool `debug.byAsSorry true
-  quietly do
-    try
-      let s ← Lean.Elab.IO.processCommands ictx mps (Lean.Elab.Command.mkState env msgs opts)
-      if s.commands.any (·.hasMissing) then pure none
-      else pure (some (Syntax.node .none ``Lean.Parser.Module.module #[hdr, mkNullNode s.commands]))
-    catch _ => pure none
+  quietly
+    do
+      try
+        let s ← Lean.Elab.IO.processCommands ictx mps (Lean.Elab.Command.mkState env msgs opts)
+        if s.commands.any (·.hasMissing) then pure none
+        else pure (some (Syntax.node .none ``Lean.Parser.Module.module #[hdr, mkNullNode s.commands]))
+      catch _ => pure none
 
 end Lean4Fmt.Frontend.Session
