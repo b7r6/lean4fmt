@@ -452,7 +452,18 @@ partial def emit
         -- fields below at +2 are the same vertical machinery — all at one
         -- column, sepByIndent-safe like the no-src form
         if srcT.any (· == '\n') then return (← verbatim stx)
-        if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← verbatim stx)
+        -- comment hazard, per seam: comments AT the vertical seams (field
+        -- leading, field-tail trailing — where brace-adjacent trivia also
+        -- lands) have no slot in this assembly. A field-INTERIOR comment is
+        -- the field walk's business: owned seams place it, anything unowned
+        -- verbatims a piece the bare/midline checks below catch. The old
+        -- blanket interiorHasLineComment kept every record with a commented
+        -- by-proof field verbatim (the FreeAlgebra lift idiom).
+        for f in fields do
+          if Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? f).getD "") > 0
+              || Lean4Fmt.Syntax.countLineComments
+                  ((Lean4Fmt.Syntax.lastTokenTrailing? f).getD "") > 0 then
+            return (← verbatim stx)
         let mut body : Doc := .nil
         for f in fields do
           let fDoc ← structFieldDoc walk f
@@ -693,6 +704,11 @@ partial def emit
       -- by glues like do (`h : T := by` + tactics below — the sequence-seam
       -- invariant tolerates interior verbatims); other kinds keep the bail
       if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic then
+        return headDoc ++ .text " := " ++ vdoc
+      -- a fun WRAPPING a block glues the same way — but only when the fun
+      -- itself laid out (a bare-verbatim fun would re-anchor mid-line)
+      if Lean4Fmt.Syntax.isFunBlockValue v
+          && !(match vdoc with | .verbatim _ _ => true | _ => false) then
         return headDoc ++ .text " := " ++ vdoc
       -- the vertical structInst glues by its unconditional `{` left edge —
       -- house shape `:= {` … `}` (see valForm; same seam argument)

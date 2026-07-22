@@ -164,8 +164,33 @@ def ownsSeams
       -- at an eqns/match ARM forced whole-decl (and enclosing-mutual)
       -- verbatim for every commented proof-shaped arm.
       || kind == ``Lean.Parser.Term.do
+      -- by is do's proof twin: the tactic sequence loop owns inter-tactic
+      -- trivia the same way (per-tactic verbatim fallback; bytes never
+      -- drop). Its absence made any TERM wrapping a comment-bearing by
+      -- (`fun x ↦ by …` values, the mathlib structInst-field idiom) bail
+      -- wholesale at the entry guard before its handler ran.
+      || kind == ``Lean.Parser.Term.byTactic
+      || kind == `Lean.Parser.Term.byTactic'
       || kind == listLitKind
       || kind == arrayLitKind
+
+/-- A `fun` whose body is a `by`/`do` block: the wrapper adds only flat head
+    text before the block, so a binding seam's block-glue argument passes
+    through it (`x := fun a ↦ by` + body below). The match-alternative form
+    (`fun | pat => …`) is not this shape. -/
+def isFunBlockValue
+    (v : Lean.Syntax)
+    : Bool :=
+
+  v.getKind == ``Lean.Parser.Term.fun
+      && (match v.getArgs[1]? with
+      | some bf =>
+        bf.getKind == ``Lean.Parser.Term.basicFun
+            && (match bf.getArgs.back? with
+            | some b =>
+              b.getKind == ``Lean.Parser.Term.do || b.getKind == ``Lean.Parser.Term.byTactic
+            | none => false)
+      | none => false)
 
 /-- Layout-sensitive / proof kinds that must never be inlined (§0.7 #10). -/
 def isNeverInline
