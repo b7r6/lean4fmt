@@ -167,28 +167,55 @@ partial def emit
     -- binary operator: lhs ␣ op ␣ rhs. `Term.arrow` is the same 3-slot shape
     -- (the atom carries the source spelling — `→` or `->` — and the token gate
     -- cares, so it rides through the walk as-is).
-    if (Lean4Fmt.Syntax.isBinOp kind || kind == ``Lean.Parser.Term.arrow) && args.size == 3 then
+    if (Lean4Fmt.Syntax.isBinOp kind || kind == ``Lean.Parser.Term.arrow) && args.size ≥ 3 then
       -- `lhs op rhs` — width-aware: flat if it fits, else break BEFORE the
       -- operator (operator leads the continuation line). A CHAIN of the same
       -- operator flattens to ONE continuation indent (no staircase):
       --   a = true
       --       ∧ b = true
       --       ∧ c = true
+      -- BRACKETED ops (`M →ₗ[R] N`, `f ≫ g` with params — the mathlib hom
+      -- family) are the ≥3-arity case: the op spans the MIDDLE slots and is
+      -- extracted PER LINK (each link's bracket interior can differ:
+      -- `M →ₗ[R] N →ₗ[S] P`).
       -- comment hazard: the chain reflow walks its pieces BARE — a line
       -- comment in a piece's leading has no seam here and would silently
       -- drop (gate-caught on mathlib ContextInfo: comments inside a nested
       -- `<|` chain). Whole-chain verbatim carries it byte-exact.
       if Lean4Fmt.Syntax.interiorHasLineComment stx then
         return (← verbatim stx "chain-comment")
+      let opOf := fun (a : Array Lean.Syntax) =>
+        Lean4Fmt.Emit.canonTok (Lean.mkNullNode (a.extract 1 (a.size - 1)))
+      -- the ≥4 arity is ONLY the leading-operator bracket family (`→ₗ[R]`,
+      -- `≃ₐ[R]`): the op's first char must be an OPERATOR, not an opening
+      -- bracket — «term__[_]» (getElem) is isBinOp-shaped with 4 slots and
+      -- its `[` adjacency is parse-critical (respacing it broke 48 home
+      -- files + 32 fuzz seeds in one build; caught by the battery)
+      if args.size > 3 then
+        let t := opOf args
+        if t.isEmpty || t.any (· == '\n')
+            || (t.toList.headD ' ') ∈ ['[', '(', '{', '⁻', '!', '?'] then
+          return (← verbatim stx)
       let lhs ← walk args[0]!
-      let op ← walk args[1]!
+      let op ← do
+        if args.size == 3 then walk args[1]!
+        else
+          let t := opOf args
+          if t.isEmpty || t.any (· == '\n') then return (← verbatim stx "chain-op-shape")
+          pure (Doc.text t)
       let mut tail : Doc := .nil
-      let mut cur := args[2]!
+      let mut cur := args[args.size - 1]!
       let mut steps := 0
-      while cur.getKind == kind && cur.getArgs.size == 3 && steps < 64 do
+      while cur.getKind == kind && cur.getArgs.size == args.size && steps < 64 do
         let ca := cur.getArgs
-        tail := tail ++ .line ++ op ++ .space ++ (← walk ca[0]!)
-        cur := ca[2]!
+        let linkOp ← do
+          if args.size == 3 then walk ca[1]!
+          else
+            let t := opOf ca
+            if t.isEmpty || t.any (· == '\n') then return (← verbatim stx "chain-op-shape")
+            pure (Doc.text t)
+        tail := tail ++ .line ++ linkOp ++ .space ++ (← walk ca[0]!)
+        cur := ca[ca.size - 1]!
         steps := steps + 1
       let rhs ← walk cur
       -- the `lhs <| by …` idiom (mathlib-pervasive): a by/do TAIL glues —
@@ -217,12 +244,17 @@ partial def emit
         -- trailing operators (mathlib arrows): `a →\n  b →\n  c`. Flat form
         -- identical to the leading build — only the broken shape differs.
         let mut tailT : Doc := .nil
-        let mut cur2 := args[2]!
+        let mut cur2 := args[args.size - 1]!
         let mut steps2 := 0
-        while cur2.getKind == kind && cur2.getArgs.size == 3 && steps2 < 64 do
+        while cur2.getKind == kind && cur2.getArgs.size == args.size && steps2 < 64 do
           let ca := cur2.getArgs
-          tailT := tailT ++ .line ++ (← walk ca[0]!) ++ .space ++ op
-          cur2 := ca[2]!
+          -- trailing rows carry the LINK's own op after its piece (the ops
+          -- sit between pieces; bracket interiors differ per link)
+          let linkOp ← do
+            if args.size == 3 then walk ca[1]!
+            else pure (Doc.text (opOf ca))
+          tailT := tailT ++ .line ++ (← walk ca[0]!) ++ .space ++ linkOp
+          cur2 := ca[ca.size - 1]!
           steps2 := steps2 + 1
         return .group (lhs ++ .space ++ op ++ .nest cont (tailT ++ .line ++ rhs))
       return .group (lhs ++ .nest cont (tail ++ .line ++ op ++ .space ++ rhs))
