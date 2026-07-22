@@ -24,6 +24,19 @@ namespace Lean4Fmt.Emit.Tactic
 
 open Lean Lean4Fmt.Doc
 
+/-- The deepest final `by`-block descendant (last-child descent) — the
+    position-split ports slice the head bytes before it. -/
+private partial def lastByDescendant?
+                    (s : Lean.Syntax)
+                    : Option Lean.Syntax :=
+
+  if s.getKind == ``Lean.Parser.Term.byTactic then some s
+  else
+    match (s.getArgs.filter
+        (fun c => !(Lean4Fmt.Emit.bareSrc c).trimAscii.toString.isEmpty)).back? with
+    | some c => lastByDescendant? c
+    | none => none
+
 /-- The items of a `tacticSeq` (unwrapping `tacticSeq1Indented`), grouped into
     LINES: an explicit `;` joins its neighbors into one group (rendered as one
     line, `t1; t2; t3`); empty separator slots (newlines) split groups. `none`
@@ -555,6 +568,31 @@ def emit
       -- bullet at its own start column; at line start it is a no-op.
       return .align (.text (tkT ++ " ") ++ .align d0 ++ trail0 ++ .nest 2 rest)
     | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if (kind == `Lean.Parser.Tactic.tacticSuffices_
+        || kind == ``Lean.Parser.Tactic.tacticHave__)
+      && (Lean4Fmt.Emit.bareSrc stx).any (· == '\n') then
+    -- POSITION-SPLIT port: `suffices h : T by tac` / `have h : T := by tac`
+    -- — find the final by-block descendant (last-child descent), slice the
+    -- HEAD bytes positionally (no shape enumeration), flatten-join the head,
+    -- glue the by (members at sequence seams). Heads carrying strings or
+    -- comments, non-by tails, and whole-verbatim bys fall back; by-INTERIOR
+    -- comments are the by emitter's own seam business.
+    let bare := Lean4Fmt.Emit.bareSrc stx
+    match lastByDescendant? stx, stx.getPos?, (lastByDescendant? stx).bind (·.getPos?) with
+    | some byN, some p0, some pb =>
+      let headB := (String.fromUTF8? (bare.toUTF8.extract 0 (pb.byteIdx - p0.byteIdx))).getD ""
+      if headB.isEmpty || headB.toList.any (· == '"')
+          || (headB.splitOn "--").length > 1 || (headB.splitOn "/-").length > 1 then
+        return (← Lean4Fmt.Emit.verbatim stx)
+      let headF := String.intercalate " "
+        (((headB.split (fun c => c == '\n' || c == ' ' || c == '\t')).toList.map
+            (·.toString)).filter (fun s => !s.isEmpty))
+      if headF.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+      let byDoc ← walk byN
+      match byDoc with
+      | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
+      | _ => return .text (headF ++ " ") ++ byDoc
+    | _, _, _ => return (← Lean4Fmt.Emit.verbatim stx)
   else if kind == ``Lean.Parser.Tactic.tacticRfl || kind == ``Lean.Parser.Tactic.omega
       || kind == ``Lean.Parser.Tactic.decide || kind == ``Lean.Parser.Tactic.nativeDecide
       || kind == ``Lean.Parser.Tactic.constructor || kind == ``Lean.Parser.Tactic.tacticTrivial
