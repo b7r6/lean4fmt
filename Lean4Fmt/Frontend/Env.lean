@@ -81,20 +81,23 @@ unsafe def batchEnv
   importsEnv all
 
 /-- Coverage stats for one file under `env` (DESIGN_V2 §15): the
-    active/verbatim/trivia byte attribution of its produced doc, or `none` when
-    the file doesn't parse under this env (caller decides: count it fully
+    active/verbatim/trivia byte attribution of its produced doc plus the
+    CONTENT-BY-POLICY bytes (moduleDoc/header/quotation commands — permanently
+    verbatim, so `verbatim - policy` is the honest porting tail), or `none`
+    when the file doesn't parse under this env (caller decides: count it fully
     verbatim, or retry under the file's own env in a subprocess). -/
 unsafe def statsFor
            (env : Environment)
            (path contents : String)
            (style : Lean4Fmt.Style.Style)
            (elabFallback : Bool := true)
-           : IO (Option (Nat × Nat × Nat)) := do
+           : IO (Option (Nat × Nat × Nat × Nat)) := do
 
   match ← parseFull? env path contents elabFallback with
   | none => pure none
   | some stx =>
     let (doc, _) := Lean4Fmt.Emit.run style stx.updateLeading
-    pure (some (Lean4Fmt.Doc.stats doc))
+    let (a, v, t) := Lean4Fmt.Doc.stats doc
+    pure (some (a, v, t, Lean4Fmt.Syntax.policyContentBytes stx))
 
 end Lean4Fmt.Frontend

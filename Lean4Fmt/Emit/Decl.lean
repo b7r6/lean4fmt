@@ -378,22 +378,22 @@ private def valForm
           ((Lean4Fmt.Syntax.leading? v).getD "")
         if (if Lean4Fmt.Syntax.ownsSeams v.getKind then leadCmts > 0
             else Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts) then
-          return .span (← verbatim declVal)
+          return .span (← verbatim declVal "val-comment")
         let vdoc ← walk v
-        if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return .span (← verbatim declVal)
+        if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return .span (← verbatim declVal "val-suffix-multiline")
         let mut tail : Doc := .nil
         for slot in [a[2]?, a[3]?] do
           match slot with
           | some sfx =>
             if (bareSrc sfx).trimAscii.toString.isEmpty then continue
             let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? sfx).getD "")
-              | return .span (← verbatim declVal)
+              | return .span (← verbatim declVal "val-suffix-lead")
             -- ws-sensitivity CLASS 5 (Emit/WsSensitivity): a multi-line
             -- comment/docstring inside the suffix — the verbatim tail
             -- re-anchors by column and would shift the token's interior bytes
             let st := bareSrc sfx
             if reanchorsMultilineToken st then
-              return .span (← verbatim declVal)
+              return .span (← verbatim declVal "val-suffix-docstring")
             tail := tail ++ sep ++ (← verbatim sfx)
           | none => continue
         let glue := v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic
@@ -432,7 +432,7 @@ private def valForm
         ((Lean4Fmt.Syntax.leading? v).getD "")
       if (if Lean4Fmt.Syntax.ownsSeams v.getKind then False
           else Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts + leadCmts) then
-        return .span (← verbatim declVal)
+        return .span (← verbatim declVal "val-comment")
       -- the value's HEAD-LEADING comment lines place structurally (the seam
       -- kit; T3) and force the BROKEN placement — an inline `:= -- cmt v`
       -- would be nonsense. hasMultilineVerbatim still spans.
@@ -451,13 +451,13 @@ private def valForm
       if leadCmts > 0 && !selfLead
           && !(match Lean4Fmt.Emit.leadingSep?
           ((Lean4Fmt.Syntax.leading? v).getD "") with | some _ => true | none => false) then
-        return .span (← verbatim declVal)
+        return .span (← verbatim declVal "val-lead-unplaceable")
       let clean := !Lean4Fmt.Doc.hasMultilineVerbatim vdoc   -- comments handled above
       if (isActiveMultiline v.getKind || leadCmts > 0) && clean then return .body vdoc false
       match Lean4Fmt.Doc.flatWidth vdoc with
       | some _ => return .body vdoc false      -- width decides (no forced flatten)
-      | none => return .span (← verbatim declVal)                                    -- multi-line: safe span
-    | none => return .span (← verbatim declVal)
+      | none => return .span (← verbatim declVal "val-multiline")                                    -- multi-line: safe span
+    | none => return .span (← verbatim declVal "val-shape")
   else if declVal.getKind == ``Lean.Parser.Command.declValEqns then
     -- `| pat => body` equation arms. Structure:
     --   declValEqns[ matchAltsWhereDecls[ matchAlts[ null[matchAlt…] ], term?, where? ] ]
@@ -475,27 +475,27 @@ private def valForm
     for slot in margs.toList.drop 1 do
       if (bareSrc slot).trimAscii.toString.isEmpty then continue
       let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? slot).getD "")
-        | return .span (← verbatim declVal)
+        | return .span (← verbatim declVal "eqns-suffix-lead")
       -- mirror of eqnsFormattable: ws-sensitivity CLASS 5 (Emit/WsSensitivity)
       let st := bareSrc slot
       if reanchorsMultilineToken st then
-        return .span (← verbatim declVal)
+        return .span (← verbatim declVal "eqns-suffix-docstring")
       sfxTail := sfxTail ++ sep ++ (← verbatim slot)
     let altsNode := (margs[0]?).getD .missing
     let alts := Lean4Fmt.Emit.matchAltsOf altsNode
-    if alts.isEmpty then return .span (← verbatim declVal)
+    if alts.isEmpty then return .span (← verbatim declVal "eqns-empty")
     -- the shared arm loop (Emit/Monad.armPieces?): `none` = some arm is
     -- unportable (interior comment, unownable leading, mid-set multi-line
     -- trailing) — whole-declaration verbatim (via the defnDoc multiline-arms
     -- gate: the span carries it)
     let some pieces ← Lean4Fmt.Emit.armPieces? walk alts
-      | return .span (← verbatim declVal)
+      | return .span (← verbatim declVal "eqns-arm")
     let al := (← read).alignment
     -- the arms doc OWNS its leading break (defnDoc places it bare at +2):
     -- each section starts with its first arm's separator (a plain hardline
     -- for the seamless case), grids per visible-seam section
     return .eqns (Lean4Fmt.Emit.armsAlignedRuns al.matchArms al.maxDelta pieces ++ sfxTail)
-  else return .span (← verbatim declVal) -- where-struct: literal span
+  else return .span (← verbatim declVal "where-struct") -- where-struct: literal span
 
 /-- Flat width the value contributes to the `:= …` line (`none` if it can't be one
     line). span includes `:=` (+1 for the leading space); body adds ` := ` (4). -/
@@ -525,7 +525,7 @@ private def defnDoc
   -- def) has no placement yet — dropping it would DELETE code (gate-caught
   -- on mathlib): whole-decl verbatim
   for h : i in [4:a.size] do
-    if !(bareSrc a[i]).trimAscii.toString.isEmpty then return (← verbatim defn)
+    if !(bareSrc a[i]).trimAscii.toString.isEmpty then return (← verbatim defn "defn-extra-slot")
   let kw :=
     match a[0]? with
     | some (Lean.Syntax.atom _ v) => v
@@ -564,7 +564,7 @@ private def defnDoc
   -- interior COLUMN RELATIONS and a letI-in-type failed to reparse —
   -- whole-decl verbatim
   if !typeOK && (← read).breaking.binders == Lean4Fmt.Style.BinderLayout.fill then
-    return (← verbatim defn)
+    return (← verbatim defn "fill-multiline-type")
   -- preserve mode: a single-line signature rides byte-exact (authors are
   -- inconsistent about `): T` vs `) : T` — no synthesized rule round-trips);
   -- the declId↔sig gap comes from the source too (`name: T` stays glued)
@@ -581,7 +581,7 @@ private def defnDoc
     return some t
   -- preserve + multi-line signature: the author's sig breaks are not held by
   -- the active layout — whole-decl byte-exact
-  if preserve && sigExact?.isNone then return (← verbatim defn)
+  if preserve && sigExact?.isNone then return (← verbatim defn "preserve-sig-inexact")
   let (sigInline, sigW, typeW, typeOK) :=
     match sigExact? with
     | some t =>
@@ -1034,7 +1034,7 @@ def emit
     : Lean4Fmt.Emit.EmitM Doc := do
 
   let a := stx.getArgs
-  let some defn := a[1]? | return (← verbatim stx)
+  let some defn := a[1]? | return (← verbatim stx "decl-shape")
   let preserveLB := (← read).breaking.preserveLineBreaks
   let attrsOwnLineKnob := (← read).breaking.attributesOwnLine
   -- preserve: the attrs↔keyword break comes from the source (the newline
@@ -1060,14 +1060,14 @@ def emit
   let isActiveVal := valKind == some ``Lean.Parser.Command.declValSimple || isEqns
   if defn.getKind == ``Lean.Parser.Command.instance then
     if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
-      return (← verbatim stx)
+      return (← verbatim stx "modifiers-comment")
     match ← instanceDoc? walk defn with
     | some d =>
       let (modsDoc, _) := match a[0]? with
         | some m => modifiersDoc attrsOwnLine m
         | none => (.nil, 0)
       return modsDoc ++ d
-    | none => return (← verbatim stx)
+    | none => return (← verbatim stx "instance-shape")
   if defn.getKind == ``Lean.Parser.Command.inductive
       || defn.getKind == ``Lean.Parser.Command.structure then
     -- `where`-style inductive: modifiers as usual, head + one ctor per line at
@@ -1077,7 +1077,7 @@ def emit
     -- zone with no seam (the `where` line, a multi-line head) falls back to
     -- whole-declaration verbatim, as does any shape the layout can't hold.
     if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
-      return (← verbatim stx)
+      return (← verbatim stx "modifiers-comment")
     let al := (← read).alignment
     let inner? ← if defn.getKind == ``Lean.Parser.Command.inductive
       then Command.inductiveDoc? walk defn al.trailingComments al.maxDelta preserveLB
@@ -1089,11 +1089,11 @@ def emit
         | some m => modifiersDoc attrsOwnLine m
         | none => (.nil, 0)
       return modsDoc ++ d
-    | none => return (← verbatim stx)
+    | none => return (← verbatim stx "structure-shape")
   if defn.getKind == ``Lean.Parser.Command.example then
     -- example: no declId — [kw, optDeclSig, declVal]
     if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
-      return (← verbatim stx)
+      return (← verbatim stx "modifiers-comment")
     match ← (do match ← exampleDoc? walk defn with
                 | some d => pure (some d)
                 | none =>
@@ -1105,18 +1105,18 @@ def emit
         | some m => modifiersDoc attrsOwnLine m
         | none => (.nil, 0)
       return modsDoc ++ d
-    | none => return (← verbatim stx)
+    | none => return (← verbatim stx "example-shape")
   if defShape && valKind == some ``Lean.Parser.Command.whereStructInst then
     -- `def … where` (struct-instance value on a def)
     if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
-      return (← verbatim stx)
+      return (← verbatim stx "modifiers-comment")
     match ← defWhereDoc? walk defn with
     | some d =>
       let (modsDoc, _) := match a[0]? with
         | some m => modifiersDoc attrsOwnLine m
         | none => (.nil, 0)
       return modsDoc ++ d
-    | none => return (← verbatim stx)
+    | none => return (← verbatim stx "defwhere-shape")
   -- multi-line SIG-ONLY decls (axiom/opaque with a forall/arrow type that
   -- spans lines): kw+id active, binders via the binder kit, the type WALKED
   -- (chains lay out at the continuation)
@@ -1150,7 +1150,7 @@ def emit
     -- structurally; a SINGLE-LINE decl tail rides canonically respaced.
     -- Multi-line tails stay verbatim (the remaining task-#7 queue).
     if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
-      return (← verbatim stx)
+      return (← verbatim stx "modifiers-comment")
     let t := bareSrc defn
     if !t.isEmpty && !t.any (· == '\n') then
       match Lean4Fmt.Emit.tokenJoin? defn with
@@ -1159,18 +1159,18 @@ def emit
           | some m => modifiersDoc attrsOwnLine m
           | none => (.nil, 0)
         return modsDoc ++ .text t'
-      | none => return (← verbatim stx)
+      | none => return (← verbatim stx "join-fail")
     match ← sigOnlyDoc? with
     | some d =>
       let (modsDoc, _) := match a[0]? with
         | some m => modifiersDoc attrsOwnLine m
         | none => (.nil, 0)
       return modsDoc ++ d
-    | none => return (← verbatim stx)     -- multi-line tail: reproduce
+    | none => return (← verbatim stx "unported-value-multiline")     -- multi-line tail: reproduce
   if isEqns && !eqnsFormattable (dargs[3]?.getD .missing) then
-    return (← verbatim stx)     -- comment/where/termination-bearing eqns: whole-decl verbatim
+    return (← verbatim stx "eqns-unformattable")     -- comment/where/termination-bearing eqns: whole-decl verbatim
   if (a[0]?.map (modifiersCommentHazard · defn)).getD false then
-    return (← verbatim stx)     -- comment hiding in the modifiers region: whole-decl verbatim
+    return (← verbatim stx "modifiers-comment")     -- comment hiding in the modifiers region: whole-decl verbatim
   let (modsDoc, modsWidth) := match a[0]? with
     | some m =>
       if preserveLB && !(bareSrc m).trimAscii.toString.isEmpty then

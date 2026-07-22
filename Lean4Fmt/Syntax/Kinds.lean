@@ -238,6 +238,24 @@ partial def hasQuotationCommand
   | .node _ k args => isQuotationCommand k || args.any hasQuotationCommand
   | _              => false
 
+/-- Bytes of CONTENT-BY-POLICY nodes (module docstrings, the header, quotation
+    commands): permanently verbatim by design, NOT portable residue — the
+    honest porting tail is `verbatim - policy`, and `--stats` reports the
+    coverage ceiling from it. Bare-source sizes match what `verbatim` emits
+    (modulo ws-canon: an accounting approximation, not an invariant). -/
+partial def policyContentBytes
+            (stx : Lean.Syntax)
+            : Nat :=
+
+  match stx with
+  | .node _ k args =>
+    if k == ``Lean.Parser.Module.header || k == `Lean.Parser.Command.moduleDoc
+        || isQuotationCommand k then
+      ((stx.getSubstring? false false).map (·.toString.utf8ByteSize)).getD 0
+    else
+      args.foldl (fun n c => n + policyContentBytes c) 0
+  | _ => 0
+
 /-- The byte ranges of embedded quotation TERMS (outermost only — interiors
     belong to their quotation). `none` when a quotation has no position info
     (the caller must then treat the WHOLE text as content). -/

@@ -120,7 +120,7 @@ unsafe def runStatsImpl
            (preset : String)
            (elabFallback : Bool)
            (retry : Bool)
-           : IO (Array (Nat × Nat × Nat × String)) := do
+           : IO (Array (Nat × Nat × Nat × Nat × String)) := do
 
   let base := (Style.byName? preset).getD Style.straylight
   let style :=
@@ -130,12 +130,12 @@ unsafe def runStatsImpl
   let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
   let env ← Frontend.batchEnv expanded
   let exe ← IO.appPath
-  let mut rows : Array (Nat × Nat × Nat × String) := #[]
+  let mut rows : Array (Nat × Nat × Nat × Nat × String) := #[]
   for p in expanded do
     let contents ← IO.FS.readFile p
     let style ← Driver.styleFor style p
     match ← Frontend.statsFor env p.toString contents style elabFallback with
-    | some (a, v, t) => rows := rows.push (a, v, t, p.toString)
+    | some (a, v, t, pol) => rows := rows.push (a, v, t, pol, p.toString)
     | none =>
       let sub? ← do
         if !retry then pure none else
@@ -145,19 +145,19 @@ unsafe def runStatsImpl
               ++ (match width with | some w => #["--width", toString w] | none => #[])
               ++ #["--style", preset, p.toString] }
         match ((r.stdout.splitOn "\n").headD "").splitOn " " with
-        | [a, v, t, _] =>
-          pure (match a.toNat?, v.toNat?, t.toNat? with
-                | some a, some v, some t => some (a, v, t)
-                | _, _, _ => none)
+        | [a, v, t, pol, _] =>
+          pure (match a.toNat?, v.toNat?, t.toNat?, pol.toNat? with
+                | some a, some v, some t, some pol => some (a, v, t, pol)
+                | _, _, _, _ => none)
         | _ => pure none
       match sub? with
-      | some (a, v, t) => rows := rows.push (a, v, t, p.toString)
-      | none => rows := rows.push (0, contents.utf8ByteSize, 0, p.toString)
+      | some (a, v, t, pol) => rows := rows.push (a, v, t, pol, p.toString)
+      | none => rows := rows.push (0, contents.utf8ByteSize, 0, 0, p.toString)
   return rows
 
 @[implemented_by runStatsImpl]
 opaque runStats (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool) :
-    IO (Array (Nat × Nat × Nat × String))
+    IO (Array (Nat × Nat × Nat × Nat × String))
 
 def main
     (argv : List String)
@@ -178,16 +178,24 @@ def main
     let mut ta := 0
     let mut tv := 0
     let mut tt := 0
+    let mut tp := 0
     for row in rows do
-      let a := row.1; let v := row.2.1; let t := row.2.2.1; let p := row.2.2.2
-      IO.println s!"{a} {v} {t} {p}"
-      ta := ta + a; tv := tv + v; tt := tt + t
+      let a := row.1; let v := row.2.1; let t := row.2.2.1
+      let pol := row.2.2.2.1; let p := row.2.2.2.2
+      IO.println s!"{a} {v} {t} {pol} {p}"
+      ta := ta + a; tv := tv + v; tt := tt + t; tp := tp + pol
     let code := ta + tv
+    -- policy content (moduleDoc/header/quotation commands) is permanently
+    -- verbatim by design: the PORTABLE code — the honest denominator for
+    -- "how much could active formatting ever cover" — excludes it
+    let portable := code - Nat.min tp code
     let pct (n d : Nat) : String :=
       if d == 0 then "-" else s!"{(n * 1000 / d) / 10}.{(n * 1000 / d) % 10}%"
-    IO.println s!"// files {rows.size}  bytes active={ta} verbatim={tv} trivia={tt}"
+    IO.println s!"// files {rows.size}  bytes active={ta} verbatim={tv} trivia={tt} policy={tp}"
     IO.println
       s!"// coverage: code-active {pct ta code}  (of all output: active {pct ta (code + tt)}, trivia {pct tt (code + tt)})"
+    IO.println
+      s!"// ceiling: portable {pct portable code} of code; active-of-portable {pct ta portable}"
     return
 
   let results ← runJobs o.files o.width o.preset o.elabFallback o.retry o.logLevel o.lakeEnv

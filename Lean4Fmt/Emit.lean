@@ -192,7 +192,15 @@ partial def walk
   | .verbatim s _ =>
     if s.any (· == '\n') || (← read).breaking.preserveLineBreaks then return d
     match Lean4Fmt.Emit.tokenJoin? stx with
-    | some t => return .text t
+    | some t =>
+      -- walkCore's bail logged an opt-out for THIS node, but the respaced
+      -- text ships — pop the stale entry so the trail reports emissions
+      -- (it was the misreport the census had to caveat)
+      let pos := (stx.getPos?.map (·.byteIdx)).getD 0
+      modify fun ds =>
+        if ds.size > 0 && ds[ds.size - 1]!.pos == pos
+            && ds[ds.size - 1]!.rule == "verbatim" then ds.pop else ds
+      return .text t
     | none => return d
   | _ => return d
 

@@ -87,13 +87,17 @@ def canonWsPiecewise
     the trail reports what is EMITTED, not what was considered. -/
 def logOptOut
     (stx : Lean.Syntax)
+    (why : String := "")
     : EmitM Unit :=
 
+  let pos := (stx.getPos?.map (·.byteIdx)).getD 0
+  let len := ((stx.getTailPos?.map (·.byteIdx)).getD pos) - pos
   emitDiag
     { severity := .debug,
-      pos      := (stx.getPos?.map (·.byteIdx)).getD 0,
-      rule     := "verbatim",
-      message  := s!"opt-out: {stx.getKind}" }
+      pos := pos,
+      rule := "verbatim",
+      message := s!"opt-out: {stx.getKind} len={len}"
+          ++ (if why.isEmpty then "" else s!" why={why}") }
 
 /-- Opaque reproduction (§4.1): the safe default for any construct not yet
     actively formatted. Reproduces the BARE source as a re-anchorable `verbatim`
@@ -131,10 +135,11 @@ def verbatimQuiet
 /-- Opaque reproduction WITH the opt-out trail entry — the safe default. -/
 def verbatim
     (stx : Lean.Syntax)
+    (why : String := "")
     : EmitM Doc := do
 
   if !(bareSrc stx).isEmpty then   -- an empty node emits nothing: not an opt-out
-    logOptOut stx
+    logOptOut stx why
   verbatimQuiet stx
 
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
