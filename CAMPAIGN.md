@@ -54,6 +54,7 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-24 | 249 (10/dir) | 78.9% | 78.9% | 88.1% of code | **89.5%** | 0 (binder-comma heads source-exact; both rejects cleared) |
 | 2026-07-24 | 249 (10/dir) | 79.0% | 79.0% | 88.1% of code | **89.6%** | 0 (with-source vertical structInst + brace-glue startsWith) |
 | 2026-07-24 | 249 (10/dir) | 79.0% | 79.0% | 88.1% of code | **89.6%** | 0 (elab command port — ApplyAt 100.0 of portable; the meta cluster) |
+| 2026-07-22 | 249 (10/dir) | 80.2% | 80.2% | 88.1% of code | **91.0%** | **0 — GATE 2 CLOSED** (the null-wrapper unlock: the letIdDecl broken-type path never saw the optional slot's null wrapper, so EVERY multi-line-typed have/let bailed structurally — one fix, tacticHave 68K→27K, letIdDecl 62K→19K) |
 
 Phase 1 closed in three rounds (nine mechanisms; see the round commits):
 the mid-line verbatim drift law (chain/arm/let sites), the align effective
