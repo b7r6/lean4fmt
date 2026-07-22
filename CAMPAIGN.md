@@ -46,6 +46,14 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-24 | 249 (10/dir) | 78.3% | 78.3% | 88.1% of code | **88.8%** | 0 (simp_rw family + induction arm comment seams; Ackermann 54.7→80.3) |
 | 2026-07-24 | 249 (10/dir) | 78.6% | 78.6% | 88.1% of code | **89.2%** | 0 (rw multi-line rules walk) |
 | 2026-07-24 | 249 (10/dir) | 78.7% | 78.7% | 88.1% of code | **89.3%** | 0 (tacticHave blanket comment bail dropped — the over-guard class) |
+| 2026-07-24 | 249 (10/dir) | 78.7% | 78.3% | 88.1% of code | 88.8 | 1 fixed-point (instance round: broken-type heads take := values, empty where; CechNerve = the decision law at the instance type branch) |
+| 2026-07-24 | 249 (10/dir) | 78.7% | 78.7% | 88.1% of code | **89.3%** | 0 (CechNerve cleared: instance type branch width-derived) |
+| 2026-07-24 | 249 (10/dir) | 78.8% | 78.8% | 88.1% of code | **89.4%** | 0 (inductive ctor multi-line types walk; unified width criterion after a gate-caught pass-disagreement on home Http1) |
+| 2026-07-24 | 249 (10/dir) | 78.9% | 78.9% | 88.1% of code | **89.5%** | 0 (obtain broken-type head) |
+| 2026-07-24 | 249 (10/dir) | 78.9% | 77.2% | 88.1% of code | 87.6 | 2 tree (binder-comma family v1: respacing `∫ t in a..b,` flipped the longest-match notation — NEW LAW) |
+| 2026-07-24 | 249 (10/dir) | 78.9% | 78.9% | 88.1% of code | **89.5%** | 0 (binder-comma heads source-exact; both rejects cleared) |
+| 2026-07-24 | 249 (10/dir) | 79.0% | 79.0% | 88.1% of code | **89.6%** | 0 (with-source vertical structInst + brace-glue startsWith) |
+| 2026-07-24 | 249 (10/dir) | 79.0% | 79.0% | 88.1% of code | **89.6%** | 0 (elab command port — ApplyAt 100.0 of portable; the meta cluster) |
 
 Phase 1 closed in three rounds (nine mechanisms; see the round commits):
 the mid-line verbatim drift law (chain/arm/let sites), the align effective
