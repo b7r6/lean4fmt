@@ -74,13 +74,17 @@ def tokenJoin?
 
   Id.run
     do
-      if hasChoice stx then return none
+      if hasChoice stx then
+        return none
       -- quotation/template content (pin): inter-token spacing may be semantic
       -- to the quoted DSL — never respace
-      if Lean4Fmt.Syntax.hasQuotationKind stx then return none
-      if Lean4Fmt.Syntax.hasTemplateOpener (bareSrc stx) then return none
+      if Lean4Fmt.Syntax.hasQuotationKind stx then
+        return none
+      if Lean4Fmt.Syntax.hasTemplateOpener (bareSrc stx) then
+        return none
       let ls := leafTokens stx
-      if ls.isEmpty then return none
+      if ls.isEmpty then
+        return none
       let mut out := ""
       let mut prev : Option Lean.Syntax := none
       -- trivia carried by SKIPPED empty leaves (e.g. the synthetic `[anonymous]`
@@ -93,7 +97,8 @@ def tokenJoin?
           skipGap :=
             skipGap ++ (Lean4Fmt.Syntax.leading? l).getD "" ++ (Lean4Fmt.Syntax.trailing? l).getD ""
           continue
-        if t.any (· == '\n') then return none
+        if t.any (· == '\n') then
+          return none
         match prev with
         | none => out := t
         | some p =>
@@ -103,10 +108,13 @@ def tokenJoin?
           -- GLUED to its neighbor and relex differently (caught as MANGLED).
           let tr? := Lean4Fmt.Syntax.trailing? p
           let ld? := Lean4Fmt.Syntax.leading? l
-          if tr?.isNone || ld?.isNone then return none
+          if tr?.isNone || ld?.isNone then
+            return none
           let gap := tr?.getD "" ++ skipGap ++ ld?.getD ""
-          if !gap.toList.all (·.isWhitespace) then return none -- inline comment
-          if gap.any (· == '\n') then return none -- not single-line
+          if !gap.toList.all (·.isWhitespace) then
+            return none -- inline comment
+          if gap.any (· == '\n') then
+            return none -- not single-line
           let sep :=
             match gapRule (bareSrc p) t with
             | some true  => " "
@@ -115,7 +123,8 @@ def tokenJoin?
           out := out ++ sep ++ t
         prev := some l
         skipGap := ""
-      if out.isEmpty then return none
+      if out.isEmpty then
+        return none
       return some out
 
 /-- Canonical FLATTENED token text: like `tokenJoin?` but newline gaps become
@@ -128,11 +137,15 @@ def tokenJoinFlat?
 
   Id.run
     do
-      if hasChoice stx then return none
-      if Lean4Fmt.Syntax.hasQuotationKind stx then return none
-      if Lean4Fmt.Syntax.hasTemplateOpener (bareSrc stx) then return none
+      if hasChoice stx then
+        return none
+      if Lean4Fmt.Syntax.hasQuotationKind stx then
+        return none
+      if Lean4Fmt.Syntax.hasTemplateOpener (bareSrc stx) then
+        return none
       let ls := leafTokens stx
-      if ls.isEmpty then return none
+      if ls.isEmpty then
+        return none
       let mut out := ""
       let mut prev : Option Lean.Syntax := none
       let mut skipGap := "" -- trivia from skipped empty leaves (see tokenJoin?)
@@ -142,15 +155,18 @@ def tokenJoinFlat?
           skipGap :=
             skipGap ++ (Lean4Fmt.Syntax.leading? l).getD "" ++ (Lean4Fmt.Syntax.trailing? l).getD ""
           continue
-        if t.any (· == '\n') then return none -- multi-line TOKEN: content
+        if t.any (· == '\n') then
+          return none -- multi-line TOKEN: content
         match prev with
         | none => out := t
         | some p =>
           let tr? := Lean4Fmt.Syntax.trailing? p
           let ld? := Lean4Fmt.Syntax.leading? l
-          if tr?.isNone || ld?.isNone then return none
+          if tr?.isNone || ld?.isNone then
+            return none
           let gap := tr?.getD "" ++ skipGap ++ ld?.getD ""
-          if !gap.toList.all (·.isWhitespace) then return none
+          if !gap.toList.all (·.isWhitespace) then
+            return none
           let sep :=
             match gapRule (bareSrc p) t with
             | some true  => " "
@@ -159,7 +175,8 @@ def tokenJoinFlat?
           out := out ++ sep ++ t
         prev := some l
         skipGap := ""
-      if out.isEmpty then return none
+      if out.isEmpty then
+        return none
       return some out
 
 /-- Canonical single-line token text: tokenJoin? with a bareSrc fallback —

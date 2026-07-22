@@ -33,13 +33,16 @@ private def ctorDoc?
             : Lean4Fmt.Emit.EmitM (Option (Doc × String × Option Doc)) := do
 
   let ctor := c
-  if c.getKind != ``Lean.Parser.Command.ctor then return none
+  if c.getKind != ``Lean.Parser.Command.ctor then
+    return none
   let a := c.getArgs
-  if a.size != 5 then return none
+  if a.size != 5 then
+    return none
   let docT := (bareSrc a[0]!).trimAscii.toString
   let modsT := (bareSrc a[2]!).trimAscii.toString
   let nameT := (bareSrc a[3]!).trimAscii.toString
-  if nameT.isEmpty || nameT.any (· == '\n') || modsT.any (· == '\n') then return none
+  if nameT.isEmpty || nameT.any (· == '\n') || modsT.any (· == '\n') then
+    return none
   let sig := a[4]!.getArgs
   let mut parts : Array String := #[]
   let mut fillDocs : Array Doc := #[]
@@ -197,28 +200,34 @@ def inductiveDoc?
     : Lean4Fmt.Emit.EmitM (Option Doc) := do
 
   let a := defn.getArgs
-  if a.size != 7 then return none
+  if a.size != 7 then
+    return none
   -- head: `inductive Name <binders> (: τ)? where` — one line, token-for-token
   let idT := (bareSrc a[1]!).trimAscii.toString
-  if idT.isEmpty || idT.any (· == '\n') then return none
+  if idT.isEmpty || idT.any (· == '\n') then
+    return none
   let sig := a[2]!.getArgs
   let mut head := "inductive " ++ idT
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
     let t := Lean4Fmt.Emit.canonTok b
-    if t.any (· == '\n') then return none
+    if t.any (· == '\n') then
+      return none
     head := head ++ " " ++ t
   match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
   | [ts] =>
     let t := Lean4Fmt.Emit.canonTok ((ts.getArgs[1]?).getD .missing)
-    if t.isEmpty || t.any (· == '\n') then return none
+    if t.isEmpty || t.any (· == '\n') then
+      return none
     head := head ++ " : " ++ t
   | [] => pure ()
   | _ => return none
   -- `where` optional (the headless `inductive X | ctor …` form is the same
   -- ctor loop); old `:=`-style bodies and computed fields stay verbatim
   let whereT := ((a[3]?.map bareSrc).getD "").trimAscii.toString
-  if whereT != "where" && !whereT.isEmpty then return none
-  if !((a[5]?.map bareSrc).getD "").trimAscii.toString.isEmpty then return none
+  if whereT != "where" && !whereT.isEmpty then
+    return none
+  if !((a[5]?.map bareSrc).getD "").trimAscii.toString.isEmpty then
+    return none
   -- a comment on the `where` line itself has no home in the layout
   if whereT == "where"
       && !((Lean4Fmt.Syntax.trailing? a[3]!).getD "").trimAscii.toString.isEmpty then
@@ -230,11 +239,13 @@ def inductiveDoc?
   -- the LAST ctor's trailing belongs to the deriving/enclosing seam. A comment
   -- INSIDE a ctor (between its tokens) has no seam — whole-decl verbatim.
   let ctors := (a[4]?.map (·.getArgs)).getD #[]
-  if ctors.isEmpty then return none
+  if ctors.isEmpty then
+    return none
   -- deriving (its leading trivia placed structurally, so blank groups before
   -- it survive), token-for-token
   let derT := (a[6]?.map Lean4Fmt.Emit.canonTok).getD ""
-  if derT.any (· == '\n') then return none
+  if derT.any (· == '\n') then
+    return none
   let hasDer := !derT.isEmpty
   let some derSep :=
     (if hasDer then leadingSep? ((Lean4Fmt.Syntax.leading? a[6]!).getD "") else some Doc.nil)
@@ -286,23 +297,28 @@ private def fieldDoc?
             (preserve : Bool)
             : Lean4Fmt.Emit.EmitM (Option (Doc × String × String × String × Option Doc)) := do
 
-  if f.getKind != ``Lean.Parser.Command.structSimpleBinder then return none
+  if f.getKind != ``Lean.Parser.Command.structSimpleBinder then
+    return none
   let a := f.getArgs
-  if a.size != 4 then return none
+  if a.size != 4 then
+    return none
   let margs := (a[0]?.map (·.getArgs)).getD #[]
   let docT := ((margs[0]?.map bareSrc).getD "").trimAscii.toString
   let mut modsT := ""
   for m in margs.toList.drop 1 do
     let t := (bareSrc m).trimAscii.toString
-    if t.any (· == '\n') then return none
+    if t.any (· == '\n') then
+      return none
     if !t.isEmpty then modsT := modsT ++ t ++ " "
   let nameT := (bareSrc a[1]!).trimAscii.toString
-  if nameT.isEmpty || nameT.any (· == '\n') then return none
+  if nameT.isEmpty || nameT.any (· == '\n') then
+    return none
   let sig := a[2]!.getArgs
   let mut parts : Array String := #[]
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
     let t := Lean4Fmt.Emit.canonTok b
-    if t.any (· == '\n') then return none
+    if t.any (· == '\n') then
+      return none
     parts := parts.push t
   let mut tyDoc? : Option Doc := none
   let tyT ← do
@@ -345,7 +361,8 @@ private def fieldDoc?
     -- "pass" was a silent gate-identity — check stderr on direct exe runs)
     let d ← walk a[3]!
     defDoc? := some (.nest 2 (.hardline ++ d))
-  if tyDoc?.isSome && !defT.isEmpty then return none
+  if tyDoc?.isSome && !defT.isEmpty then
+    return none
   let defTFlat := if defDoc?.isSome then "" else defT
   let nameSeg := modsT ++ nameT ++ (parts.foldl (fun s p => s ++ " " ++ p) "")
   let restSeg :=
@@ -389,30 +406,37 @@ def structureDoc?
     : Lean4Fmt.Emit.EmitM (Option Doc) := do
 
   let a := defn.getArgs
-  if a.size != 6 then return none
+  if a.size != 6 then
+    return none
   let kwT := (bareSrc a[0]!).trimAscii.toString
-  if kwT.isEmpty || kwT.any (· == '\n') then return none
+  if kwT.isEmpty || kwT.any (· == '\n') then
+    return none
   let idT := (bareSrc a[1]!).trimAscii.toString
-  if idT.isEmpty || idT.any (· == '\n') then return none
+  if idT.isEmpty || idT.any (· == '\n') then
+    return none
   let sig := a[2]!.getArgs
   let mut head := kwT ++ " " ++ idT
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
     let t := Lean4Fmt.Emit.canonTok b
-    if t.any (· == '\n') then return none
+    if t.any (· == '\n') then
+      return none
     head := head ++ " " ++ t
   match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
   | [ts] =>
     let t := (bareSrc ((ts.getArgs[1]?).getD .missing)).trimAscii.toString
-    if t.isEmpty || t.any (· == '\n') then return none
+    if t.isEmpty || t.any (· == '\n') then
+      return none
     head := head ++ " : " ++ t
   | [] => pure ()
   | _ => return none
   let extT := ((a[3]?.map bareSrc).getD "").trimAscii.toString
-  if extT.any (· == '\n') then return none
+  if extT.any (· == '\n') then
+    return none
   if !extT.isEmpty then head := head ++ " " ++ extT
   -- deriving, shared with the fieldless form
   let derT := (a[5]?.map Lean4Fmt.Emit.canonTok).getD ""
-  if derT.any (· == '\n') then return none
+  if derT.any (· == '\n') then
+    return none
   let hasDer := !derT.isEmpty
   let some derSep :=
     (if hasDer then leadingSep? ((Lean4Fmt.Syntax.leading? a[5]!).getD "") else some Doc.nil)
@@ -474,15 +498,19 @@ def emit
     -- fillSep at the continuation (each binder one item — a token fill
     -- would wrap inside brackets); single-line lists fit on the line the
     -- same way (mathlib's long variable blocks were 4.3KB of the census)
-    if Lean4Fmt.Syntax.hasOwnedLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    if Lean4Fmt.Syntax.hasOwnedLineComment stx then
+      return (← Lean4Fmt.Emit.verbatim stx)
     let binders := ((stx.getArgs[1]?).map (·.getArgs)).getD #[]
     let mut items : Array Doc := #[]
     for b in binders do
       let bd ← Lean4Fmt.Emit.binderDoc walk b
-      if Lean4Fmt.Doc.hasMultilineReanchor bd then return (← Lean4Fmt.Emit.verbatim stx)
-      if (Lean4Fmt.Doc.flatWidth bd).isNone then return (← Lean4Fmt.Emit.verbatim stx)
+      if Lean4Fmt.Doc.hasMultilineReanchor bd then
+        return (← Lean4Fmt.Emit.verbatim stx)
+      if (Lean4Fmt.Doc.flatWidth bd).isNone then
+        return (← Lean4Fmt.Emit.verbatim stx)
       items := items.push (.flatten bd)
-    if items.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    if items.isEmpty then
+      return (← Lean4Fmt.Emit.verbatim stx)
     let cont := (← read).layout.continuationIndent
     return .text "variable " ++ .nest cont (Doc.fillSep items.toList)
   if kind == ``Lean.Parser.Command.open || kind == ``Lean.Parser.Command.namespace
@@ -524,24 +552,29 @@ def emit
     -- `open X in\n<command>` — prefix command token-for-token, the trailed
     -- command walked (usually a declaration; Decl does the real work)
     let a := stx.getArgs
-    if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
+    if a.size != 3 then
+      return (← Lean4Fmt.Emit.verbatim stx)
     let preT := Lean4Fmt.Emit.canonTok a[0]!
-    if preT.isEmpty || preT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+    if preT.isEmpty || preT.any (· == '\n') then
+      return (← Lean4Fmt.Emit.verbatim stx)
     if !((Lean4Fmt.Syntax.trailing? a[1]!).getD "").trimAscii.toString.isEmpty then
       return (← Lean4Fmt.Emit.verbatim stx)
     let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? a[2]!).getD "")
       | return (← Lean4Fmt.Emit.verbatim stx)
     return .text (preT ++ " in") ++ sep ++ (← walk a[2]!)
-  if kind != ``Lean.Parser.Command.mutual then return (← Lean4Fmt.Emit.verbatim stx)
+  if kind != ``Lean.Parser.Command.mutual then
+    return (← Lean4Fmt.Emit.verbatim stx)
   let a := stx.getArgs
-  if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
+  if a.size != 3 then
+    return (← Lean4Fmt.Emit.verbatim stx)
   if ((a[2]?.map bareSrc).getD "").trimAscii.toString != "end" then
     return (← Lean4Fmt.Emit.verbatim stx)
   -- a comment on the `mutual` line itself has no home in the layout
   if !((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString.isEmpty then
     return (← Lean4Fmt.Emit.verbatim stx)
   let decls := (a[1]?.map (·.getArgs)).getD #[]
-  if decls.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+  if decls.isEmpty then
+    return (← Lean4Fmt.Emit.verbatim stx)
   let mut body : Doc := .nil
   for d in decls do
     let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? d).getD "")

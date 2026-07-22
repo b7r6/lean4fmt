@@ -217,47 +217,45 @@ def armsAlignedRuns
     (pieces : Array ArmPiece)
     : Doc :=
 
-  Id.run
-    do
-      let flush :=
-        fun (out sectLead : Doc) (sect : Array ArmPiece) =>
-          Id.run
-            do
-              if sect.isEmpty then return out
-              let mut plainJ : Doc := .nil
-              let mut rows : Array (Doc × Option Doc) := #[]
-              let mut allGrid := true
-              for h : j in [0:sect.size] do
-                let p := sect[j]
-                plainJ := plainJ ++ (if j == 0 then Doc.nil else Doc.hardline) ++ p.doc
-                match p.gridRow with
-                | some r => rows := rows.push r
-                | none => allGrid := false
-              let body := if allGrid then armsAligned mode maxDelta rows plainJ else plainJ
-              return out ++ sectLead ++ body
-      let mut out : Doc := .nil
-      let mut sect : Array ArmPiece := #[]
-      let mut sectLead : Doc := .nil
-      for p in pieces do
-        if p.plain && !sect.isEmpty then sect := sect.push p
-        else
-          out := flush out sectLead sect
-          sect := #[p]
-          sectLead := p.sep
-      return flush out sectLead sect
+  Id.run do
+    let flush :=
+      fun (out sectLead : Doc) (sect : Array ArmPiece) =>
+        Id.run do
+          if sect.isEmpty then
+            return out
+          let mut plainJ : Doc := .nil
+          let mut rows : Array (Doc × Option Doc) := #[]
+          let mut allGrid := true
+          for h : j in [0:sect.size] do
+            let p := sect[j]
+            plainJ := plainJ ++ (if j == 0 then Doc.nil else Doc.hardline) ++ p.doc
+            match p.gridRow with
+            | some r => rows := rows.push r
+            | none => allGrid := false
+          let body := if allGrid then armsAligned mode maxDelta rows plainJ else plainJ
+          return out ++ sectLead ++ body
+    let mut out : Doc := .nil
+    let mut sect : Array ArmPiece := #[]
+    let mut sectLead : Doc := .nil
+    for p in pieces do
+      if p.plain && !sect.isEmpty then sect := sect.push p
+      else
+        out := flush out sectLead sect
+        sect := #[p]
+        sectLead := p.sep
+    return flush out sectLead sect
 
 /-- The `matchAlt` nodes of a `matchAlts` node (groups flattened). -/
 def matchAltsOf
     (altsNode : Lean.Syntax)
     : Array Lean.Syntax :=
 
-  Id.run
-    do
-      let mut alts : Array Lean.Syntax := #[]
-      for g in altsNode.getArgs do
-        for c in g.getArgs do
-          if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
-      return alts
+  Id.run do
+    let mut alts : Array Lean.Syntax := #[]
+    for g in altsNode.getArgs do
+      for c in g.getArgs do
+        if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+    return alts
 
 /-- THE shared arm loop: the `ArmPiece`s of a `| pat => body` arm set —
     `Term.match` arms and the Decl `declValEqns` value are the same shape, and
@@ -282,7 +280,8 @@ def armPieces?
   let mut pieces : Array ArmPiece := #[]
   for h : i in [0:alts.size] do
     let alt := alts[i]
-    if Lean4Fmt.Syntax.hasUnownedInteriorComment alt then return none
+    if Lean4Fmt.Syntax.hasUnownedInteriorComment alt then
+      return none
     let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
     let some sep := leadingSep? lead | return none
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty

@@ -163,12 +163,12 @@ def emit
     | none   => true
   -- normalizable gap: whitespace-only, has a newline, a multi-line neighbor
   let gapOk (p c : Lean.Syntax) (pBody cBody : Doc) : Bool :=
-    Id.run
-      do
-        if style.blankLines.policy != Lean4Fmt.Style.BlankPolicy.normalize then return false
-        let gap := ((Lean4Fmt.Syntax.trailing? p).getD "") ++ ((Lean4Fmt.Syntax.leading? c).getD "")
-        let nls := (gap.toList.filter (· == '\n')).length
-        return gap.toList.all (·.isWhitespace) && nls ≥ 1 && (multi pBody || multi cBody || nls ≥ 2)
+    Id.run do
+      if style.blankLines.policy != Lean4Fmt.Style.BlankPolicy.normalize then
+        return false
+      let gap := ((Lean4Fmt.Syntax.trailing? p).getD "") ++ ((Lean4Fmt.Syntax.leading? c).getD "")
+      let nls := (gap.toList.filter (· == '\n')).length
+      return gap.toList.all (·.isWhitespace) && nls ≥ 1 && (multi pBody || multi cBody || nls ≥ 2)
   -- file-head leading (banner comments, blanks): structural under normalize —
   -- prepending a virtual newline makes the seam kit treat every banner line
   -- as a full line; the artificial first separator is dropped
@@ -252,7 +252,8 @@ def emit
     match prev with
     | some (p, _) => (((Lean4Fmt.Syntax.trailing? p).getD "").toList.all (·.isWhitespace))
     | none        => false
-  if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize && finalWs then return acc
+  if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize && finalWs then
+    return acc
   return acc ++ pendTrail
 
 end Lean4Fmt.Emit.Module

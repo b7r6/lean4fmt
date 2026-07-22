@@ -20,14 +20,13 @@ def sepBy
     (ds : Array Doc)
     : Doc :=
 
-  Id.run
-    do
-      let mut acc := Doc.nil
-      let mut first := true
-      for d in ds do
-        acc := if first then d else acc ++ sep ++ d
-        first := false
-      return acc
+  Id.run do
+    let mut acc := Doc.nil
+    let mut first := true
+    for d in ds do
+      acc := if first then d else acc ++ sep ++ d
+      first := false
+    return acc
 
 /-- `l` … `r` around `d`, as a group (breaks together). -/
 def brackets
@@ -48,13 +47,13 @@ def fillList
     (ds : Array Doc)
     : Doc :=
 
-  Id.run
-    do
-      if ds.isEmpty then return .text (l ++ r)
-      let mut items : Array Doc := #[]
-      for i in [0:ds.size] do
-        items := items.push (if i + 1 == ds.size then ds[i]! ++ .text r else ds[i]! ++ .text ",")
-      return .text l ++ .nest 2 (.fillSep items.toList)
+  Id.run do
+    if ds.isEmpty then
+      return .text (l ++ r)
+    let mut items : Array Doc := #[]
+    for i in [0:ds.size] do
+      items := items.push (if i + 1 == ds.size then ds[i]! ++ .text r else ds[i]! ++ .text ",")
+    return .text l ++ .nest 2 (.fillSep items.toList)
 
 /-- Join with a hard newline between each (own-line items). -/
 def vcat (ds : Array Doc) : Doc := sepBy .hardline ds

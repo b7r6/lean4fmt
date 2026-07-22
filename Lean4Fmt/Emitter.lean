@@ -62,7 +62,8 @@ def emit
     (s : String)
     : EmitterM Unit := do
 
-  if s.isEmpty then return
+  if s.isEmpty then
+    return
   let config ← getConfig
   let st ← getState
   let mut out := st.output
@@ -82,7 +83,8 @@ def newline
     : EmitterM Unit := do
 
   let st ← getState
-  if st.inlineMode then return -- suppress newlines in inline mode
+  if st.inlineMode then
+    return -- suppress newlines in inline mode
   let config ← getConfig
   modifyState
     fun st =>
@@ -121,7 +123,8 @@ def emitVerbatimStr
   let mut ls := s.splitOn "\n"
   ls := ls.dropWhile (fun l => !nonblank l)
   ls := (ls.reverse.dropWhile (fun l => !nonblank l)).reverse
-  if ls.isEmpty then return
+  if ls.isEmpty then
+    return
   let indentOf (l : String) : Nat := (l.toList.takeWhile (· == ' ')).length
   let base := (ls.filter nonblank).foldl (fun m l => Nat.min m (indentOf l)) 1000000
   let base := if base == 1000000 then 0 else base
@@ -159,7 +162,8 @@ def emitVerbatim
     -- emptiness / multi-line tests.
     let sTrim := (s.trimAsciiEnd).toString
     let t := (s.trimAscii).toString
-    if t.isEmpty then return
+    if t.isEmpty then
+      return
     if (t.any (· == '\n')) && !(← getState).inlineMode then
       -- ensure a fresh line, but do NOT add a blank if a newline is already
       -- pending (avoids splitting a `let`/expression body from its head).
@@ -194,10 +198,12 @@ def processLeading
     : EmitterM Unit := do
 
   if let some leading := getLeading stx then
-    if leading.isEmpty then return
+    if leading.isEmpty then
+      return
     let st ← getState
     -- In inline mode, don't process leading whitespace
-    if st.inlineMode then return
+    if st.inlineMode then
+      return
     let atStart := st.output.isEmpty && st.pendingNewlines == 0
     let newlines := countNewlines leading
     if hasComment leading then

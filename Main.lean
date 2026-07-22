@@ -41,7 +41,8 @@ unsafe def addLakePathsImpl
   -- an explicit LEAN_PATH is the caller taking control (corpus-gate's farm,
   -- batch loops): skip the ~1.6s/root lake startup — discovery is the
   -- ZERO-CONFIG path, not an override
-  if ((← IO.getEnv "LEAN_PATH").getD "") != "" then return
+  if ((← IO.getEnv "LEAN_PATH").getD "") != "" then
+    return
   let mut roots : Array System.FilePath := #[]
   for f in files do
     -- absolute first: a bare relative path's parent chain ends BEFORE the

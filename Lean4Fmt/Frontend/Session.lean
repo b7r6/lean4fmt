@@ -65,12 +65,11 @@ unsafe def parseModule?
   -- mathlib CategoryTheory file burned 9+ CPU-minutes elaborating proofs
   -- it splits "to avoid timeouts" in its own build)
   let opts : Options := Options.empty.setBool `debug.byAsSorry true
-  quietly
-    do
-      try
-        let s ← Lean.Elab.IO.processCommands ictx mps (Lean.Elab.Command.mkState env msgs opts)
-        if s.commands.any (·.hasMissing) then pure none
-        else pure (some (Syntax.node .none ``Lean.Parser.Module.module #[hdr, mkNullNode s.commands]))
-      catch _ => pure none
+  quietly do
+    try
+      let s ← Lean.Elab.IO.processCommands ictx mps (Lean.Elab.Command.mkState env msgs opts)
+      if s.commands.any (·.hasMissing) then pure none
+      else pure (some (Syntax.node .none ``Lean.Parser.Module.module #[hdr, mkNullNode s.commands]))
+    catch _ => pure none
 
 end Lean4Fmt.Frontend.Session

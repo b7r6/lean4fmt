@@ -18,10 +18,12 @@ partial def discover
             : IO (Option System.FilePath) := do
 
   let cand := start / ".lean4fmt.lean"
-  if ← cand.pathExists then return some cand
+  if ← cand.pathExists then
+    return some cand
   match start.parent with
   | some p =>
-    if p == start then return none
+    if p == start then
+      return none
     else discover p
   | none => return none
 

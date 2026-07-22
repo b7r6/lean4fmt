@@ -118,23 +118,27 @@ private def groupText?
             (g : Array Lean.Syntax)
             : Option String :=
 
-  Id.run
-    do
-      let mut txt := ""
-      for j in [0:g.size] do
-        let it := g[j]!
-        if Lean4Fmt.Syntax.interiorHasLineComment it then return none
-        let t := (Lean4Fmt.Emit.tokenJoin? it).getD ((Lean4Fmt.Emit.bareSrc it).trimAscii.toString)
-        if t.isEmpty || t.any (· == '\n') then return none
-        if j + 1 < g.size then
-          let tr := (Lean4Fmt.Syntax.trailing? it).getD ""
-          if !tr.trimAscii.toString.isEmpty || tr.any (· == '\n') then return none
-        if j > 0 then
-          let ld := (Lean4Fmt.Syntax.leading? it).getD ""
-          if !ld.trimAscii.toString.isEmpty || ld.any (· == '\n') then return none
-        txt := if txt.isEmpty then t else txt ++ "; " ++ t
-      if txt.isEmpty then return none
-      return some txt
+  Id.run do
+    let mut txt := ""
+    for j in [0:g.size] do
+      let it := g[j]!
+      if Lean4Fmt.Syntax.interiorHasLineComment it then
+        return none
+      let t := (Lean4Fmt.Emit.tokenJoin? it).getD ((Lean4Fmt.Emit.bareSrc it).trimAscii.toString)
+      if t.isEmpty || t.any (· == '\n') then
+        return none
+      if j + 1 < g.size then
+        let tr := (Lean4Fmt.Syntax.trailing? it).getD ""
+        if !tr.trimAscii.toString.isEmpty || tr.any (· == '\n') then
+          return none
+      if j > 0 then
+        let ld := (Lean4Fmt.Syntax.leading? it).getD ""
+        if !ld.trimAscii.toString.isEmpty || ld.any (· == '\n') then
+          return none
+      txt := if txt.isEmpty then t else txt ++ "; " ++ t
+    if txt.isEmpty then
+      return none
+    return some txt
 
 /-- One group's doc: a single tactic walks (active layouts apply); a
     `;`-joined run rides as one text line. -/
@@ -143,7 +147,8 @@ private def groupDoc?
             (g : Array Lean.Syntax)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
 
-  if g.size == 1 then return some (← walk g[0]!)
+  if g.size == 1 then
+    return some (← walk g[0]!)
   return (groupText? g).map Doc.text
 
 /-- The seam loop over groups (mirrors `DoNotation.seqLinesDoc?`): each group
@@ -163,8 +168,10 @@ private def seqGroupsDoc?
     let glast := g[g.size - 1]!
     let trailT := ((Lean4Fmt.Syntax.trailing? glast).getD "").trimAscii.toString
     let last := i + 1 == groups.size
-    if !last && trailT.any (· == '\n') then return none
-    if last && !lastOwned && !trailT.isEmpty then return none
+    if !last && trailT.any (· == '\n') then
+      return none
+    if last && !lastOwned && !trailT.isEmpty then
+      return none
     let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
     let lead := (Lean4Fmt.Syntax.leading? first).getD ""
     -- first group: comment-free blank runs after the block opener are LAYOUT
@@ -221,10 +228,12 @@ private def listItems?
             if (Lean4Fmt.Emit.bareSrc d).trimAscii.toString == "," then lastComma := true
             continue
           let t := Lean4Fmt.Emit.canonTok d
-          if t.isEmpty || t.any (· == '\n') then return none
+          if t.isEmpty || t.any (· == '\n') then
+            return none
           items := items.push (.text t)
           lastComma := false
-      if items.isEmpty || lastComma then return none
+      if items.isEmpty || lastComma then
+        return none
       return some items
 
 /-- Generic token-line tactic: tokens single-spaced on ONE line, except
@@ -294,7 +303,8 @@ private def headBlockDoc?
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
 
   let a := stx.getArgs
-  if a.size < 2 then return none
+  if a.size < 2 then
+    return none
   let mut head := ""
   for h : i in [0:a.size - 1] do
     let c := a[i]!
@@ -302,11 +312,14 @@ private def headBlockDoc?
     -- owns it (see exampleDoc?); interior comments still bail
     let ownLead :=
       if i == 0 then Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? c).getD "") else 0
-    if Lean4Fmt.Syntax.countSubtreeLineComments c > ownLead then return none
+    if Lean4Fmt.Syntax.countSubtreeLineComments c > ownLead then
+      return none
     let t := Lean4Fmt.Emit.canonTok c
-    if t.any (· == '\n') then return none
+    if t.any (· == '\n') then
+      return none
     if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
-  if head.isEmpty then return none
+  if head.isEmpty then
+    return none
   let some bD ← armSeqDoc? walk a[a.size - 1]! conv | return none
   return some (.text head ++ bD)
 

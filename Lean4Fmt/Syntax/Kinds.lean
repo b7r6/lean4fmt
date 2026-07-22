@@ -285,16 +285,17 @@ def hasTemplateOpener
     (s : String)
     : Bool :=
 
-  Id.run
-    do
-      let a : Array Char := s.toList.toArray
-      let n := a.size
-      for i in [0:n] do
-        if a[i]! == '[' && i + 1 < n && (a[i+1]!.isAlpha || a[i+1]! == '_') then
-          let mut j := i + 1
-          while _hj : j < n && (a[j]!.isAlphanum || a[j]! == '_' || a[j]! == '.') do
-            j := j + 1
-          if _hj : j < n then if a[j]! == '|' then return true
-      return false
+  Id.run do
+    let a : Array Char := s.toList.toArray
+    let n := a.size
+    for i in [0:n] do
+      if a[i]! == '[' && i + 1 < n && (a[i+1]!.isAlpha || a[i+1]! == '_') then
+        let mut j := i + 1
+        while _hj : j < n && (a[j]!.isAlphanum || a[j]! == '_' || a[j]! == '.') do
+          j := j + 1
+        if _hj : j < n then
+          if a[j]! == '|' then
+            return true
+    return false
 
 end Lean4Fmt.Syntax
