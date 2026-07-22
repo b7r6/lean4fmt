@@ -448,7 +448,8 @@ def emit
     return .text (head ++ " :=") ++ .group (.nest 2 (.line ++ vdoc))
   else if kind == ``Lean.Parser.Tactic.simp || kind == ``Lean.Parser.Tactic.simpAll
       || kind == `Lean.Parser.Tactic.dsimp || kind == `Lean.Parser.Tactic.simpa
-      || kind == `Lean.Parser.Tactic.tacticRwa__ then
+      || kind == `Lean.Parser.Tactic.tacticRwa__
+      || kind == `Mathlib.Tactic.tacticSimp_rw___ then
     -- simp family + rwa: tokens on one line, bracket lists as width-aware
     -- commaLists (a long lemma list breaks instead of going verbatim)
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
@@ -574,10 +575,19 @@ def emit
       -- hardline seam (the sequence-seam invariant makes the re-anchor
       -- deterministic) — the OTHER arms stay active. Whole-node bails here
       -- previously killed 22.9K of the wide census on the biggest sites.
+      -- The arm's LEADING comment lines (`-- case docs` between arms) are
+      -- OUR seam: place via the kit; unownable → whole verbatim (a per-arm
+      -- verbatim would DROP the leading — bareSrc excludes it).
+      let altLead := (Lean4Fmt.Syntax.leading? alt).getD ""
+      let hasLeadContent :=
+        ((altLead.splitOn "\n").drop 1).dropLast.any (fun l => !l.trimAscii.toString.isEmpty)
+      let sep? : Option Doc :=
+        if !hasLeadContent then some .hardline else Lean4Fmt.Emit.leadingSep? altLead
+      let some sepD := sep? | return (← Lean4Fmt.Emit.verbatim stx)
       let armDoc? ← do
         if alt.getKind != ``Lean.Parser.Tactic.inductionAlt || alt.getArgs.size != 2 then
           pure none
-        else if Lean4Fmt.Syntax.interiorHasLineComment alt then pure none else
+        else
         let lhsT := Lean4Fmt.Emit.canonTok alt.getArgs[0]!
         if lhsT.isEmpty || lhsT.any (· == '\n') then pure none else
         let rhs := alt.getArgs[1]!.getArgs
@@ -592,19 +602,31 @@ def emit
           -- arrow spelling from SOURCE (rhs[0] is the arrow atom; `=>` vs `↦`)
           let arrowT := ((rhs[0]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString
           let arrowT := if arrowT.isEmpty then "=>" else arrowT
-          if seq.getKind == ``Lean.Parser.Term.syntheticHole
+          -- `=> -- note` (the case-label idiom): the comment lives in the
+          -- ARROW atom's trailing — own it on the arm-head line; ALL groups
+          -- go below (nothing shares the line with a comment)
+          let arrTrail := ((rhs[0]?.bind Lean4Fmt.Syntax.trailing?).getD "").trimAscii.toString
+          if arrTrail.any (· == '\n') || (!arrTrail.isEmpty && !arrTrail.startsWith "--") then
+            pure none
+          else if seq.getKind == ``Lean.Parser.Term.syntheticHole
               || seq.getKind == ``Lean.Parser.Term.hole then
             -- hole RHS (`=> ?_`): the grammar's non-seq alternative — plain text
             let hT := Lean4Fmt.Emit.canonTok seq
-            if hT.isEmpty || hT.any (· == '\n') then pure none
+            if hT.isEmpty || hT.any (· == '\n') || !arrTrail.isEmpty then pure none
             else pure (some (Doc.text (lhsT ++ " " ++ arrowT ++ " " ++ hT)))
+          else if !arrTrail.isEmpty then
+            let some groups := tacticGroups? seq | pure none
+            match ← seqGroupsDoc? walk groups true with
+            | some rest =>
+              pure (some (.text (lhsT ++ " " ++ arrowT ++ " " ++ arrTrail) ++ .nest 2 rest))
+            | none => pure none
           else
             match ← armSeqDoc? walk seq with
             | some bD => pure (some (.text (lhsT ++ " " ++ arrowT) ++ bD))
             | none => pure none
       match armDoc? with
-      | some ad => d := d ++ .hardline ++ ad
-      | none => d := d ++ .hardline ++ (← Lean4Fmt.Emit.verbatim alt)
+      | some ad => d := d ++ sepD ++ ad
+      | none => d := d ++ sepD ++ (← Lean4Fmt.Emit.verbatim alt)
     return d
   else if kind == `Lean.Parser.Tactic.«tacticNext_=>_» || kind == ``Lean.Parser.Tactic.case
       || kind == ``Lean.Parser.Tactic.allGoals || kind == `Lean.Parser.Tactic.tacticRepeat_ then

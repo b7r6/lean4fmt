@@ -108,6 +108,7 @@ partial def walkCore
          || kind == ``Lean.Parser.Tactic.intro
          || kind == ``Lean.Parser.Tactic.intros
          || kind == ``Lean.Parser.Tactic.simp
+         || kind == `Mathlib.Tactic.tacticSimp_rw___
          || kind == `Lean.Parser.Tactic.«tacticNext_=>_»
          || kind == ``Lean.Parser.Tactic.case
          || kind == ``Lean.Parser.Tactic.allGoals
