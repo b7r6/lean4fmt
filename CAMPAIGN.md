@@ -24,9 +24,16 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 
 ## Scoreboard
 
-| date | sample | attempted | shipped | ceiling | rejects |
-|------|--------|-----------|---------|---------|---------|
-| 2026-07-22 | 55 (2/dir) | 72.3% | 63.1% | (pre-instrument) | 6: 3 fixed-point, 2 tokens, 1 comments |
+| date | sample | attempted | shipped | portable ceiling | **shipped-of-portable** | rejects |
+|------|--------|-----------|---------|------------------|-------------------------|---------|
+| 2026-07-22 | 55 (2/dir) | 72.3% | 63.1% | 90.1% of code | **70.1%** | 6: 3 fixed-point, 2 tokens, 1 comments |
+
+First instrumented reading (2026-07-22): the whole-declaration payload is
+SHAPE-handlers, not comments — `defwhere-shape` 26.0KB + `instance-shape`
+11.6KB + `structure-shape` 4.4KB vs `modifiers-comment` 1.3KB. Phase 2
+therefore starts at `defWhereDoc?` and `instanceDoc?`. Next by bytes:
+`declValSimple` spans (14.2KB `val-multiline`), typeSpec 7.9KB, then the
+tactic tail (induction ×2 = 5.3KB, have 5.2KB, cdot 4.9KB, suffices 4.6KB).
 
 ## The phases
 
