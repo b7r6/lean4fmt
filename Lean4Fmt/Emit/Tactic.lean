@@ -447,6 +447,56 @@ def emit
         if Lean4Fmt.Doc.hasMidlineReanchor vdoc then return (← Lean4Fmt.Emit.verbatim stx)
         return .text (head ++ " :=") ++ .nest 2 (.hardline ++ vdoc)
     return .text (head ++ " :=") ++ .group (.nest 2 (.line ++ vdoc))
+  else if kind == ``Lean.Parser.Tactic.induction || kind == ``Lean.Parser.Tactic.cases then
+    -- ["induction"/"cases", targets, …, inductionAlts?]: head token-joined
+    -- on one line, each `| pat => body` arm on its own line at +2 (the
+    -- mathlib shape), bodies via armSeqDoc? (inline when a single clean
+    -- tactic fits, else one per line at +2). An arm the machinery can't
+    -- carry rides verbatim WHOLE at its hardline seam — the sequence-seam
+    -- invariant makes that deterministic; other arms stay active.
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    let mut head := ""
+    let mut alts? : Option Lean.Syntax := none
+    for c in a do
+      let node := if c.getKind == Lean.nullKind && c.getArgs.size == 1 then c.getArgs[0]! else c
+      if node.getKind == `Lean.Parser.Tactic.inductionAlts then
+        alts? := some node
+        break
+      let t := Lean4Fmt.Emit.canonTok c
+      if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
+      if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
+    let some alts := alts? | return (← Lean4Fmt.Emit.verbatim stx)
+    -- inductionAlts = ["with", (tacticSeq)?, null[alt+]] — a general tactic
+    -- between `with` and the bars has no arm seam: whole verbatim
+    let aa := alts.getArgs
+    if aa.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
+    if !(Lean4Fmt.Emit.bareSrc aa[1]!).trimAscii.toString.isEmpty then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    head := head ++ " with"
+    let mut body : Doc := .nil
+    for alt in aa[2]!.getArgs do
+      -- inductionAlt = [null[altLHS+], "=>", holeOrSeq]
+      let armDoc? ← do
+        let al := alt.getArgs
+        if al.size != 3 then pure none else
+        let lhsT := Lean4Fmt.Emit.canonTok al[0]!
+        let arrT := (Lean4Fmt.Emit.bareSrc al[1]!).trimAscii.toString
+        if lhsT.isEmpty || lhsT.any (· == '\n') || arrT != "=>" then pure none else
+        let b := al[2]!
+        if b.getKind == `Lean.Parser.Tactic.tacticSeq then
+          match ← armSeqDoc? walk b with
+          | some bd => pure (some (.text (lhsT ++ " =>") ++ bd))
+          | none => pure none
+        else
+          let bt := Lean4Fmt.Emit.canonTok b
+          if bt.isEmpty || bt.any (· == '\n') then pure none
+          else pure (some (Doc.text (lhsT ++ " => " ++ bt)))
+      match armDoc? with
+      | some d => body := body ++ .hardline ++ d
+      | none => body := body ++ .hardline ++ (← Lean4Fmt.Emit.verbatim alt)
+    -- arms at the SAME column as the keyword (the core/mathlib shape:
+    -- `induction n with` / `| zero => …`), bodies at +2 under their arm
+    return .text head ++ body
   else if kind == ``Lean.Parser.Tactic.simp || kind == ``Lean.Parser.Tactic.simpAll
       || kind == `Lean.Parser.Tactic.dsimp || kind == `Lean.Parser.Tactic.simpa
       || kind == `Lean.Parser.Tactic.tacticRwa__ then
