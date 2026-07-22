@@ -270,9 +270,9 @@ theorem wrBlock_out
         (raw : String)
         : nonWs (wrBlock st indent base raw).out = nonWs st.out ++ nonWs raw := by
 
-  have hchain : (((splitLines (trimEndWs raw.toList)).dropWhile isBlankLine).map nonWsL).flatten
-      = nonWsL raw.toList := by
-    rw [flatten_map_dropBlank, splitLines_nonWs, nonWsL_trimEndWs]
+  have hchain :
+      (((splitLines (trimEndWs raw.toList)).dropWhile isBlankLine).map nonWsL).flatten
+          = nonWsL raw.toList := by rw [flatten_map_dropBlank, splitLines_nonWs, nonWsL_trimEndWs]
   unfold wrBlock
   cases h : (splitLines (trimEndWs raw.toList)).dropWhile isBlankLine with
   | nil =>

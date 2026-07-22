@@ -672,7 +672,12 @@ partial def emit
           -- cluster's dominator): name+binders flat, `:` trails the head,
           -- the walked type breaks at +4 (the sig continuation shape);
           -- `:= value` glues after the type's last line
-          let ts := args[2]!
+          -- the optional type slot arrives null-wrapped in the have/let
+          -- shapes — unwrap before the typeSpec check (a multi-line type
+          -- otherwise bailed structurally: the 68K tacticHave census pool)
+          let ts0 := args[2]!
+          let ts := if ts0.getKind == Lean.nullKind && ts0.getArgs.size == 1
+            then ts0.getArgs[0]! else ts0
           let tyNode :=
             if ts.getKind == ``Lean.Parser.Term.typeSpec then ts.getArgs[1]?.getD .missing
             else .missing
