@@ -882,8 +882,8 @@ private def whereBodyDoc?
       | return none
     let some d ← whereFieldDoc? walk f | return none
     body := body ++ sep ++ d ++ trailDoc
-  if n == 0 then
-    return none
+  -- n == 0 is the EMPTY where (`instance … : T where` — every field
+  -- defaulted; the mathlib Prop-class idiom): a bare `where` tail, no body
   return some body
 
 /-- `def name <sig> where <fields>` (the codegen Func-where pattern): head
@@ -1119,13 +1119,16 @@ private def instanceDoc?
     return none
   match headTail with
   | some tail =>
-    -- only `… where` supports the broken head for now
     let declVal := a[5]!
-    if declVal.getKind != ``Lean.Parser.Command.whereStructInst then
-      return none
-    match ← whereBodyDoc? walk declVal with
-    | some body => return some (.text head ++ tail ++ .text " where" ++ .nest 2 body)
-    | none => return none
+    if declVal.getKind == ``Lean.Parser.Command.whereStructInst then
+      match ← whereBodyDoc? walk declVal with
+      | some body => return some (.text head ++ tail ++ .text " where" ++ .nest 2 body)
+      | none => return none
+    -- `:= by`/`:= v` behind the broken type head — the docHeadValDoc? seam
+    -- (same as the !flatOk branch; the where-only restriction predates it)
+    if declVal.getKind == ``Lean.Parser.Command.declValSimple then
+      return (← docHeadValDoc? walk (.text head ++ tail) declVal)
+    return none
   | none => pure ()
   let declVal := a[5]!
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then headValDoc? walk head declVal
