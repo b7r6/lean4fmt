@@ -962,11 +962,10 @@ theorem flatten_map_dropLast
         (hy : ys ≠ [])
         : (ys.map f).flatten = (ys.dropLast.map f).flatten ++ f (ys.getLast hy) := by
 
-  calc (ys.map f).flatten
-      = (((ys.dropLast ++ [ys.getLast hy]).map f)).flatten := by
+  calc (ys.map f).flatten = (((ys.dropLast ++ [ys.getLast hy]).map f)).flatten := by
         rw [List.dropLast_concat_getLast hy]
     _ = (ys.dropLast.map f).flatten ++ f (ys.getLast hy) := by
-        simp [List.map_append, List.flatten_append]
+          simp [List.map_append, List.flatten_append]
 
 /-- **T3 — seam content preservation.** When the seam kit owns a leading
     trivia, the emitted separator doc carries EXACTLY the trivia's

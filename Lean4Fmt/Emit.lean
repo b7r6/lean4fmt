@@ -114,6 +114,7 @@ partial def walkCore
          || kind == `Lean.Parser.Tactic.tacticRepeat_
          || kind == `Lean.Parser.Tactic.Conv.conv
          || kind == `Lean.calcTactic
+         || kind == `Lean.calc
          || kind == ``Lean.Parser.Tactic.split
          || kind == `Lean.Parser.Tactic.obtain
          || kind == `Lean.Parser.Tactic.rcases

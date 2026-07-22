@@ -447,56 +447,6 @@ def emit
         if Lean4Fmt.Doc.hasMidlineReanchor vdoc then return (← Lean4Fmt.Emit.verbatim stx)
         return .text (head ++ " :=") ++ .nest 2 (.hardline ++ vdoc)
     return .text (head ++ " :=") ++ .group (.nest 2 (.line ++ vdoc))
-  else if kind == ``Lean.Parser.Tactic.induction || kind == ``Lean.Parser.Tactic.cases then
-    -- ["induction"/"cases", targets, …, inductionAlts?]: head token-joined
-    -- on one line, each `| pat => body` arm on its own line at +2 (the
-    -- mathlib shape), bodies via armSeqDoc? (inline when a single clean
-    -- tactic fits, else one per line at +2). An arm the machinery can't
-    -- carry rides verbatim WHOLE at its hardline seam — the sequence-seam
-    -- invariant makes that deterministic; other arms stay active.
-    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    let mut head := ""
-    let mut alts? : Option Lean.Syntax := none
-    for c in a do
-      let node := if c.getKind == Lean.nullKind && c.getArgs.size == 1 then c.getArgs[0]! else c
-      if node.getKind == `Lean.Parser.Tactic.inductionAlts then
-        alts? := some node
-        break
-      let t := Lean4Fmt.Emit.canonTok c
-      if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-      if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
-    let some alts := alts? | return (← Lean4Fmt.Emit.verbatim stx)
-    -- inductionAlts = ["with", (tacticSeq)?, null[alt+]] — a general tactic
-    -- between `with` and the bars has no arm seam: whole verbatim
-    let aa := alts.getArgs
-    if aa.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
-    if !(Lean4Fmt.Emit.bareSrc aa[1]!).trimAscii.toString.isEmpty then
-      return (← Lean4Fmt.Emit.verbatim stx)
-    head := head ++ " with"
-    let mut body : Doc := .nil
-    for alt in aa[2]!.getArgs do
-      -- inductionAlt = [null[altLHS+], "=>", holeOrSeq]
-      let armDoc? ← do
-        let al := alt.getArgs
-        if al.size != 3 then pure none else
-        let lhsT := Lean4Fmt.Emit.canonTok al[0]!
-        let arrT := (Lean4Fmt.Emit.bareSrc al[1]!).trimAscii.toString
-        if lhsT.isEmpty || lhsT.any (· == '\n') || arrT != "=>" then pure none else
-        let b := al[2]!
-        if b.getKind == `Lean.Parser.Tactic.tacticSeq then
-          match ← armSeqDoc? walk b with
-          | some bd => pure (some (.text (lhsT ++ " =>") ++ bd))
-          | none => pure none
-        else
-          let bt := Lean4Fmt.Emit.canonTok b
-          if bt.isEmpty || bt.any (· == '\n') then pure none
-          else pure (some (Doc.text (lhsT ++ " => " ++ bt)))
-      match armDoc? with
-      | some d => body := body ++ .hardline ++ d
-      | none => body := body ++ .hardline ++ (← Lean4Fmt.Emit.verbatim alt)
-    -- arms at the SAME column as the keyword (the core/mathlib shape:
-    -- `induction n with` / `| zero => …`), bodies at +2 under their arm
-    return .text head ++ body
   else if kind == ``Lean.Parser.Tactic.simp || kind == ``Lean.Parser.Tactic.simpAll
       || kind == `Lean.Parser.Tactic.dsimp || kind == `Lean.Parser.Tactic.simpa
       || kind == `Lean.Parser.Tactic.tacticRwa__ then
@@ -621,31 +571,41 @@ def emit
     let alts := altsNode.getArgs[2]!.getArgs
     let mut d : Doc := .text (head ++ " with")
     for alt in alts do
-      if alt.getKind != ``Lean.Parser.Tactic.inductionAlt || alt.getArgs.size != 2 then
-        return (← Lean4Fmt.Emit.verbatim stx)
-      if Lean4Fmt.Syntax.interiorHasLineComment alt then return (← Lean4Fmt.Emit.verbatim stx)
-      let lhsT := Lean4Fmt.Emit.canonTok alt.getArgs[0]!
-      if lhsT.isEmpty || lhsT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-      let rhs := alt.getArgs[1]!.getArgs
-      if rhs.size == 0 then
-        -- arrow-less alt (`with | _ a h ih` — the body tactics are the
-        -- induction's SIBLINGS at outer indent): the pattern line alone
-        d := d ++ .hardline ++ .text lhsT
-        continue
-      if rhs.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-      let some seq := rhs[1]? | return (← Lean4Fmt.Emit.verbatim stx)
-      -- arrow spelling from SOURCE (rhs[0] is the arrow atom; `=>` vs `↦`)
-      let arrowT := ((rhs[0]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString
-      let arrowT := if arrowT.isEmpty then "=>" else arrowT
-      if seq.getKind == ``Lean.Parser.Term.syntheticHole
-          || seq.getKind == ``Lean.Parser.Term.hole then
-        -- hole RHS (`=> ?_`): the grammar's non-seq alternative — plain text
-        let hT := Lean4Fmt.Emit.canonTok seq
-        if hT.isEmpty || hT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-        d := d ++ .hardline ++ .text (lhsT ++ " " ++ arrowT ++ " " ++ hT)
-        continue
-      let some bD ← armSeqDoc? walk seq | return (← Lean4Fmt.Emit.verbatim stx)
-      d := d ++ .hardline ++ .text (lhsT ++ " " ++ arrowT) ++ bD
+      -- an arm the machinery can't carry rides verbatim WHOLE at its own
+      -- hardline seam (the sequence-seam invariant makes the re-anchor
+      -- deterministic) — the OTHER arms stay active. Whole-node bails here
+      -- previously killed 22.9K of the wide census on the biggest sites.
+      let armDoc? ← do
+        if alt.getKind != ``Lean.Parser.Tactic.inductionAlt || alt.getArgs.size != 2 then
+          pure none
+        else if Lean4Fmt.Syntax.interiorHasLineComment alt then pure none else
+        let lhsT := Lean4Fmt.Emit.canonTok alt.getArgs[0]!
+        if lhsT.isEmpty || lhsT.any (· == '\n') then pure none else
+        let rhs := alt.getArgs[1]!.getArgs
+        if rhs.size == 0 then
+          -- arrow-less alt (`with | _ a h ih` — the body tactics are the
+          -- induction's SIBLINGS at outer indent): the pattern line alone
+          pure (some (Doc.text lhsT))
+        else if rhs.size != 2 then pure none else
+        match rhs[1]? with
+        | none => pure none
+        | some seq =>
+          -- arrow spelling from SOURCE (rhs[0] is the arrow atom; `=>` vs `↦`)
+          let arrowT := ((rhs[0]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString
+          let arrowT := if arrowT.isEmpty then "=>" else arrowT
+          if seq.getKind == ``Lean.Parser.Term.syntheticHole
+              || seq.getKind == ``Lean.Parser.Term.hole then
+            -- hole RHS (`=> ?_`): the grammar's non-seq alternative — plain text
+            let hT := Lean4Fmt.Emit.canonTok seq
+            if hT.isEmpty || hT.any (· == '\n') then pure none
+            else pure (some (Doc.text (lhsT ++ " " ++ arrowT ++ " " ++ hT)))
+          else
+            match ← armSeqDoc? walk seq with
+            | some bD => pure (some (.text (lhsT ++ " " ++ arrowT) ++ bD))
+            | none => pure none
+      match armDoc? with
+      | some ad => d := d ++ .hardline ++ ad
+      | none => d := d ++ .hardline ++ (← Lean4Fmt.Emit.verbatim alt)
     return d
   else if kind == `Lean.Parser.Tactic.«tacticNext_=>_» || kind == ``Lean.Parser.Tactic.case
       || kind == ``Lean.Parser.Tactic.allGoals || kind == `Lean.Parser.Tactic.tacticRepeat_ then
@@ -672,27 +632,87 @@ def emit
     match ← headBlockDoc? walk stx (conv := true) with
     | some d => return d
     | none => return (← Lean4Fmt.Emit.verbatim stx)
-  else if kind == `Lean.calcTactic
+  else if (kind == `Lean.calcTactic || kind == `Lean.calc)
       && (← read).breaking.preserveLineBreaks
       && (Lean4Fmt.Emit.bareSrc stx).any (· == '\n') then
     -- preserve: the author's step alignment is load-bearing
     return (← Lean4Fmt.Emit.verbatim stx)
-  else if kind == `Lean.calcTactic then
-    -- basic calc: `calc` + steps, each step token-exact single-line, aligned
-    -- under the first step (indent 5 = "calc ")
+  else if kind == `Lean.calcTactic || kind == `Lean.calc then
+    -- ["calc", calcSteps[first, null[step*]]] — tactic AND term position
+    -- share the node shape. Every step token-exact single-line → aligned
+    -- under `calc ` (the flat form). Otherwise `calc` alone, steps one per
+    -- line at +2: REL ` := ` PF with the proof WALKED (`:= by` glues, its
+    -- body brings the hardlines; else flat-or-broken group at +2). A step
+    -- the machinery can't carry rides verbatim WHOLE at its own hardline
+    -- seam (sequence-seam invariant) — the other steps stay active.
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
     if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    let steps := a[1]!.getArgs
-    let mut ds : Array Doc := #[]
+    let sa := a[1]!.getArgs
+    if sa.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
+    let steps := #[sa[0]!] ++ sa[1]!.getArgs
+    if steps.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    -- flat decision PARSE-DERIVED per step (the flatten-first decision law:
+    -- canonTok's bareSrc fallback is byte-dependent and flipped the decision
+    -- pass-to-pass — gate-caught as fixed-point on the house calc), and
+    -- width-guarded (+7 = "calc "/step alignment reserve)
+    let w := (← read).layout.lineWidth
+    let mut flats : Option (Array String) := some #[]
     for st in steps do
-      let t := Lean4Fmt.Emit.canonTok st
-      if t.isEmpty || t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-      ds := ds.push (.text t)
-    if ds.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-    let mut d : Doc := .text "calc " ++ ds[0]!
-    for i in [1:ds.size] do
-      d := d ++ .nest 5 (.hardline ++ ds[i]!)
-    return d
+      match Lean4Fmt.Emit.tokenJoinFlat? st with
+      | some t => if t.isEmpty || t.length + 7 > w then flats := none
+                  else flats := flats.map (·.push t)
+      | none => flats := none
+    match flats with
+    | some ts =>
+      let mut d : Doc := .text "calc " ++ .text ts[0]!
+      for i in [1:ts.size] do
+        d := d ++ .nest 5 (.hardline ++ .text ts[i]!)
+      return d
+    | none => pure ()
+    -- broken form: `calc ` + first step on the keyword line, later steps
+    -- one per line at +2. Each step: REL walked (binop chains break at the
+    -- continuation indent) ++ the proof part nested +4 — a by/do body at
+    -- the STEP column would TERMINATE the step list on reparse (calcStep
+    -- is column-sensitive), so proof blocks must sit strictly deeper.
+    let mut body : Doc := .nil
+    let mut first := true
+    for st in steps do
+      let stDoc? ← do
+        let sargs := st.getArgs
+        -- calcFirstStep = [rel, null[":=", pf]] ; calcStep = [rel, ":=", pf]
+        let pf? : Option Lean.Syntax :=
+          if sargs.size == 3 && (Lean4Fmt.Emit.bareSrc sargs[1]!).trimAscii.toString == ":=" then
+            some sargs[2]!
+          else if sargs.size == 2 then
+            let asgn := sargs[1]!
+            if asgn.getKind == Lean.nullKind && asgn.getArgs.size == 2
+                && (Lean4Fmt.Emit.bareSrc asgn.getArgs[0]!).trimAscii.toString == ":=" then
+              some asgn.getArgs[1]!
+            else none
+          else none
+        match pf?, sargs[0]? with
+        | some pf, some rel =>
+          let relDoc ← walk rel
+          if (match relDoc with | .verbatim _ _ => true | _ => false)
+              || Lean4Fmt.Doc.hasMultilineVerbatim relDoc then pure none else
+          let pfDoc ← walk pf
+          if pf.getKind == ``Lean.Parser.Term.do || pf.getKind == ``Lean.Parser.Term.byTactic then
+            match pfDoc with
+            | .verbatim _ _ => pure none
+            | _ => pure (some (relDoc ++ .nest 4 (.text " := " ++ pfDoc)))
+          else if Lean4Fmt.Doc.hasMultilineVerbatim pfDoc then pure none
+          else pure (some (relDoc ++ .nest 4 (.text " :=" ++ .group (.line ++ pfDoc))))
+        | _, _ => pure none
+      match stDoc?, first with
+      | some d, true => body := .text "calc " ++ d
+      | some d, false => body := body ++ .nest 2 (.hardline ++ d)
+      | none, true =>
+        -- a bailed FIRST step would glue verbatim mid-line after `calc ` —
+        -- the master fixed-point hazard: whole-calc verbatim
+        return (← Lean4Fmt.Emit.verbatim stx)
+      | none, false => body := body ++ .nest 2 (.hardline ++ (← Lean4Fmt.Emit.verbatim st))
+      first := false
+    return body
   else if kind == `Lean.cdot then
     -- bullet: [cdotTk, tacticSeq] — first group rides the bullet line
     -- (`· intro l; exact h`), the rest one line per group at +2 under it
