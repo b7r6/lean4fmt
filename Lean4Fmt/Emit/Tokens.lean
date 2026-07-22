@@ -127,10 +127,32 @@ def tokenJoin?
         return none
       return some out
 
+/-- A MULTI-LINE newline-SEMANTIC descendant: by/do (the newline separates
+    tactics/statements), let (the newline is the `in`), structInst (comma-less
+    fields separate by line). Flattening across one joins constructs the
+    parser separates by line — a DIFFERENT parse from identical tokens (tree
+    class, gate-caught on mathlib Divisors: a calc step's `:= by` + two
+    tactics joined into an application). Single-line ones are safe: their
+    interior is already one line and the join preserves it. -/
+partial def hasNewlineSemantic
+            (s : Lean.Syntax)
+            : Bool :=
+
+  ((s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
+      || s.getKind == `Lean.Parser.Term.byTactic'
+      || s.getKind == ``Lean.Parser.Term.let
+      || s.getKind == ``Lean.Parser.Term.letrec
+      || s.getKind == ``Lean.Parser.Term.structInst)
+      && (bareSrc s).any (· == '\n'))
+      || s.getArgs.any hasNewlineSemantic
+
 /-- Canonical FLATTENED token text: like `tokenJoin?` but newline gaps become
     single spaces — the canonical one-line spelling of a multi-line construct.
     `none` when a gap carries a comment (flattening would eat it or comment
-    out the tail). -/
+    out the tail), or when the subtree contains a multi-line
+    newline-semantic construct (no one-line spelling EXISTS — see
+    `hasNewlineSemantic`; the flatten-side head-ws law, enforced at the one
+    owner instead of per call site). -/
 def tokenJoinFlat?
     (stx : Lean.Syntax)
     : Option String :=
@@ -138,6 +160,8 @@ def tokenJoinFlat?
   Id.run
     do
       if hasChoice stx then
+        return none
+      if hasNewlineSemantic stx then
         return none
       if Lean4Fmt.Syntax.hasQuotationKind stx then
         return none
