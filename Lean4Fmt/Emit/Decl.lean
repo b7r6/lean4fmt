@@ -991,14 +991,18 @@ private def instanceDoc?
   let mut head := (if attrT.isEmpty then "" else attrT ++ " ") ++ "instance"
   if !prioT.isEmpty then head := head ++ " " ++ prioT
   if !idT.isEmpty then head := head ++ " " ++ idT
+  -- the pre-binder head: the broken-sig path composes hd0 + sigDoc when the
+  -- flat head can't hold (the defwhere recipe)
+  let hd0 := head
+  let mut flatOk := true
   let sig := a[4]!.getArgs
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
     match Lean4Fmt.Emit.binderText? b (← read).spacing.preserveBinders with
     | some t => head := head ++ " " ++ t
     | none =>
       let t := (bareSrc b).trimAscii.toString
-      if t.isEmpty || t.any (· == '\n') then return none
-      head := head ++ " " ++ t
+      if t.isEmpty || t.any (· == '\n') then flatOk := false
+      else head := head ++ " " ++ t
   -- a MULTI-LINE instance type walks (chains at the continuation); the head
   -- becomes a Doc and only the `where` form is supported for it
   let mut headTail : Option Doc := none
@@ -1024,7 +1028,20 @@ private def instanceDoc?
     else head := head ++ " : " ++ t
   | none => return none
   let w := (← read).layout.lineWidth
-  if headTail.isNone && head.length + 6 > w then return none
+  if !flatOk || (headTail.isNone && head.length + 6 > w) then
+    -- over-width or unjoinable flat head: the shared sig machinery breaks it
+    -- (the defwhere recipe) — binders/type per the knob under the keyword,
+    -- the value behind the Doc head (docHeadValDoc?) or the where body
+    let sigD ← sigDoc walk 9 head.length 6 a[4]!
+    if Lean4Fmt.Doc.hasMultilineReanchor sigD then return none
+    let declVal := a[5]!
+    if declVal.getKind == ``Lean.Parser.Command.whereStructInst then
+      match ← whereBodyDoc? walk declVal with
+      | some body => return some (.text hd0 ++ sigD ++ .text " where" ++ .nest 2 body)
+      | none => return none
+    if declVal.getKind == ``Lean.Parser.Command.declValSimple then
+      return (← docHeadValDoc? walk (.text hd0 ++ sigD) declVal)
+    return none
   match headTail with
   | some tail =>
     -- only `… where` supports the broken head for now
