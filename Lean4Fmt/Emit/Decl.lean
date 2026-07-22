@@ -746,7 +746,13 @@ private def whereFieldDoc?
     match vdoc with
     | .verbatim _ _ => return none
     | _ => return some (.text (head ++ " := ") ++ vdoc)
-  if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return none
+  if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
+    -- multi-line opaque value: OWN-LINE placement at +2. A line-start anchor
+    -- is a deterministic seam — the uniform re-anchor preserves interior
+    -- column relations — unlike the mid-line glue the old whole-field bail
+    -- protected against (this was most of the instance-shape payload:
+    -- app/fun values ending in by-blocks, `induction_on x fun p ↦ by …`).
+    return some (.text head ++ .text " :=" ++ .nest 2 (.hardline ++ vdoc))
   if (← read).breaking.glueFun && v.getKind == ``Lean.Parser.Term.fun then
     return some (.text (head ++ " := ") ++ vdoc)
   return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc)))
