@@ -539,7 +539,51 @@ def emit
     : Lean4Fmt.Emit.EmitM Doc := do
 
   let kind := stx.getKind
-  if kind == ``Lean.Parser.Command.variable then
+  if kind == ``Lean.Parser.Command.elab then
+    -- `elab (name := X) "pat" args : cat => body` (11K of the wide census,
+    -- the Mathlib/Tactic meta cluster): the HEAD through `=>` is
+    -- quotation-laden syntax-pattern content — SOURCE-EXACT by the
+    -- quotation pin, single-line required. The BODY is a REAL term
+    -- (usually `withMainContext do`): walked, glued. Leading docstring /
+    -- attribute args split off (docstrings are multi-line textRaw blocks).
+    let a := stx.getArgs
+    let n := a.size
+    if n < 3 then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let mut i := 0
+    let mut prefixDoc : Doc := .nil
+    for m in a do
+      let mk := m.getKind
+      let isDoc :=
+        mk == ``Lean.Parser.Command.docComment
+            || (m.getArgs[0]?.map (·.getKind == ``Lean.Parser.Command.docComment)).getD false
+      let isAttr :=
+        mk == `Lean.Parser.Term.attributes
+            || (m.getArgs[0]?.map (·.getKind == `Lean.Parser.Term.attributes)).getD false
+      if (bareSrc m).trimAscii.toString.isEmpty then i := i + 1
+      else if isDoc then
+        let t := (bareSrc m).trimAscii.toString
+        prefixDoc := prefixDoc ++ .textRaw t ++ .hardline
+        i := i + 1
+      else if isAttr then
+        let t := (bareSrc m).trimAscii.toString
+        if t.any (· == '\n') then
+          return (← Lean4Fmt.Emit.verbatim stx)
+        prefixDoc := prefixDoc ++ .text t ++ .hardline
+        i := i + 1
+      else break
+    if i ≥ n - 1 then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let body := a[n - 1]!
+    let headT := (bareSrc (Lean.mkNullNode (a.extract i (n - 1)))).trimAscii.toString
+    if headT.isEmpty || headT.any (· == '\n') then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let bDoc ← walk body
+    if (match bDoc with | .verbatim _ _ => true | _ => false)
+        || Lean4Fmt.Doc.hasMidlineReanchor bDoc then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    return prefixDoc ++ .text (headT ++ " ") ++ bDoc
+  else if kind == ``Lean.Parser.Command.variable then
     -- `variable <binders>`: a MULTI-LINE binder list packs BINDER-WISE as a
     -- fillSep at the continuation (each binder one item — a token fill
     -- would wrap inside brackets); single-line lists fit on the line the
