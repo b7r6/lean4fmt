@@ -21,7 +21,8 @@ namespace Lean4Fmt.Style
 def straylight
     : Style := {
   layout := { lineWidth := 100, indent := 2, continuationIndent := 4 }
-  breaking := { colon := .breakBefore, binders := .onePerLine, attributesOwnLine := true, bodyOwnLine := true, compactDo := true }
+  breaking := { colon := .breakBefore, binders := .onePerLine, attributesOwnLine := true,
+                  bodyOwnLine := true, compactDo := true, guardIfOwnLine := true }
   alignment := { structFields := .whenShort, matchArms := .whenShort,
                   trailingComments := .whenShort, maxDelta := 16 }
   blankLines := { policy := .normalize, betweenTopLevelDecls := 1, maxConsecutive := 1 }

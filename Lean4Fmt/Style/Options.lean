@@ -102,6 +102,10 @@ structure Breaking where
   /-- A single clean branch statement rides inline after its keyword when it
       fits (`if ok then pure true`); off = always on its own line. -/
   inlineBranches : Bool := true
+  /-- A `do`-position if whose branch is CONTROL FLOW (`return`/`throw`)
+      keeps the branch on its own line even when it fits — the guard
+      ladder reads vertically. Effect branches still inline by width. -/
+  guardIfOwnLine : Bool := false
   /-- Bare (typeless, docless) inductive constructors join on ONE line when
       they fit (`| GET | POST | PUT`); off = one per line. -/
   ctorsOneLine : Bool := false

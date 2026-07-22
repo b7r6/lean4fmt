@@ -37,16 +37,20 @@ private def idDeclDoc?
             (d : Lean.Syntax)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
 
-  if d.getKind != ``Lean.Parser.Term.doIdDecl then return none
+  if d.getKind != ``Lean.Parser.Term.doIdDecl then
+    return none
   let a := d.getArgs
-  if a.size != 4 then return none
+  if a.size != 4 then
+    return none
   let idT := Lean4Fmt.Emit.canonTok a[0]!
   let tyT := Lean4Fmt.Emit.canonTok a[1]!
   let arrowT := (Lean4Fmt.Emit.bareSrc a[2]!).trimAscii.toString
   let head := String.intercalate " " ([idT, tyT].filter (fun s => !s.isEmpty))
-  if head.isEmpty || head.any (· == '\n') || arrowT.any (· == '\n') then return none
+  if head.isEmpty || head.any (· == '\n') || arrowT.any (· == '\n') then
+    return none
   let ex := a[3]!
-  if ex.getKind != ``Lean.Parser.Term.doExpr then return none
+  if ex.getKind != ``Lean.Parser.Term.doExpr then
+    return none
   let some v := ex.getArgs[0]? | return none
   let vdoc ← walk v
   if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return none
@@ -61,19 +65,20 @@ private def stmts?
             (seq : Lean.Syntax)
             : Option (Array Lean.Syntax) :=
 
-  Id.run
-    do
-      if seq.getKind != ``Lean.Parser.Term.doSeqIndent then return none
-      let mut items : Array Lean.Syntax := #[]
-      for g in seq.getArgs do
-        for c in g.getArgs do
-          if c.getKind == ``Lean.Parser.Term.doSeqItem then items := items.push c
-      if items.isEmpty then return none
-      for it in items do
-        let ia := it.getArgs
-        if ia.size > 1 && !((Lean4Fmt.Emit.bareSrc (ia[ia.size-1]!)).trimAscii.toString.isEmpty) then
-          return none
-      return some (items.map (fun it => it.getArgs[0]?.getD Lean.Syntax.missing))
+  Id.run do
+    if seq.getKind != ``Lean.Parser.Term.doSeqIndent then
+      return none
+    let mut items : Array Lean.Syntax := #[]
+    for g in seq.getArgs do
+      for c in g.getArgs do
+        if c.getKind == ``Lean.Parser.Term.doSeqItem then items := items.push c
+    if items.isEmpty then
+      return none
+    for it in items do
+      let ia := it.getArgs
+      if ia.size > 1 && !((Lean4Fmt.Emit.bareSrc (ia[ia.size-1]!)).trimAscii.toString.isEmpty) then
+        return none
+    return some (items.map (fun it => it.getArgs[0]?.getD Lean.Syntax.missing))
 
 /-- The statement LINES of a sequence: each statement preceded by its structural
     leading (comments/blanks — `leadingSep?`) and followed by its same-line
@@ -93,8 +98,10 @@ def seqLinesDoc?
     let stmt := ss[i]
     let trailT := ((Lean4Fmt.Syntax.trailing? stmt).getD "").trimAscii.toString
     let last := i + 1 == ss.size
-    if !last && trailT.any (· == '\n') then return none
-    if last && !lastOwned && !trailT.isEmpty then return none
+    if !last && trailT.any (· == '\n') then
+      return none
+    if last && !lastOwned && !trailT.isEmpty then
+      return none
     let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
     let lead := (Lean4Fmt.Syntax.leading? stmt).getD ""
     -- FIRST statement: a comment-free blank run between the block opener and
@@ -118,6 +125,7 @@ private def branchDoc?
             (walk : Lean4Fmt.Emit.Walk)
             (seq : Lean.Syntax)
             (lastOwned : Bool)
+            (guardBreak : Bool := false)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
 
   let some ss := stmts? seq | return none
@@ -129,7 +137,13 @@ private def branchDoc?
     if plainLead && (lastOwned || trailT.isEmpty)
         && (!(← read).breaking.preserveLineBreaks || srcInline) then
       let sDoc ← walk ss[0]!
+      -- guardIfOwnLine: a CONTROL-FLOW branch (`return`/`throw`) keeps its
+      -- own line even when it fits — the guard ladder reads vertically;
+      -- effect branches still inline by width (the house distinction)
+      let isCtl := ss[0]!.getKind == ``Lean.Parser.Term.doReturn
+        || ((Lean4Fmt.Emit.bareSrc ss[0]!).trimAscii.toString.startsWith "throw")
       if (← read).breaking.inlineBranches
+          && !(guardBreak && isCtl)
           && (Lean4Fmt.Doc.flatWidth sDoc).isSome
           && !Lean4Fmt.Doc.hasMultilineVerbatim sDoc then
         return some (.group (.nest 2 (.line ++ sDoc)))
@@ -161,7 +175,8 @@ def emit
   -- multi-line statements stay structural
   if (← read).breaking.preserveLineBreaks && stx.getKind != ``Lean.Parser.Term.do then
     let t := Lean4Fmt.Emit.bareSrc stx
-    if !t.isEmpty && !t.any (· == '\n') then return .text t
+    if !t.isEmpty && !t.any (· == '\n') then
+      return .text t
 
   let kind := stx.getKind
   let a := stx.getArgs
@@ -282,6 +297,7 @@ def emit
     for h : i in [0:branches.size] do
       let (kw, seq) := branches[i]
       let some bD ← branchDoc? walk seq (i + 1 == branches.size)
+        (guardBreak := (← read).breaking.guardIfOwnLine)
         | return (← Lean4Fmt.Emit.verbatim stx)
       d := d ++ (if i == 0 then Doc.nil else .hardline) ++ .text kw ++ bD
     return d

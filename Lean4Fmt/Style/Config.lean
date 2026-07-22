@@ -63,11 +63,13 @@ def parseConfig
     n := n + 1
     let t := line.trimAscii.toString
     if t.isEmpty || t.startsWith "--" then continue
-    if !t.startsWith "def " then throw s!"line {n}: expected `def <key> := <value>` (got: {t})"
+    if !t.startsWith "def " then
+      throw s!"line {n}: expected `def <key> := <value>` (got: {t})"
     match ((t.drop 4).toString).splitOn ":=" with
     | [k, v] =>
       let key := k.trimAscii.toString
-      if key.isEmpty || key.any (fun c => c == ' ') then throw s!"line {n}: bad key `{key}`"
+      if key.isEmpty || key.any (fun c => c == ' ') then
+        throw s!"line {n}: bad key `{key}`"
       out := out ++ [({ key, val := unquote v, line := n } : ConfigEntry)]
     | _ => throw s!"line {n}: expected `def <key> := <value>` (got: {t})"
   return out
@@ -128,6 +130,7 @@ def applyEntry
   | "breaking.compactDo" => pure { s with breaking.compactDo := ← asBool e }
   | "breaking.elseIfChain" => pure { s with breaking.elseIfChain := ← asBool e }
   | "breaking.inlineBranches" => pure { s with breaking.inlineBranches := ← asBool e }
+  | "breaking.guardIfOwnLine" => pure { s with breaking.guardIfOwnLine := ← asBool e }
   | "breaking.ctorsOneLine" => pure { s with breaking.ctorsOneLine := ← asBool e }
   | "breaking.glueFun" => pure { s with breaking.glueFun := ← asBool e }
   | "breaking.listFill" => pure { s with breaking.listFill := ← asBool e }

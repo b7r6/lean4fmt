@@ -64,15 +64,19 @@ private def seamCommaList?
             (closer : Lean.Syntax)
             : EmitM (Option Doc) := do
 
-  if pairs.isEmpty then return none
+  if pairs.isEmpty then
+    return none
   -- a comment on the opener's own line (`[ -- note`) is OUR zone
   let openTrail := ((Lean4Fmt.Syntax.trailing? opener).getD "").trimAscii.toString
-  if openTrail.any (· == '\n') then return none
+  if openTrail.any (· == '\n') then
+    return none
   -- comments directly before the closer have no seam yet
   let isWs (t : String) : Bool := t.all (fun c => c == ' ' || c == '\t')
   let closerLead := (Lean4Fmt.Syntax.leading? closer).getD ""
-  if !(((closerLead.splitOn "\n").drop 1).dropLast.all isWs) then return none
-  if !isWs ((closerLead.splitOn "\n").headD "") then return none
+  if !(((closerLead.splitOn "\n").drop 1).dropLast.all isWs) then
+    return none
+  if !isWs ((closerLead.splitOn "\n").headD "") then
+    return none
   let mut body : Doc := .nil
   for h : i in [0:pairs.size] do
     let (e, comma?) := pairs[i]
@@ -137,7 +141,8 @@ private partial def structFieldDoc
     let expected := Lean4Fmt.Syntax.leafToks lvalStx ++ #[":="] ++ Lean4Fmt.Syntax.leafToks v
     if Lean4Fmt.Syntax.leafToks field != expected then
       let t := Lean4Fmt.Emit.canonTok field
-      if t.isEmpty || t.any (· == '\n') then return (← verbatim field)
+      if t.isEmpty || t.any (· == '\n') then
+        return (← verbatim field)
       return .text t
     return lval ++ .text " := " ++ (← walk v)
   | none => return lval
@@ -289,6 +294,22 @@ partial def emit
           let trailD : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
           argsDoc := argsDoc ++ sep ++ (← walk a) ++ trailD
         return fnDoc ++ .nest ind argsDoc
+      -- a final do/by ARG glues (`Id.run do`, `IO.mkRef do`, `foo x by …`):
+      -- flat head of fn + prior args, the block's members at seams — the
+      -- by-tail rule at the app site
+      if argList.size ≥ 1 then
+        let lastA := argList[argList.size - 1]!
+        if lastA.getKind == ``Lean.Parser.Term.do
+            || lastA.getKind == ``Lean.Parser.Term.byTactic then
+          let dDoc ← walk lastA
+          if !(match dDoc with | .verbatim _ _ => true | _ => false) then
+            let mut headD := fnDoc
+            let mut flatOk := (Lean4Fmt.Doc.flatWidth fnDoc).isSome
+            for h : i in [0:argList.size - 1] do
+              let aDoc ← walk argList[i]!
+              if (Lean4Fmt.Doc.flatWidth aDoc).isNone then flatOk := false
+              headD := headD ++ .space ++ aDoc
+            if flatOk then return .flatten headD ++ .space ++ dDoc
       let mut argsDoc : Doc := .nil
       for a in argList do argsDoc := argsDoc ++ .line ++ (← walk a)
       return .group (fnDoc ++ .nest ind argsDoc)
