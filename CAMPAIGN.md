@@ -1,0 +1,74 @@
+# The mathlib4 coverage campaign
+
+Goal-ladder rung 3: **roundtrip mathlib4** — every portable code byte actively
+formatted, zero gate fallbacks, idempotent, in mathlib-canonical form. This
+document is the standing plan; the scoreboard updates per round.
+
+The number that matters is **shipped-of-portable**: active bytes over
+portable code bytes, where *shipped* zeroes gate-rejected files (they emit
+identity — `--stats` alone counts the attempted emit and flatters) and
+*portable* excludes content-by-policy bytes (module docstrings, headers,
+quotation commands — permanently verbatim by design).
+
+## The instrument
+
+```sh
+src/lean4fmt/mathlib-census.sh [N-per-dir]    # MATHLIB= to point elsewhere
+```
+
+Builds this tree under mathlib's pinned toolchain (elan, cached per rev),
+runs a stratified sample two passes per file (`--stats` for byte attribution;
+default mode + `--log-level debug` for gate outcomes and the opt-out trail —
+stats mode suppresses both, by design), and aggregates: coverage, ceiling,
+gate-reject classes, and the porting queue ranked by bytes with bail reasons.
+
+## Scoreboard
+
+| date | sample | attempted | shipped | ceiling | rejects |
+|------|--------|-----------|---------|---------|---------|
+| 2026-07-22 | 55 (2/dir) | 72.3% | 63.1% | (pre-instrument) | 6: 3 fixed-point, 2 tokens, 1 comments |
+
+## The phases
+
+**Phase 0 — instruments** ✅ byte-weighted trail with bail reasons; walk
+interception pops its stale entry; `--stats` ceiling accounting; this harness.
+
+**Phase 1 — zero the whole-file losses.** Drill every gate reject with the
+established kit (TOKDIFF/SPINEDIFF probes, writeFile-on-reject, reparse the
+dump). Known targets: fixed-point ×4 (`Control/Applicative`, `Tactic/Abel`,
+`Util/AddRelatedDecl`, `Data/List/Basic` — suspect: the reverted
+simpa-`using` mechanism), tokens ×2 (`ArchimedeanDensely` — fillList-wrap
+last-tactic drop — and `MeasureTheory/PiSystem`), comments ×1
+(`Lean/ContextInfo`). Column-shaped root causes land as classes in
+`Emit/WsSensitivity.lean`. *Exit: sample rejects = 0, home slice 0/100 holds.*
+
+**Phase 2 — the declaration payload.** The whole-`Command.declaration`
+verbatims are where the bytes are; the trail's `why=` tags bucket them into
+classes (modifiers-comment, eqns-unformattable, unported-value-multiline,
+…). Port or relax per class, poison-chain bisection for stragglers.
+*Exit: whole-decl verbatims < 10 on the sample, remainder named-permanent.*
+
+**Phase 3 — mathlib-native ports.**
+- *Bracketed binops*: `isBinOp` routes `→ₗ[R]`/`→ₐ[R]`/`≃ₐ[R]`/`≫`/`≅` but
+  the chain code expects 3-slot `[lhs, op, rhs]` and bails on the 5-slot
+  bracket shape — generalize the chain, the family goes active at once.
+- *`variable`* (trivial), *calc* term+tactic (taxonomy check first — step
+  columns may be parser-read), the tactic tail
+  (`suffices`/`have`/`rwSeq`/`simp_rw`/`obtain`/`haveI`) via the token-line /
+  head-block recipes. *Exit: queue top-10 ported or policy-permanent.*
+
+**Phase 4 — residue burn-down.** `declValSimple`/`typeSpec`/`letIdDecl`/
+`doLetArrow` at mathlib density; extend the perturbation fuzzer to the
+mathlib sample. *Exit: portable residue < 2% of code bytes.*
+
+**Phase 5 — scale and lock.** Full-tree sweep (union import + pooled format;
+mathlib is the co-importable shape), full gate at rejects=0, pin the mathlib
+preset and run the conformance wash (roundtrip = mathlib-canonical form, not
+imposed house style), lock this census as a standing gate.
+
+## Standing rules (every round)
+
+Home gate 234/234 · slice 0/100 · comment-diff on every formatter-applied
+diff · core fuzz 0/120 · new column hazards → `WsSensitivity.lean` · new
+kinds → the `Syntax/Kinds.lean` registry · toolchain pinned per round via
+the census cache · never batch processHeader across files.
