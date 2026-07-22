@@ -826,7 +826,6 @@ private def defWhereDoc?
 
   let dargs := defn.getArgs
   if dargs.size < 4 then return none
-  let mut head := ""
   for h : i in [0:3] do
     let c := dargs[i]!
     -- first child's leading = the FORM's own leading — the enclosing seam
@@ -834,14 +833,23 @@ private def defWhereDoc?
     let ownLead :=
       if i == 0 then Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? c).getD "") else 0
     if Lean4Fmt.Syntax.countSubtreeLineComments c > ownLead then return none
-    let t := Lean4Fmt.Emit.canonTok c
-    if t.any (· == '\n') then return none
-    if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
-  if head.isEmpty then return none
-  if head.length + 6 > (← read).layout.lineWidth then return none
-  match ← whereBodyDoc? walk dargs[3]! with
-  | some body => return some (.text (head ++ " where") ++ .nest 2 body)
-  | none => return none
+  let some body ← whereBodyDoc? walk dargs[3]! | return none
+  let kwT := Lean4Fmt.Emit.canonTok dargs[0]!
+  let idT := Lean4Fmt.Emit.canonTok dargs[1]!
+  if kwT.isEmpty || kwT.any (· == '\n') || idT.any (· == '\n') then return none
+  let hd0 := kwT ++ (if idT.isEmpty then "" else " " ++ idT)
+  let sigT := Lean4Fmt.Emit.canonTok dargs[2]!
+  let flatHead := if sigT.isEmpty then hd0 else hd0 ++ " " ++ sigT
+  if !flatHead.any (· == '\n') && flatHead.length + 6 ≤ (← read).layout.lineWidth then
+    return some (.text (flatHead ++ " where") ++ .nest 2 body)
+  -- the head doesn't fit on one line: the shared sig machinery (sigDoc)
+  -- breaks it — binders/type per the knob, aligned under the name, ` where`
+  -- glued to the sig's last line. This was the single largest mathlib bail
+  -- class (defwhere-shape: long-signature Equiv/Iso defs). A sig carrying a
+  -- multi-line re-anchoring piece keeps the whole-decl verbatim.
+  let sigD ← sigDoc walk (kwT.length + 1) flatHead.length 6 dargs[2]!
+  if Lean4Fmt.Doc.hasMultilineReanchor sigD then return none
+  return some (.text hd0 ++ sigD ++ .text " where" ++ .nest 2 body)
 
 /-- `example <sig> := value`: keyword + signature single-line, the value via
     the shared head-value placement. -/
