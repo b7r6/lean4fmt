@@ -447,7 +447,11 @@ partial def emit
         -- indentation, which also retires CLASS 4 for the active path).
         -- Mixed separators (some commas) or any interior comment stay
         -- verbatim; field docs with midline hazards bail.
-        if commas != 0 || !srcT.isEmpty || !ellipsisEmpty then return (← verbatim stx)
+        if commas != 0 || !ellipsisEmpty then return (← verbatim stx)
+        -- `{ src with` rides the brace line (single-line source term); the
+        -- fields below at +2 are the same vertical machinery — all at one
+        -- column, sepByIndent-safe like the no-src form
+        if srcT.any (· == '\n') then return (← verbatim stx)
         if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← verbatim stx)
         let mut body : Doc := .nil
         for f in fields do
@@ -470,7 +474,11 @@ partial def emit
               || Lean4Fmt.Doc.hasMidlineReanchor fDoc then
             return (← verbatim stx)
           body := body ++ .hardline ++ fDoc
-        return .text "{" ++ .nest 2 body ++ .hardline ++ .text "}"
+        if srcT.isEmpty then
+          return .text "{" ++ .nest 2 body ++ .hardline ++ .text "}"
+        -- srcT is the canonTok of the source-with slot — it CARRIES the
+        -- `with` atom already
+        return .text ("{ " ++ srcT) ++ .nest 2 body ++ .hardline ++ .text "}"
       if Lean4Fmt.Syntax.interiorHasLineComment stx then
         if !srcT.isEmpty then return (← verbatim stx)
         -- comment-bearing record: forced broken, per-field seams
@@ -683,7 +691,7 @@ partial def emit
         return headDoc ++ .text " := " ++ vdoc
       -- the vertical structInst glues by its unconditional `{` left edge —
       -- house shape `:= {` … `}` (see valForm; same seam argument)
-      if Lean4Fmt.Doc.leftEdgeText? vdoc == some "{"
+      if ((Lean4Fmt.Doc.leftEdgeText? vdoc).map (·.startsWith "{")).getD false
           && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
         return headDoc ++ .text " := " ++ vdoc
       if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
@@ -795,7 +803,7 @@ partial def emit
         | _ => return .text (head ++ " " ++ arrowT ++ " ") ++ bodyDoc
       -- the vertical structInst body glues by its unconditional `{` left
       -- edge — house shape `fun a b => {` … `}` (same seam as letIdDecl)
-      if Lean4Fmt.Doc.leftEdgeText? bodyDoc == some "{"
+      if ((Lean4Fmt.Doc.leftEdgeText? bodyDoc).map (·.startsWith "{")).getD false
           && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then
         return .text (head ++ " " ++ arrowT ++ " ") ++ bodyDoc
       -- a MATCH body glues too (`fun s => match s with` riding, arms at

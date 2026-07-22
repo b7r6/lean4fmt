@@ -315,7 +315,7 @@ private def glueBodyBlank
 
   -- the body blank is DO/BY rhythm — a glued record literal (unconditional
   -- `{` left edge, the vertical structInst) keeps its close brace tight
-  if Lean4Fmt.Doc.leftEdgeText? d == some "{" then d
+  if ((Lean4Fmt.Doc.leftEdgeText? d).map (·.startsWith "{")).getD false then d
   else
     match d with
     -- width-aware single-tactic body (`by rfl` shape): the group's leading
@@ -476,7 +476,7 @@ private def valForm
       -- glue it — the house shape hangs the brace on the `:=` line
       -- (`:= {` … `}`), never the own-line `{`. Width-decided docs (the
       -- comma form's group) have no fixed left edge and never match.
-      if Lean4Fmt.Doc.leftEdgeText? vdoc == some "{" && clean then
+      if ((Lean4Fmt.Doc.leftEdgeText? vdoc).map (·.startsWith "{")).getD false && clean then
         return .body vdoc true
       if (isActiveMultiline v.getKind || leadCmts > 0) && clean then
         return .body vdoc false
