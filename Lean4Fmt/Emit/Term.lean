@@ -201,6 +201,13 @@ partial def emit
         if t.isEmpty || t.any (· == '\n')
             || (t.toList.headD ' ') ∈ ['[', '(', '{', '⁻', '!', '?'] then
           return (← verbatim stx)
+      -- same first-char exclusion for the arity-3 op (the widened namespaced
+      -- family reaches here): bracket/postfix adjacency is parse-critical —
+      -- the getElem lesson, applied before any respacing
+      if args.size == 3 then
+        let t := (bareSrc args[1]!).trimAscii.toString
+        if (t.toList.headD ' ') ∈ ['[', '(', '{', '⁻', '!', '?'] then
+          return (← verbatim stx)
       let lhs ← walk args[0]!
       let op ← do
         if args.size == 3 then walk args[1]!

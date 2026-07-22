@@ -42,13 +42,20 @@ def diteKind : SyntaxNodeKind := `termDepIfThenElse
 #guard iteKind.toString == "termIfThenElse"
 #guard diteKind.toString == "termDepIfThenElse"
 
-/-- A binary-operator notation kind (`«term_+_»`, `«term_<_»`, …). -/
+/-- A binary-operator notation kind (`«term_+_»`, `«term_<_»`, …), including
+    NAMESPACED scoped notations (`CategoryTheory.«term_≫_»`,
+    `Quiver.«term_⟶_»` — the mathlib operator families): the pattern applies
+    to the LAST name component. -/
 def isBinOp
     (kind : SyntaxNodeKind)
     : Bool :=
 
-  let s := kind.toString
+  let s := ((kind.components.getLast?.map toString).getD "")
   s.startsWith "«term_" && (s.toList.filter (· == '_')).length >= 2
+
+#guard isBinOp `«term_=_»
+#guard isBinOp `CategoryTheory.«term_≫_»
+#guard !isBinOp `Lean.Parser.Term.app
 
 /-- Term kinds with an ACTIVE MULTI-LINE layout: their `walk` produces a
     width-aware breaking group, so a decl value of one of these may lay out
