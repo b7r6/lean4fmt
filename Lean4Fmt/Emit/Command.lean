@@ -469,6 +469,22 @@ def emit
     : Lean4Fmt.Emit.EmitM Doc := do
 
   let kind := stx.getKind
+  if kind == ``Lean.Parser.Command.variable then
+    -- `variable <binders>`: a MULTI-LINE binder list packs BINDER-WISE as a
+    -- fillSep at the continuation (each binder one item — a token fill
+    -- would wrap inside brackets); single-line lists fit on the line the
+    -- same way (mathlib's long variable blocks were 4.3KB of the census)
+    if Lean4Fmt.Syntax.hasOwnedLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    let binders := ((stx.getArgs[1]?).map (·.getArgs)).getD #[]
+    let mut items : Array Doc := #[]
+    for b in binders do
+      let bd ← Lean4Fmt.Emit.binderDoc walk b
+      if Lean4Fmt.Doc.hasMultilineReanchor bd then return (← Lean4Fmt.Emit.verbatim stx)
+      if (Lean4Fmt.Doc.flatWidth bd).isNone then return (← Lean4Fmt.Emit.verbatim stx)
+      items := items.push (.flatten bd)
+    if items.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+    let cont := (← read).layout.continuationIndent
+    return .text "variable " ++ .nest cont (Doc.fillSep items.toList)
   if kind == ``Lean.Parser.Command.open || kind == ``Lean.Parser.Command.namespace
       || kind == ``Lean.Parser.Command.end || kind == ``Lean.Parser.Command.section
       || kind == ``Lean.Parser.Command.universe || kind == ``Lean.Parser.Command.eval then
