@@ -304,6 +304,12 @@ def emit
     if alts.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
     for alt in alts do
       if alt.getArgs.size != 4 then return (← Lean4Fmt.Emit.verbatim stx)
+      -- the seam accounting below counts LINE comments only — a BLOCK
+      -- comment between arms passes it uncounted and the arm loop (which
+      -- places no leadings) would DROP it (gate-caught on mathlib
+      -- Algebraize, comments class). Whole-match verbatim keeps it.
+      if (((Lean4Fmt.Syntax.leading? alt).getD "").splitOn "/-").length > 1 then
+        return (← Lean4Fmt.Emit.verbatim stx "doMatch-arm-block-comment")
     let seqCmts := alts.foldl
       (fun n alt => n + Lean4Fmt.Syntax.countSubtreeLineComments (alt.getArgs[3]!)) 0
     let ownLead := Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? stx).getD "")

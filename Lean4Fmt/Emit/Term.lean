@@ -295,7 +295,16 @@ partial def emit
     else if kind == ``Lean.Parser.Term.paren then
       -- "(" content ")" — content is args[1] (may be empty for unit)
       match args[1]? with
-      | some c => return .text "(" ++ (← walk c) ++ .text ")"
+      | some c =>
+        let d ← walk c
+        -- ws-sensitivity (fixed-point master class): the content glues after
+        -- `(` MID-LINE — a multi-line re-anchoring piece drifts by its
+        -- placement (+10/pass on mathlib Induced: a bailed ∘ₗ chain inside a
+        -- paren app-arg). Whole-paren verbatim gets a line-start seam from
+        -- its own placement instead.
+        if Lean4Fmt.Doc.hasMultilineReanchor d then
+          return (← verbatim stx "paren-multiline-piece")
+        return .text "(" ++ d ++ .text ")"
       | none => return .text "()"
     else if kind == ``Lean.Parser.Term.proj then
       -- obj "." field   (args[0]=obj, args[1]=".", args[2]=field)
