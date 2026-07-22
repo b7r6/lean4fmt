@@ -60,12 +60,37 @@ private def ctorDoc?
     else
       parts := parts.push t
       fillDocs := fillDocs.push (Doc.text t)
+  let mut tyDocW : Option Doc := none
+  -- the arm-line prefix width (`| mods name params`) — the flat-vs-walked
+  -- type decision must be WIDTH-derived on BOTH the single-line and the
+  -- flattened path, or the two passes disagree (fixed-point, gate-caught
+  -- home Http1: pass 1 walked a wrapped type, pass 2 joined the same parse
+  -- flat because its text arrived single-line)
+  let prefixLen :=
+    2 + (if modsT.isEmpty then 0 else modsT.length + 1) + nameT.length
+        + parts.foldl (fun n p => n + 1 + p.length) 0
   let tyT ← do
     match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
     | [ts] =>
-      let t := Lean4Fmt.Emit.canonTok ((ts.getArgs[1]?).getD .missing)
-      if t.isEmpty || t.any (· == '\n') then return none
-      pure (some t)
+      let tyStx := (ts.getArgs[1]?).getD .missing
+      let t := Lean4Fmt.Emit.canonTok tyStx
+      if t.isEmpty then return none
+      let w := (← read).layout.lineWidth
+      let flat? : Option String :=
+        if t.any (· == '\n') then Lean4Fmt.Emit.tokenJoinFlat? tyStx else some t
+      match flat? with
+      | some ft =>
+        if prefixLen + 3 + ft.length + 4 ≤ w then pure (some ft)
+        else
+          let d ← walk tyStx
+          if Lean4Fmt.Doc.hasMultilineVerbatim d then return none
+          tyDocW := some d
+          pure (none : Option String)
+      | none =>
+        let d ← walk tyStx
+        if Lean4Fmt.Doc.hasMultilineVerbatim d then return none
+        tyDocW := some d
+        pure (none : Option String)
     | [] => pure (none : Option String)
     | _ => return none
   let joined :=
@@ -81,17 +106,31 @@ private def ctorDoc?
   -- wrapped at the continuation (deterministic; grid-ineligible)
   let w := (← read).layout.lineWidth
   let lineDoc? : Option Doc :=
-    if (needFill || joined.length + 4 > w) && !fillDocs.isEmpty then
-      some
-        (.text ("| " ++ (if modsT.isEmpty then "" else modsT ++ " ") ++ nameT ++ " ")
-            ++ .nest
-              6
-              (Doc.fillSep fillDocs.toList
-                  ++ (match tyT with
-                  | some t => Doc.text (" : " ++ t)
-                  | none   => Doc.nil)))
-    else
-      none
+    match tyDocW with
+    | some tyD =>
+      -- walked TYPE: params PACK-AND-WRAP at +6 (the fill shape — flat
+      -- params overflowed the arm line), `:` trails, the type breaks at +4
+      let armHead := "| " ++ (if modsT.isEmpty then "" else modsT ++ " ") ++ nameT
+      if parts.isEmpty then
+        some (.text (armHead ++ " :") ++ .group (.nest 4 (.line ++ tyD)))
+      else
+        some
+          (.text (armHead ++ " ")
+              ++ .nest 6
+                (Doc.fillSep fillDocs.toList ++ .text " :"
+                    ++ .group (.nest 4 (.line ++ tyD))))
+    | none =>
+      if (needFill || joined.length + 4 > w) && !fillDocs.isEmpty then
+        some
+          (.text ("| " ++ (if modsT.isEmpty then "" else modsT ++ " ") ++ nameT ++ " ")
+              ++ .nest
+                6
+                (Doc.fillSep fillDocs.toList
+                    ++ (match tyT with
+                    | some t => Doc.text (" : " ++ t)
+                    | none => Doc.nil)))
+      else
+        none
   -- the doc comment is byte-exact on its own line above (it may be multi-line;
   -- it sits at a hardline position, literal emission is the stable choice)
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
