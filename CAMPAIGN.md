@@ -27,6 +27,14 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | date | sample | attempted | shipped | portable ceiling | **shipped-of-portable** | rejects |
 |------|--------|-----------|---------|------------------|-------------------------|---------|
 | 2026-07-22 | 55 (2/dir) | 72.3% | 63.1% | 90.1% of code | **70.1%** | 6: 3 fixed-point, 2 tokens, 1 comments |
+| 2026-07-23 | 55 (2/dir) | 72.2% | 72.2% | 90.1% of code | **80.1%** | **0** (Phase 1 closed) |
+
+Phase 1 closed in three rounds (nine mechanisms; see the round commits):
+the mid-line verbatim drift law (chain/arm/let sites), the align effective
+column, string-aware wrBlock, gate frontend alignment, cdot bullet anchor,
+five content-guard zones. Bonus: the fallback counter exposed and purged SIX
+silent HOME-corpus fallbacks (home now 401 files / 0 fallbacks / 0 drift,
+85.3% active-of-portable). Shipped == attempted for the first time.
 
 First instrumented reading (2026-07-22): the whole-declaration payload is
 SHAPE-handlers, not comments — `defwhere-shape` 26.0KB + `instance-shape`
