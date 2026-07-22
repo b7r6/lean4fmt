@@ -551,6 +551,11 @@ partial def emit
           return (← verbatim stx "let-multiline-binding")
         let sepT := (((a[3]?.map bareSrc).getD "").trimAscii.toString)
         if sepT.any (· == '\n') then return (← verbatim stx)
+        -- the `;`-form let (`let y := n / x; body`) is SAME-LINE semantic:
+        -- emitting it broken re-shapes the separator slot on reparse (tree
+        -- class, gate-caught on mathlib Divisors). The authored flat form
+        -- IS canonical — ride verbatim.
+        if sepT == ";" then return (← verbatim stx "semicolon-let")
         -- same-line trailing comment on the binding (the gap to the next
         -- binding's leading is the seam above)
         let trailT := ((Lean4Fmt.Syntax.trailing? decl).getD "").trimAscii.toString
