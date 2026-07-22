@@ -406,8 +406,11 @@ def emit
   else if kind == ``Lean.Parser.Tactic.tacticHave__
       || kind == `Lean.Parser.Tactic.tacticLet__ then
     -- ["have"/"let", letConfig, letDecl] — the doLet shape minus `mut`; the
-    -- letDecl walks through the existing 5-slot machinery
-    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    -- letDecl walks through the existing 5-slot machinery. NO blanket
+    -- comment bail (the over-guard class): a `:= by` value's interior
+    -- comments live at sequence seams the by machinery owns; comment-bearing
+    -- HEADS go multi-line under canonTok and bail below; anything unowned
+    -- is the comments gate's to catch (fallback, never damage).
     if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
     let kwT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
     let cfgT := Lean4Fmt.Emit.canonTok a[1]!
