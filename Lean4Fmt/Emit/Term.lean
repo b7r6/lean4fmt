@@ -649,11 +649,16 @@ partial def emit
       let headParts := ((args.extract 0 2).map Lean4Fmt.Emit.canonTok).filter
         (fun s => !s.isEmpty)
       let head0 := String.intercalate " " headParts.toList
-      if head0.isEmpty || head0.any (· == '\n') then return (← verbatim stx)
+      -- head0 may be EMPTY: the anonymous `have : T := …` has no name and
+      -- no binders (regression caught by census: -1.1pt, the old 0-3 join
+      -- accepted it) — only the ASSEMBLED head must be nonempty
+      if head0.any (· == '\n') then return (← verbatim stx)
       let tyT := Lean4Fmt.Emit.canonTok (args[2]?.getD .missing)
+      if head0.isEmpty && tyT.isEmpty then return (← verbatim stx)
       let headDoc : Doc ← do
         if tyT.isEmpty then pure (.text head0)
-        else if !tyT.any (· == '\n') then pure (.text (head0 ++ " " ++ tyT))
+        else if !tyT.any (· == '\n') then
+          pure (.text (if head0.isEmpty then tyT else head0 ++ " " ++ tyT))
         else
           -- multi-line TYPE (the have/let broken-head class — the census
           -- cluster's dominator): name+binders flat, `:` trails the head,
@@ -668,7 +673,8 @@ partial def emit
           if (match tyDoc with | .verbatim _ _ => true | _ => false)
               || Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then
             return (← verbatim stx)
-          pure (.text (head0 ++ " :") ++ .group (.nest 4 (.line ++ tyDoc)))
+          pure (.text (if head0.isEmpty then ":" else head0 ++ " :")
+            ++ .group (.nest 4 (.line ++ tyDoc)))
       let v := args[4]!
       let vdoc ← walk v
       -- by glues like do (`h : T := by` + tactics below — the sequence-seam

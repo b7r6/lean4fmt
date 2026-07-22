@@ -721,8 +721,19 @@ def emit
     -- bullet: [cdotTk, tacticSeq] — first group rides the bullet line
     -- (`· intro l; exact h`), the rest one line per group at +2 under it
     if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    if !((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString.isEmpty then
-      return (← Lean4Fmt.Emit.verbatim stx)   -- comment on the `·` itself
+    -- a same-line comment on the `·` itself (`· -- the goal name` — the
+    -- mathlib case-label idiom) is OUR zone: it rides the bullet line and
+    -- ALL groups go below at +2 (nothing shares the bullet line with it)
+    let tkTrail := ((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString
+    if tkTrail.startsWith "--" && !tkTrail.any (· == '\n') then
+      let tkT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
+      let some groups := tacticGroups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
+      match ← seqGroupsDoc? walk groups true with
+      | some rest =>
+        return .align (.text (tkT ++ " " ++ tkTrail) ++ .nest 2 rest)
+      | none => return (← Lean4Fmt.Emit.verbatim stx)
+    if !tkTrail.isEmpty then
+      return (← Lean4Fmt.Emit.verbatim stx)   -- non-comment surprise on the `·`
     let tkT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
     let some groups := tacticGroups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
     let g0 := groups[0]!

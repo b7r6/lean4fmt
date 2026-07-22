@@ -501,13 +501,8 @@ mutual
       split at hw
       · next x y hx hy =>
           simp only [Option.some.injEq] at hw
-          simp [
-            flatRender,
-            String.length_append,
-            flatRender_length a x hx,
-            flatRender_length b y hy,
-            hw
-          ]
+          simp [flatRender, String.length_append, flatRender_length a x hx,
+            flatRender_length b y hy, hw]
       · exact absurd hw (by simp)
     | .line =>
       simp only [flatWidth, Option.some.injEq] at hw
@@ -528,13 +523,8 @@ mutual
       split at hw
       · next w ws hi his =>
           simp only [Option.some.injEq] at hw
-          simp [
-            flatRender,
-            String.length_append,
-            flatRender_length i w hi,
-            flatRenderSep_length is ws his,
-            hw
-          ]
+          simp [flatRender, String.length_append, flatRender_length i w hi,
+            flatRenderSep_length is ws his, hw]
       · exact absurd hw (by simp)
 
   theorem flatRenderSep_length
@@ -551,12 +541,8 @@ mutual
       · next w ws hi his =>
           simp only [Option.some.injEq] at hw
           subst hw
-          simp [
-            flatRenderSep,
-            String.length_append,
-            flatRender_length i w hi,
-            flatRenderSep_length is' ws his
-          ]
+          simp [flatRenderSep, String.length_append, flatRender_length i w hi,
+            flatRenderSep_length is' ws his]
       · exact absurd hw (by simp)
 
 end
