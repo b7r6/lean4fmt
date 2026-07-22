@@ -104,6 +104,32 @@ unsafe def formatSafe
             else if !spineOk then
               "tree"
             else if !cmtOk then "comments" else if !hdrOk then "header" else "fixed-point"
+          -- L4F_DRILL_DIR: the drill loop's window into the otherwise
+          -- unobservable pre-gate text — dump the rejected output (and the
+          -- pass-2 text on fixed-point rejects), print the first token/spine
+          -- divergence. Off unless the env var is set (this retires the
+          -- hand-patched scratch-Gate dance the campaign log complains about).
+          if let some dir ← IO.getEnv "L4F_DRILL_DIR" then
+            let slug := path.replace "/" "_"
+            IO.FS.createDirAll ⟨dir⟩
+            IO.FS.writeFile ⟨s!"{dir}/{slug}.1.lean"⟩ active
+            if !fixOk then IO.FS.writeFile ⟨s!"{dir}/{slug}.2.lean"⟩ active2
+            if !toksOk then
+              let t1 := Lean4Fmt.Syntax.leafToks stx
+              let t2 := Lean4Fmt.Syntax.leafToks stx2
+              let mut i := 0
+              while i < Nat.min t1.size t2.size && t1[i]! == t2[i]! do
+                i := i + 1
+              IO.eprintln
+                s!"TOKDIFF {path} @{i}: {(t1.extract (i - 2) (i + 4)).toList} vs {(t2.extract (i - 2) (i + 4)).toList} (sizes {t1.size}/{t2.size})"
+            if toksOk && !spineOk then
+              let k1 := Lean4Fmt.Syntax.kindSpine stx
+              let k2 := Lean4Fmt.Syntax.kindSpine stx2
+              let mut i := 0
+              while i < Nat.min k1.size k2.size && k1[i]! == k2[i]! do
+                i := i + 1
+              IO.eprintln
+                s!"SPINEDIFF {path} @{i}: {(k1.extract (i - 2) (i + 4)).toList} vs {(k2.extract (i - 2) (i + 4)).toList} (sizes {k1.size}/{k2.size})"
           pure
             (
               contents,
