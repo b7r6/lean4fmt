@@ -384,6 +384,13 @@ def emit
     -- simp family + rwa: tokens on one line, bracket lists as width-aware
     -- commaLists (a long lemma list breaks instead of going verbatim)
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    -- a multi-line tail AFTER the bracket list (`simpa […] using <multi-line
+    -- term>`) must not naive-join: the space-join spaced a projection dot
+    -- and the reparse minted an anonymous field (gate-caught on mathlib
+    -- Determinant, tokens). Until the tail is walked, such tails ride
+    -- verbatim; a multi-line bracket LIST alone still breaks via commaList.
+    if ((Lean4Fmt.Emit.bareSrc stx).splitOn "]").getLast!.any (· == '\n') then
+      return (← Lean4Fmt.Emit.verbatim stx)
     match lineWords? stx ((← read).breaking.listFill) with
     | some ws => if ws.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
                  else return joinWords ws
