@@ -35,6 +35,7 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-23 | 55 (2/dir) | 78.0% | 78.0% | 90.1% of code | **86.7%** | 0 (Phase 3: variable port + bracketed-binop family w/ per-link parent-op threading) |
 | 2026-07-23 | 55 (2/dir) | 78.0% | 78.0% | 90.1% of code | **86.7%** | 0 (suffices position-split + tacticHave over-guard drop; run's stopping point — residue queue in the memory/next-round notes) |
 | 2026-07-23 | **249 (10/dir)** | 74.0% | 71.8% | 88.2% of code | **81.4%** | 5: 3 tokens, 1 fixed-point, 1 comments (the wide baseline — 55-sample was ~5pt flattering; drill list: Fixed, CosetCover, Determinant, Induced, Algebraize) |
+| 2026-07-23 | **249 (10/dir)** | 74.3% | 74.3% | 88.2% of code | **84.2%** | **0 — GATE 1 CLOSED** (seven mechanisms: anonymous-ident injection, byTactic' descent, head-ws law, simpa naive-join, paren master-class, doMatch block-blindness, + round-1 pair) |
 
 Phase 1 closed in three rounds (nine mechanisms; see the round commits):
 the mid-line verbatim drift law (chain/arm/let sites), the align effective
