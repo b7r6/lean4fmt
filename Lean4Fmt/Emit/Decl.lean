@@ -1093,7 +1093,12 @@ private def instanceDoc?
         | none    => t
       else
         t
-    if t.any (· == '\n') then
+    if t.any (· == '\n') || head.length + 3 + t.length + 6 > wLim then
+      -- the broken-type path must be WIDTH-derived, not source-line-derived:
+      -- pass 1 flattened a wrapped type onto one line and pass 2 then chose
+      -- a different branch from the same parse (fixed-point, gate-caught on
+      -- mathlib CechNerve) — a single-line type that doesn't FIT takes the
+      -- same path as a source-multi-line one
       let tyDoc ← walk tyStx
       if Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then
         return none
