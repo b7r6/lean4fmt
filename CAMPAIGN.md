@@ -50,6 +50,34 @@ therefore starts at `defWhereDoc?` and `instanceDoc?`. Next by bytes:
 `declValSimple` spans (14.2KB `val-multiline`), typeSpec 7.9KB, then the
 tactic tail (induction ×2 = 5.3KB, have 5.2KB, cdot 4.9KB, suffices 4.6KB).
 
+
+## The four gates (set 2026-07-23, from the wide-249 baseline at 81.4)
+
+All numbers are wide-census (10/dir, 249 files), shipped-of-portable, and
+every gate additionally requires: home 401 / 0 fallbacks / 0 drift, fuzz at
+baseline, comment-diff clean on every formatter-applied diff.
+
+**GATE 1 — zero at width (≥ 83).** The five rejects drilled to zero:
+`FieldTheory/Fixed`, `GroupTheory/CosetCover`, `LinearAlgebra/Determinant`
+(tokens), `RepresentationTheory/Induced` (fixed-point), `Tactic/Algebraize`
+(comments). Exit: wide rejects = 0, ≥ 83.
+
+**GATE 2 — the term-value cluster (≥ 90).** The 208KB mountain:
+`declValSimple` / `letIdDecl` / `fun` / `structInst` / `typeSpec` span
+classes ported on the established recipes (own-line seam, by-tail glue,
+flatten-first, position-split). Exit: cluster residue < 60KB, ≥ 90,
+rejects 0.
+
+**GATE 3 — the named tail (≥ 95).** calc (32KB, term+tactic), obtain
+(32KB), have/suffices residue, induction, cdot, the over-guard sweep.
+Exit: no single portable kind > 10KB in the wide queue, ≥ 95, rejects 0.
+
+**GATE 4 — ceiling honest, tree locked (≥ 98 of the refined ceiling).**
+Grind the 142-kind tail; reclassify measured correctly-verbatim-forever
+kinds INTO the ceiling (per-kind, documented — never silently); full-tree
+sweep (8,245 files) with rejects = 0; this census becomes a standing gate.
+Exit: ≥ 98 of the reclassified ceiling at full width.
+
 ## The phases
 
 **Phase 0 — instruments** ✅ byte-weighted trail with bail reasons; walk
