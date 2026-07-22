@@ -450,58 +450,12 @@ partial def emit
         (fun s => let t := Lean4Fmt.Emit.canonTok s; if t.isEmpty then none else some t)
       let head := "match " ++ String.intercalate " " midParts ++ " with"
       let some altsNode := args[5]? | return (← verbatim stx)
-      let mut alts : Array Lean.Syntax := #[]
-      for g in altsNode.getArgs do
-        for c in g.getArgs do
-          if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+      let alts := Lean4Fmt.Emit.matchAltsOf altsNode
       if alts.isEmpty || head.any (· == '\n') then return (← verbatim stx)
-      let mut pieces : Array Lean4Fmt.Emit.ArmPiece := #[]
-      for h : i in [0:alts.size] do
-        let alt := alts[i]
-        -- a comment INSIDE the arm (pattern/body interior) — whole-match verbatim
-        if Lean4Fmt.Syntax.hasUnownedInteriorComment alt then return (← verbatim stx)
-        let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
-        let some sep := Lean4Fmt.Emit.leadingSep? lead | return (← verbatim stx)
-        let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
-        let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
-        let last := i + 1 == alts.size
-        if !last && trailT.any (· == '\n') then return (← verbatim stx)
-        let hasTrail := !last && !trailT.isEmpty
-        let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
-        let aa := alt.getArgs
-        let patDoc ← walk (aa[1]?.getD .missing)
-        -- arrow spelling from SOURCE: mathlib spells `↦`, and the gate's token
-        -- check rightly refuses a silent `↦`→`=>` rewrite
-        let arrowT := (bareSrc (aa[2]?.getD .missing)).trimAscii.toString
-        let arrowT := if arrowT.isEmpty then "=>" else arrowT
-        let body := aa[aa.size-1]?.getD .missing
-        let bodyDoc ← walk body
-        -- a `do` body glues to the `=>` (its statements bring their own hardline);
-        -- anything else is width-aware after the `=>`
-        let srcBroken := ((Lean4Fmt.Syntax.leading? body).getD "").any (· == '\n')
-        let preserveLB := (← read).breaking.preserveLineBreaks
-        let glueBody := body.getKind == ``Lean.Parser.Term.do
-          || (body.getKind == ``Lean.Parser.Term.byTactic
-              && Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc)
-        let bodyPart : Doc := if glueBody
-          then .text " " ++ bodyDoc
-          else if preserveLB then
-            -- the author's `=>`-line decision is load-bearing
-            if srcBroken then Doc.nest 2 (Doc.hardline ++ bodyDoc)
-            else Doc.text " " ++ bodyDoc
-          else .group (.nest 2 (.line ++ bodyDoc))
-        let armSrc := (bareSrc alt).trimAscii.toString
-        let armDoc :=
-          if preserveLB && !armSrc.isEmpty && !armSrc.any (· == '\n') then
-            Doc.text armSrc
-          else .text "| " ++ patDoc ++ .text (" " ++ arrowT) ++ bodyPart
-        let inlineOk := body.getKind != ``Lean.Parser.Term.do
-          && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
-        -- the aligned grid pads a hardcoded `=>` column — a `↦` arm opts out
-        let row := if inlineOk && !hasTrail && arrowT == "=>"
-          then some (patDoc, some bodyDoc) else none
-        pieces := pieces.push
-          { sep := sep, plain := plainSep, doc := armDoc ++ trailDoc, gridRow := row }
+      -- the shared arm loop (Emit/Monad.armPieces?): `none` = some arm is
+      -- unportable (interior comment, unownable leading, mid-set multi-line
+      -- trailing) — whole-match verbatim
+      let some pieces ← Lean4Fmt.Emit.armPieces? walk alts | return (← verbatim stx)
       let al := (← read).alignment
       -- grids per visible-seam section (comments/blanks split; a section with
       -- a grid-ineligible arm rides plain — see armsAlignedRuns)

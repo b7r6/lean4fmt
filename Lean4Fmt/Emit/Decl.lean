@@ -462,63 +462,14 @@ private def valForm
         return .span (← verbatim declVal)
       sfxTail := sfxTail ++ sep ++ (← verbatim slot)
     let altsNode := (margs[0]?).getD .missing
-    let mut alts : Array Lean.Syntax := #[]
-    for g in altsNode.getArgs do
-      for c in g.getArgs do
-        if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+    let alts := Lean4Fmt.Emit.matchAltsOf altsNode
     if alts.isEmpty then return .span (← verbatim declVal)
-    let mut pieces : Array Lean4Fmt.Emit.ArmPiece := #[]
-    for h : i in [0:alts.size] do
-      let alt := alts[i]
-      -- a comment INSIDE the arm — whole-declaration verbatim (via the
-      -- defnDoc multiline-arms gate: the span carries it)
-      if Lean4Fmt.Syntax.hasUnownedInteriorComment alt then return .span (← verbatim declVal)
-      let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
-      let some sep := Lean4Fmt.Emit.leadingSep? lead | return .span (← verbatim declVal)
-      let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
-      let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
-      let last := i + 1 == alts.size
-      if !last && trailT.any (· == '\n') then return .span (← verbatim declVal)
-      let hasTrail := !last && !trailT.isEmpty
-      let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
-      let aa := alt.getArgs
-      let patDoc ← walk (aa[1]?.getD .missing)
-      -- arrow spelling from SOURCE (`=>` vs mathlib's `↦` — the gate's token
-      -- check rightly refuses a silent rewrite)
-      let arrowT := (bareSrc (aa[2]?.getD .missing)).trimAscii.toString
-      let arrowT := if arrowT.isEmpty then "=>" else arrowT
-      let body := aa[aa.size-1]?.getD .missing
-      let bodyDoc ← walk body
-      -- a `do` body glues to the `=>` (its statements bring their own hardline);
-      -- anything else is width-aware after the `=>`
-      let srcBroken := ((Lean4Fmt.Syntax.leading? body).getD "").any (· == '\n')
-      let preserveLB := (← read).breaking.preserveLineBreaks
-      -- by glues like do: `=> by` + tactics at fixed indent — verbatim
-      -- members sit at sequence seams (the poison-relaxation invariant)
-      let glueBody := body.getKind == ``Lean.Parser.Term.do
-        || (body.getKind == ``Lean.Parser.Term.byTactic
-            && Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc)
-      let bodyPart : Doc := if glueBody
-        then .text " " ++ bodyDoc
-        else if preserveLB then
-          if srcBroken then Doc.nest 2 (Doc.hardline ++ bodyDoc)
-          else Doc.text " " ++ bodyDoc
-        else .group (.nest 2 (.line ++ bodyDoc))
-      -- preserve mode: a single-line arm is byte-exact (hand-padded `=>`
-      -- columns survive)
-      let armSrc := (bareSrc alt).trimAscii.toString
-      let armDoc :=
-        if preserveLB && !armSrc.isEmpty
-            && !armSrc.any (· == '\n') then
-          Doc.text armSrc
-        else .text "| " ++ patDoc ++ .text (" " ++ arrowT) ++ bodyPart
-      let inlineOk := body.getKind != ``Lean.Parser.Term.do
-        && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
-      -- the aligned grid pads a hardcoded `=>` column — a `↦` arm opts out
-      let row := if inlineOk && !hasTrail && arrowT == "=>"
-        then some (patDoc, some bodyDoc) else none
-      pieces := pieces.push
-        { sep := sep, plain := plainSep, doc := armDoc ++ trailDoc, gridRow := row }
+    -- the shared arm loop (Emit/Monad.armPieces?): `none` = some arm is
+    -- unportable (interior comment, unownable leading, mid-set multi-line
+    -- trailing) — whole-declaration verbatim (via the defnDoc multiline-arms
+    -- gate: the span carries it)
+    let some pieces ← Lean4Fmt.Emit.armPieces? walk alts
+      | return .span (← verbatim declVal)
     let al := (← read).alignment
     -- the arms doc OWNS its leading break (defnDoc places it bare at +2):
     -- each section starts with its first arm's separator (a plain hardline

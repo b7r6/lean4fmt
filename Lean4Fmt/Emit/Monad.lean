@@ -221,6 +221,76 @@ def armsAlignedRuns
       sectLead := p.sep
   return flush out sectLead sect
 
+/-- The `matchAlt` nodes of a `matchAlts` node (groups flattened). -/
+def matchAltsOf (altsNode : Lean.Syntax) : Array Lean.Syntax := Id.run do
+  let mut alts : Array Lean.Syntax := #[]
+  for g in altsNode.getArgs do
+    for c in g.getArgs do
+      if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+  return alts
+
+/-- THE shared arm loop: the `ArmPiece`s of a `| pat => body` arm set —
+    `Term.match` arms and the Decl `declValEqns` value are the same shape, and
+    this is their one implementation (they drifted as copies once: the
+    arrow-spelling fix landed asymmetrically). Per arm: the leading places via
+    `leadingSep?`; the arrow spelling comes from SOURCE (`=>` vs mathlib's `↦`
+    — the gate's token check rightly refuses a silent rewrite); a `do` body
+    glues to the arrow (its statements bring their own hardline), as does a
+    `by` body carrying a multi-line verbatim (members sit at sequence seams —
+    the poison-relaxation invariant); anything else is width-aware after the
+    arrow. Preserve mode keeps single-line arms byte-exact (hand-padded arrow
+    columns survive). Grid rows only for inline-capable `=>` arms without
+    trailing comments — the aligned grid pads a hardcoded `=>` column, so a
+    `↦` arm opts out. `none` when any arm is unportable (an unowned interior
+    comment, an unownable leading, a mid-set multi-line trailing): the CALLER
+    falls back to its own verbatim span (whole-match / whole-decl). -/
+def armPieces?
+    (walk : Walk)
+    (alts : Array Lean.Syntax)
+    : EmitM (Option (Array ArmPiece)) := do
+  let mut pieces : Array ArmPiece := #[]
+  for h : i in [0:alts.size] do
+    let alt := alts[i]
+    if Lean4Fmt.Syntax.hasUnownedInteriorComment alt then return none
+    let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
+    let some sep := leadingSep? lead | return none
+    let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
+    let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
+    let last := i + 1 == alts.size
+    if !last && trailT.any (· == '\n') then return none
+    let hasTrail := !last && !trailT.isEmpty
+    let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
+    let aa := alt.getArgs
+    let patDoc ← walk (aa[1]?.getD .missing)
+    let arrowT := (bareSrc (aa[2]?.getD .missing)).trimAscii.toString
+    let arrowT := if arrowT.isEmpty then "=>" else arrowT
+    let body := aa[aa.size-1]?.getD .missing
+    let bodyDoc ← walk body
+    let srcBroken := ((Lean4Fmt.Syntax.leading? body).getD "").any (· == '\n')
+    let preserveLB := (← read).breaking.preserveLineBreaks
+    let glueBody := body.getKind == ``Lean.Parser.Term.do
+      || (body.getKind == ``Lean.Parser.Term.byTactic
+          && Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc)
+    let bodyPart : Doc := if glueBody
+      then .text " " ++ bodyDoc
+      else if preserveLB then
+        -- the author's arrow-line decision is load-bearing
+        if srcBroken then Doc.nest 2 (Doc.hardline ++ bodyDoc)
+        else Doc.text " " ++ bodyDoc
+      else .group (.nest 2 (.line ++ bodyDoc))
+    let armSrc := (bareSrc alt).trimAscii.toString
+    let armDoc :=
+      if preserveLB && !armSrc.isEmpty && !armSrc.any (· == '\n') then
+        Doc.text armSrc
+      else .text "| " ++ patDoc ++ .text (" " ++ arrowT) ++ bodyPart
+    let inlineOk := body.getKind != ``Lean.Parser.Term.do
+      && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
+    let row := if inlineOk && !hasTrail && arrowT == "=>"
+      then some (patDoc, some bodyDoc) else none
+    pieces := pieces.push
+      { sep := sep, plain := plainSep, doc := armDoc ++ trailDoc, gridRow := row }
+  return some pieces
+
 /-- The leading trivia (comments + blank lines) before a form, as literal text. -/
 def leadingRaw (stx : Lean.Syntax) : Doc := .textRaw (Lean4Fmt.Syntax.leading? stx |>.getD "")
 
