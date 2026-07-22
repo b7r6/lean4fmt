@@ -382,7 +382,33 @@ partial def emit
             if !pairs.isEmpty then
               pairs := pairs.set! (pairs.size - 1) (pairs[pairs.size - 1]!.1, some c)
       if fields.isEmpty then return (← verbatim stx)
-      if fields.size > 1 && commas + 1 != fields.size then return (← verbatim stx)  -- newline-separated
+      if fields.size > 1 && commas + 1 != fields.size then
+        -- NEWLINE-separated fields (no comma tokens, 24.8KB of the wide
+        -- census): emit the canonical vertical form — one field per line at
+        -- +2, no commas added (token-preserving by construction; the
+        -- source's hand column-alignment is replaced by canonical
+        -- indentation, which also retires CLASS 4 for the active path).
+        -- Mixed separators (some commas) or any interior comment stay
+        -- verbatim; field docs with midline hazards bail.
+        if commas != 0 || !srcT.isEmpty || !ellipsisEmpty then return (← verbatim stx)
+        if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← verbatim stx)
+        let mut body : Doc := .nil
+        for f in fields do
+          let fDoc ← structFieldDoc walk f
+          -- structInstFields is sepByIndent: a field that BREAKS internally
+          -- puts its continuation left of the first field's column and the
+          -- parser closes the list early (home Preset.lean, nested
+          -- comma-instance). Each field is therefore forced FLAT, and a
+          -- field too wide to plausibly fit flat keeps the whole verbatim.
+          match Lean4Fmt.Doc.flatWidth fDoc with
+          | none => return (← verbatim stx)
+          | some w =>
+            if w + 8 > (← read).layout.lineWidth then return (← verbatim stx)
+          if (match fDoc with | .verbatim _ _ => true | _ => false)
+              || Lean4Fmt.Doc.hasMidlineReanchor fDoc then
+            return (← verbatim stx)
+          body := body ++ .hardline ++ .flatten fDoc
+        return .text "{" ++ .nest 2 body ++ .hardline ++ .text "}"
       if Lean4Fmt.Syntax.interiorHasLineComment stx then
         if !srcT.isEmpty then return (← verbatim stx)
         -- comment-bearing record: forced broken, per-field seams
@@ -563,6 +589,11 @@ partial def emit
       -- invariant tolerates interior verbatims); other kinds keep the bail
       if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic then
         return .text head ++ .text " := " ++ vdoc
+      -- the vertical structInst glues by its unconditional `{` left edge —
+      -- house shape `:= {` … `}` (see valForm; same seam argument)
+      if Lean4Fmt.Doc.leftEdgeText? vdoc == some "{"
+          && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
+        return .text head ++ .text " := " ++ vdoc
       if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
         -- multi-line opaque value: OWN-LINE placement is a deterministic
         -- seam (the uniform re-anchor preserves interior relations) — the
@@ -670,6 +701,11 @@ partial def emit
         match bodyDoc with
         | .verbatim _ _ => return (← verbatim stx)
         | _ => return .text (head ++ " " ++ arrowT ++ " ") ++ bodyDoc
+      -- the vertical structInst body glues by its unconditional `{` left
+      -- edge — house shape `fun a b => {` … `}` (same seam as letIdDecl)
+      if Lean4Fmt.Doc.leftEdgeText? bodyDoc == some "{"
+          && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then
+        return .text (head ++ " " ++ arrowT ++ " ") ++ bodyDoc
       if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then
         -- multi-line opaque body: OWN-LINE at +2 is a deterministic seam
         -- (the fun class was 26KB of the wide census and the interior piece

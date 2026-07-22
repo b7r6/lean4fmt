@@ -67,6 +67,21 @@ mutual
 
 end
 
+/-- First TEXT leaf on the doc's left spine (through cat/nest/flatten): the
+    opening bytes when they are UNCONDITIONAL. `group` (and everything else
+    width-decided) stops the walk — such a doc has no fixed left edge. Lets
+    a caller glue a self-anchoring doc mid-line by its opener (the vertical
+    structInst hangs its `{` on the `:=` line, house shape). -/
+def leftEdgeText? : Doc → Option String
+  | .cat a b =>
+    match a with
+    | .nil => leftEdgeText? b
+    | _    => leftEdgeText? a
+  | .nest _ d => leftEdgeText? d
+  | .flatten d => leftEdgeText? d
+  | .text s => some s
+  | _ => none
+
 /-- Total phantom `pad` width in a doc — a group fit adds this ON TOP of
     `flatWidth` (which stays render-exact, reporting pad as 0): the reserve
     for un-breakable text the caller appends after the group. -/

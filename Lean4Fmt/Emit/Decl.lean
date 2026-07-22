@@ -309,14 +309,22 @@ private inductive ValForm
     the keyword, before the block. The block's own leading separator collapses
     into the blank (renderer pend accumulation), so exactly one blank line
     appears — the same rhythm term bodies get after `:=`. -/
-private def glueBodyBlank : Doc → Doc
-  -- width-aware single-tactic body (`by rfl` shape): the group's leading
-  -- `.line` must be REPLACED by the blank, not preceded by it — a flat-decided
-  -- group after a pending blank renders the line's space after the indent
-  -- flush (a spurious column; caught as an idempotence failure)
-  | .cat kw (.group (.nest n (.cat .line rest))) => .cat kw (.nest n (.cat (.blank 1) rest))
-  | .cat kw rest => .cat kw (.cat (.blank 1) rest)
-  | d => d
+private def glueBodyBlank
+            (d : Doc)
+            : Doc :=
+
+  -- the body blank is DO/BY rhythm — a glued record literal (unconditional
+  -- `{` left edge, the vertical structInst) keeps its close brace tight
+  if Lean4Fmt.Doc.leftEdgeText? d == some "{" then d
+  else
+    match d with
+    -- width-aware single-tactic body (`by rfl` shape): the group's leading
+    -- `.line` must be REPLACED by the blank, not preceded by it — a flat-decided
+    -- group after a pending blank renders the line's space after the indent
+    -- flush (a spurious column; caught as an idempotence failure)
+    | .cat kw (.group (.nest n (.cat .line rest))) => .cat kw (.nest n (.cat (.blank 1) rest))
+    | .cat kw rest => .cat kw (.cat (.blank 1) rest)
+    | d => d
 
 /-- `bodyOwnLine` for VERBATIM value spans: when the span's first line is
     exactly `:=` / `:= by` / `:= do`, split that keyword line off the opaque
@@ -463,6 +471,13 @@ private def valForm
           ((Lean4Fmt.Syntax.leading? v).getD "") with | some _ => true | none => false) then
         return .span (← verbatim declVal "val-lead-unplaceable")
       let clean := !Lean4Fmt.Doc.hasMultilineVerbatim vdoc -- comments handled above
+      -- an ACTIVE vertical structInst self-anchors (hardline fields at +2,
+      -- close at the anchor) and its left edge is unconditional text `{`:
+      -- glue it — the house shape hangs the brace on the `:=` line
+      -- (`:= {` … `}`), never the own-line `{`. Width-decided docs (the
+      -- comma form's group) have no fixed left edge and never match.
+      if Lean4Fmt.Doc.leftEdgeText? vdoc == some "{" && clean then
+        return .body vdoc true
       if (isActiveMultiline v.getKind || leadCmts > 0) && clean then
         return .body vdoc false
       match Lean4Fmt.Doc.flatWidth vdoc with
