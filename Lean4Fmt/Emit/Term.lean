@@ -627,6 +627,24 @@ partial def emit
       -- glues (its statements bring their own hardline). The `fun | pat => …`
       -- match-alternative form stays verbatim.
       let some bf := args[1]? | return (← verbatim stx)
+      if bf.getKind == ``Lean.Parser.Term.matchAlts then
+        -- `fun | pat => …` alternative form: FLAT when the whole fun joins
+        -- within width (the house `fun | .idle => true | _ => false` idiom,
+        -- origin-independent via the flatten-first law); else the shared
+        -- arm loop, arms under the keyword at +2
+        match Lean4Fmt.Emit.tokenJoinFlat? stx with
+        | some t =>
+          if !t.any (· == '\n') && t.length + 4 ≤ (← read).layout.lineWidth then
+            return .text t
+        | none => pure ()
+        let kw := (bareSrc args[0]!).trimAscii.toString
+        if kw.isEmpty then return (← verbatim stx)
+        let alts := Lean4Fmt.Emit.matchAltsOf bf
+        if alts.isEmpty then return (← verbatim stx)
+        let some pieces ← Lean4Fmt.Emit.armPieces? walk alts | return (← verbatim stx)
+        let al := (← read).alignment
+        return .text kw
+          ++ .nest 2 (Lean4Fmt.Emit.armsAlignedRuns al.matchArms al.maxDelta pieces)
       if bf.getKind != ``Lean.Parser.Term.basicFun then return (← verbatim stx)
       let ba := bf.getArgs
       if ba.size != 4 then return (← verbatim stx)
@@ -646,9 +664,21 @@ partial def emit
       let arrowT := if arrowT.isEmpty then "=>" else arrowT
       let body := ba[3]!
       let bodyDoc ← walk body
-      if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then return (← verbatim stx)
-      if body.getKind == ``Lean.Parser.Term.do then
-        return .text (head ++ " " ++ arrowT ++ " ") ++ bodyDoc
+      if body.getKind == ``Lean.Parser.Term.do || body.getKind == ``Lean.Parser.Term.byTactic then
+        -- glued do/by body: members at sequence seams; a bare-verbatim
+        -- block bails (mid-line glue is the master fixed-point class)
+        match bodyDoc with
+        | .verbatim _ _ => return (← verbatim stx)
+        | _ => return .text (head ++ " " ++ arrowT ++ " ") ++ bodyDoc
+      if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then
+        -- multi-line opaque body: OWN-LINE at +2 is a deterministic seam
+        -- (the fun class was 26KB of the wide census and the interior piece
+        -- of half the chain bails)
+        match bodyDoc with
+        | .verbatim _ _ => return (← verbatim stx)
+        | _ =>
+          if Lean4Fmt.Doc.hasMidlineReanchor bodyDoc then return (← verbatim stx)
+          return .text (head ++ " " ++ arrowT) ++ .nest 2 (.hardline ++ bodyDoc)
       return .text (head ++ " " ++ arrowT) ++ .group (.nest 2 (.line ++ bodyDoc))
     else if kind == ``Lean.Parser.Term.tuple then
       -- `(a, b, c)` — [hygienicLParen, elems, ")"] where elems RIGHT-NEST:
