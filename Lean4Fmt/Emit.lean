@@ -32,7 +32,9 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Style
 mutual
 
 /-- The single recursive walker. Dispatches to category emitters; falls back to
-    verbatim reproduction for anything not yet actively formatted. -/
+    verbatim reproduction for anything not yet actively formatted. Term routing
+    is DATA (`Syntax.Kinds.walkTermKinds` — the porting checklist lives on it);
+    the do/tactic/command lists below are single-consumer and stay inline. -/
 partial def walkCore
             (stx : Lean.Syntax)
             : EmitM Doc := do
@@ -154,34 +156,7 @@ partial def walkCore
       if !t.isEmpty && !t.any (· == '\n') then pure (.text t)
       else verbatim stx
     else if Lean4Fmt.Syntax.isBinOp kind
-         || kind == ``Lean.Parser.Term.arrow
-         || kind == ``Lean.Parser.Term.forall
-         || kind == `Lean.«term∀__,_»
-         || kind == `Lean.«term∃__,_»
-         || kind == `«term∃_,_»
-         || kind == `«term∀_,_»
-         || kind == `«term¬_»
-         || kind == ``Lean.Parser.Term.app
-         || kind == ``Lean.Parser.Term.paren
-         || kind == ``Lean.Parser.Term.proj
-         || kind == ``Lean.Parser.Term.dotIdent
-         || kind == ``Lean.Parser.Term.anonymousCtor
-         || kind == ``Lean.Parser.Term.fun
-         || kind == ``Lean.Parser.Term.tuple
-         || kind == ``Lean.Parser.Term.structInst
-         || kind == ``Lean.Parser.Term.hole
-         || kind.toString == "«term[_]»"
-         || kind.toString == "«term#[_,]»"
-         || kind.toString == "termIfThenElse"
-         || kind.toString == "termDepIfThenElse"
-         || kind == ``Lean.Parser.Term.let
-         || kind == ``Lean.Parser.Term.have
-         || kind == ``Lean.Parser.Term.letrec
-         || kind == ``Lean.Parser.Term.letDecl
-         || kind == ``Lean.Parser.Term.letIdDecl
-         || kind == ``Lean.Parser.Term.letPatDecl
-         || kind == ``Lean.Parser.Term.letIdDeclNoBinders
-         || kind == ``Lean.Parser.Term.match then
+         || Lean4Fmt.Syntax.walkTermKinds.contains kind then
       Term.emit walk stx
     -- default: a SINGLE-LINE construct rides as active text — byte-exact
     -- (bareSrc is the source bytes, inter-token trivia included) and

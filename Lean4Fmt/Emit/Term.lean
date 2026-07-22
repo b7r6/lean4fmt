@@ -317,8 +317,8 @@ partial def emit
             then 1000000 else al.maxDelta
           return Doc.alignOr { sep := " ", maxDelta := cap } rows groupForm
       return groupForm
-    else if kind.toString == "«term[_]»" || kind.toString == "«term#[_,]»" then
-      let l := if kind.toString == "«term[_]»" then "[" else "#["
+    else if kind == Lean4Fmt.Syntax.listLitKind || kind == Lean4Fmt.Syntax.arrayLitKind then
+      let l := if kind == Lean4Fmt.Syntax.listLitKind then "[" else "#["
       let children := (args[1]?.map (·.getArgs)).getD #[]
       if Lean4Fmt.Syntax.interiorHasLineComment stx then
         let mut pairs : Array (Lean.Syntax × Option Lean.Syntax) := #[]
@@ -331,7 +331,7 @@ partial def emit
         | some d => return d
         | none => return (← verbatim stx)
       return (← commaGroup walk l "]" children)
-    else if kind.toString == "termIfThenElse" then
+    else if kind == Lean4Fmt.Syntax.iteKind then
       -- [if, cond, then, thenBranch, else, elseBranch]; a width-aware group:
       -- flat `if c then a else b`, or broken with 2-space branches, `else` at
       -- the if's base column (§ active layout). Branches recurse via `walk`.
@@ -347,7 +347,7 @@ partial def emit
       let elseB ← walk (args[5]?.getD .missing)
       -- else-if CHAIN (breaking.elseIfChain): a nested ite glues after `else`
       let elseIsIte := (args[5]?.map (fun e =>
-        e.getKind.toString == "termIfThenElse" || e.getKind.toString == "termDepIfThenElse")).getD false
+        e.getKind == Lean4Fmt.Syntax.iteKind || e.getKind == Lean4Fmt.Syntax.diteKind)).getD false
       let elseTail : Doc := if (← read).breaking.elseIfChain && elseIsIte
         then .text "else " ++ elseB
         else .text "else" ++ .nest 2 (.line ++ elseB)
@@ -506,7 +506,7 @@ partial def emit
       -- grids per visible-seam section (comments/blanks split; a section with
       -- a grid-ineligible arm rides plain — see armsAlignedRuns)
       return .text head ++ Lean4Fmt.Emit.armsAlignedRuns al.matchArms al.maxDelta pieces
-    else if kind.toString == "termDepIfThenElse" then
+    else if kind == Lean4Fmt.Syntax.diteKind then
       -- [if, binderIdent, :, cond, then, thenBranch, else, elseBranch] — the
       -- dependent `if h : c then … else …`; same layout as termIfThenElse,
       -- same interior-tail comment bail (no seam for `… then x -- note`).
@@ -520,7 +520,7 @@ partial def emit
       -- else-if CHAIN (breaking.elseIfChain): a nested ite in the else slot
       -- glues (`else if … then`) instead of breaking to `else` + line
       let elseIsIte := (args[args.size-1]?.map (fun e =>
-        e.getKind.toString == "termIfThenElse" || e.getKind.toString == "termDepIfThenElse")).getD false
+        e.getKind == Lean4Fmt.Syntax.iteKind || e.getKind == Lean4Fmt.Syntax.diteKind)).getD false
       let elseTail : Doc := if (← read).breaking.elseIfChain && elseIsIte
         then .text "else " ++ elseB
         else .text "else" ++ .nest 2 (.line ++ elseB)

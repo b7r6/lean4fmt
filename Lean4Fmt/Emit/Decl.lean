@@ -264,26 +264,14 @@ private def sigDoc
 
 /-- Value kinds we actively lay out even when they span multiple lines (their own
     `walk` produces a width-aware breaking `group`). Everything else keeps the
-    conservative verbatim-span path. Grows as constructs are ported. -/
+    conservative verbatim-span path. THE SET IS DATA in
+    `Syntax.Kinds.activeMultilineTermKinds` — one registry shared with the walk
+    router, subset relation by construction. -/
 private def isActiveMultiline
             (kind : SyntaxNodeKind)
             : Bool :=
 
-  kind.toString == "termIfThenElse" || kind.toString == "termDepIfThenElse"
-      || kind == ``Lean.Parser.Term.app
-      || kind == ``Lean.Parser.Term.anonymousCtor
-      || kind == ``Lean.Parser.Term.fun
-      || kind == ``Lean.Parser.Term.tuple
-      || kind == ``Lean.Parser.Term.structInst
-      || kind.toString == "«term[_]»"
-      || kind.toString == "«term#[_,]»"
-      || kind == ``Lean.Parser.Term.forall
-      || kind == ``Lean.Parser.Term.arrow
-      || kind == ``Lean.Parser.Term.paren
-      || kind == ``Lean.Parser.Term.let
-      || kind == ``Lean.Parser.Term.have
-      || kind == ``Lean.Parser.Term.letrec
-      || kind == ``Lean.Parser.Term.match
+  Lean4Fmt.Syntax.activeMultilineTermKinds.contains kind
       || Lean4Fmt.Syntax.isBinOp kind
 
 /-- How a definition value is to be placed. `span` is a whole `:= …` reproduced
