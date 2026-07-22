@@ -20,6 +20,7 @@ import Lean4Fmt.Style
 import Lean4Fmt.Rules.Diagnostic
 import Lean4Fmt.Syntax.Trivia
 import Lean4Fmt.Syntax.Kinds
+import Lean4Fmt.Emit.WsSensitivity
 
 namespace Lean4Fmt.Emit
 

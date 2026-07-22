@@ -95,10 +95,11 @@ private def eqnsFormattable
     let isWsL (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
     if !isWsL ((((Lean4Fmt.Syntax.leading? slot).getD "").splitOn "\n").headD "") then
       return false
-    -- a multi-line comment/docstring INSIDE the suffix: the verbatim tail
-    -- re-anchors by column and would SHIFT the token's interior bytes
+    -- ws-sensitivity CLASS 5 (Emit/WsSensitivity): a multi-line
+    -- comment/docstring inside the suffix — the verbatim tail re-anchors by
+    -- column and would shift the token's interior bytes
     let st := bareSrc slot
-    if st.any (· == '\n') && (st.splitOn "/-").length > 1 then return false
+    if reanchorsMultilineToken st then return false
   let altsNode := (margs[0]?).getD .missing
   let mut alts : Array Lean.Syntax := #[]
   for g in altsNode.getArgs do
@@ -368,11 +369,11 @@ private def valForm
             if (bareSrc sfx).trimAscii.toString.isEmpty then continue
             let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? sfx).getD "")
               | return .span (← verbatim declVal)
-            -- a multi-line comment/docstring INSIDE the suffix: the verbatim
-            -- tail re-anchors by column and would SHIFT the token's interior
-            -- bytes (gate-caught on Nat.Log's docstringed where-decl)
+            -- ws-sensitivity CLASS 5 (Emit/WsSensitivity): a multi-line
+            -- comment/docstring inside the suffix — the verbatim tail
+            -- re-anchors by column and would shift the token's interior bytes
             let st := bareSrc sfx
-            if st.any (· == '\n') && (st.splitOn "/-").length > 1 then
+            if reanchorsMultilineToken st then
               return .span (← verbatim declVal)
             tail := tail ++ sep ++ (← verbatim sfx)
           | none => continue
@@ -456,9 +457,9 @@ private def valForm
       if (bareSrc slot).trimAscii.toString.isEmpty then continue
       let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? slot).getD "")
         | return .span (← verbatim declVal)
-      -- mirror of eqnsFormattable: multi-line comment inside the suffix
+      -- mirror of eqnsFormattable: ws-sensitivity CLASS 5 (Emit/WsSensitivity)
       let st := bareSrc slot
-      if st.any (· == '\n') && (st.splitOn "/-").length > 1 then
+      if reanchorsMultilineToken st then
         return .span (← verbatim declVal)
       sfxTail := sfxTail ++ sep ++ (← verbatim slot)
     let altsNode := (margs[0]?).getD .missing
@@ -529,10 +530,11 @@ private def defnDoc
   let ti ← match sigStx with | some s => typeInfo walk s | none => pure none
   let typeOK := match ti with | some (_, _, _, multi) => !multi | none => true
   let typeW := match ti with | some (_, _, tw, false) => 3 + tw | _ => 0
-  -- fill mode cannot place a MULTI-LINE (verbatim) type safely: glued, its
-  -- re-anchor base drifts pass-to-pass (fixed-point reject); own-line, the
-  -- re-anchor changes the interior COLUMN RELATIONS and a letI-in-type
-  -- FAILED TO REPARSE (gate-caught on ZeroMorphisms) — whole-decl verbatim
+  -- ws-sensitivity CLASS 3 (Emit/WsSensitivity): fill mode cannot place a
+  -- MULTI-LINE (verbatim) type safely — glued, its re-anchor base drifts
+  -- pass-to-pass (fixed-point reject); own-line, the re-anchor changes the
+  -- interior COLUMN RELATIONS and a letI-in-type failed to reparse —
+  -- whole-decl verbatim
   if !typeOK && (← read).breaking.binders == Lean4Fmt.Style.BinderLayout.fill then
     return (← verbatim defn)
   -- preserve mode: a single-line signature rides byte-exact (authors are

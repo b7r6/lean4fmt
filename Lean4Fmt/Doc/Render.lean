@@ -525,10 +525,12 @@ def canonVerbatimWs (s : String) : String := Id.run do
         while _hj : j < n && a[j]! == ' ' do j := j + 1
         let commentNext := (a[j]? == some '-' && a[j+1]? == some '-')
           || (a[j]? == some '/' && a[j+1]? == some '-')
-        -- the run after a `{` is exempt: a newline-separated structInst
-        -- aligns its fields by COLUMN and `{  f := v` sets that column —
-        -- collapsing it shifted the first field and the output failed to
-        -- reparse (Submonoid/Defs)
+        -- ws-sensitivity CLASS 4 (Emit/WsSensitivity, mirrored in
+        -- fuzz/perturb.py): the run after a `{` is exempt — a
+        -- newline-separated structInst aligns its fields by COLUMN and
+        -- `{  f := v` sets that column; collapsing it shifted the first
+        -- field and the output failed to reparse. Exemptions here stay
+        -- LEXICAL AND NARROW, never subtree-wide.
         let afterBrace := !out.isEmpty && out.back! == '{'
         if lineStart || j - i == 1 || commentNext || afterBrace then
           for k in [i:j] do out := out.push a[k]!

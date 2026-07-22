@@ -464,10 +464,11 @@ def emit
     if !kwTrail.trimAscii.toString.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
     let kwT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
     let some groups := tacticGroups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
-    -- ALWAYS the block form: the inline form (`classical exact h`) with a
-    -- tactic doc that breaks internally re-parses to a DIFFERENT tree (the
-    -- continuation lines fall out of the whitespace-sensitive block; error
-    -- recovery can silently drop them — gate-caught on Denumerable)
+    -- ws-sensitivity CLASS 1 (Emit/WsSensitivity): ALWAYS the block form —
+    -- the inline form (`classical exact h`) with a tactic doc that breaks
+    -- internally re-parses to a DIFFERENT tree (the continuation lines fall
+    -- out of the whitespace-sensitive block; error recovery can silently
+    -- drop them)
     match ← seqGroupsDoc? walk groups true with
     | some body => return .text kwT ++ body
     | none => return (← Lean4Fmt.Emit.verbatim stx)
@@ -513,9 +514,10 @@ def emit
     let trail0T := ((Lean4Fmt.Syntax.trailing? g0[g0.size - 1]!).getD "").trimAscii.toString
     if groups.size == 1 then
       if !trail0T.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)   -- owned by parent seam
-      -- align: d0's interior breaks must anchor at the bullet CONTENT column,
-      -- not the bullet line's indent — two columns shallow re-parses the
-      -- glued block's lines as bullet-seq SIBLINGS (gate-caught ×2)
+      -- ws-sensitivity CLASS 2 (Emit/WsSensitivity): d0's interior breaks
+      -- must anchor at the bullet CONTENT column, not the bullet line's
+      -- indent — two columns shallow re-parses the glued block's lines as
+      -- bullet-seq SIBLINGS; `.align` is the cure
       return .text (tkT ++ " ") ++ .align d0
     if trail0T.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
     let trail0 : Doc := if trail0T.isEmpty then .nil else .text (" " ++ trail0T)

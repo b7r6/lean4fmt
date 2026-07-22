@@ -40,8 +40,10 @@ for ln in lines:
             toks = code.split(' ')
             if len(toks) > 3:
                 i = random.randint(1, len(toks) - 2)
+                # ws-sensitivity CLASS 4 (Lean4Fmt/Emit/WsSensitivity.lean):
                 # the gap after `{` is CONTENT (column-aligned structInst
-                # fields) -- the emitter's ws canon exempts it too
+                # fields) -- the renderer's ws canon exempts it too; the two
+                # exemptions MIRROR each other, change both or neither
                 if toks[i] and toks[i-1] and not toks[i-1].endswith('{'):
                     toks[i] = ' ' + toks[i]              # double an inner gap
                 s = ' '.join(toks) + tail
