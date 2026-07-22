@@ -339,18 +339,12 @@ private def fieldDoc?
     -- class): walk the value; a by/do glues (members at sequence seams),
     -- anything else places OWN-LINE (the seam law). The item rides lineDoc,
     -- grid-ineligible, like walked types do.
-    let mut dv := a[3]!
-    for _ in [0:3] do
-      let inner := dv.getArgs.filter
-        (fun c => !c.isAtom && !(bareSrc c).trimAscii.toString.isEmpty)
-      if h : inner.size = 1 then dv := inner[0]
-      else break
-    if (bareSrc dv).trimAscii.toString.isEmpty then return none
-    let d ← walk dv
-    let glue := (dv.getKind == ``Lean.Parser.Term.do
-        || dv.getKind == ``Lean.Parser.Term.byTactic)
-      && !(match d with | .verbatim _ _ => true | _ => false)
-    defDoc? := some (if glue then .text " := " ++ d else .text " :=" ++ .nest 2 (.hardline ++ d))
+    -- walk the WHOLE default node: its bytes carry the `:=` (and the `by` of
+    -- a binderTactic default — unwrapping into the tactic seq DROPPED those
+    -- tokens; gate-caught on ModelTheory/Basic, and the repro's earlier
+    -- "pass" was a silent gate-identity — check stderr on direct exe runs)
+    let d ← walk a[3]!
+    defDoc? := some (.nest 2 (.hardline ++ d))
   if tyDoc?.isSome && !defT.isEmpty then return none
   let defTFlat := if defDoc?.isSome then "" else defT
   let nameSeg := modsT ++ nameT ++ (parts.foldl (fun s p => s ++ " " ++ p) "")
@@ -369,7 +363,12 @@ private def fieldDoc?
     | some d, _ => some (Doc.text (nameSeg ++ " : ") ++ d)
     | none, some dd =>
       some
-        (Doc.text (nameSeg ++ (match tyT with | some t => " : " ++ t | none => "")) ++ dd)
+        (Doc.text
+          (nameSeg
+              ++ (match tyT with
+              | some t => " : " ++ t
+              | none   => ""))
+            ++ dd)
     | none, none => none
   let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
   return some (docD, nameSeg, restSeg, line, lineDoc?)
