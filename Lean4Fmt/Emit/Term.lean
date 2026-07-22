@@ -127,6 +127,28 @@ private partial def containsCommaStructInst
   (s.getKind == ``Lean.Parser.Term.structInst && (bareSrc s).any (· == ','))
       || s.getArgs.any containsCommaStructInst
 
+/-- Flatten a subtree into single-line canonTok PIECES (the binder groups of
+    a wide quantifier head): a single-line node is one piece, a multi-line
+    container contributes its children's pieces recursively; `none` when a
+    leaf itself spans lines (nothing to wrap on). -/
+private partial def headPieces?
+                    (s : Lean.Syntax)
+                    : Option (Array String) :=
+
+  let t := Lean4Fmt.Emit.canonTok s
+  if !t.any (· == '\n') then
+    if t.isEmpty then some #[] else some #[t]
+  else if s.getArgs.isEmpty then
+    none
+  else
+    Id.run do
+      let mut acc : Array String := #[]
+      for c in s.getArgs do
+        match headPieces? c with
+        | some ps => acc := acc ++ ps
+        | none => return none
+      return some acc
+
 /-- A single `structInstField` = [structInstLVal, «rest»]. The LVal (field name /
     path) is reproduced verbatim; the value (the term after `:=`, found inside the
     `structInstFieldDef` in «rest») is walked so it lays out actively. A shorthand
@@ -920,11 +942,36 @@ partial def emit
         || kind == `«term∃_,_» || kind == `«term∀_,_»
       let mut head := ""
       if core then
+        -- head PIECES: a wide binder list wraps width-aware (fillSep below)
+        -- instead of bailing — each piece is canonTok'd per binder group
+        -- (core-notation respacing is parse-stable; the source-exact law is
+        -- for UNKNOWN token sets)
+        let mut pieces : Array String := #[]
         for c in args.extract 0 (n - 1) do
           let t := Lean4Fmt.Emit.canonTok c
-          if t.any (· == '\n') then return (← verbatim stx)
-          if t == "," then head := head ++ ","
-          else if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
+          if t.any (· == '\n') then
+            -- the binder container (null / explicitBinders / nested groups)
+            -- splits into per-group single-line pieces
+            match headPieces? c with
+            | some ps => pieces := pieces ++ ps
+            | none => return (← verbatim stx)
+          else if t == "," then
+            if pieces.isEmpty then return (← verbatim stx)
+            pieces := pieces.set! (pieces.size - 1) (pieces[pieces.size - 1]! ++ ",")
+          else if !t.isEmpty then pieces := pieces.push t
+        if pieces.isEmpty then return (← verbatim stx)
+        let joined := String.intercalate " " pieces.toList
+        if !joined.any (· == '\n')
+            && joined.length + 1 ≤ (← read).layout.lineWidth then
+          head := joined
+        else
+          -- wrapped head: keyword anchors, binder pieces fill at the
+          -- continuation; the body group follows as usual
+          let cont := (← read).layout.continuationIndent
+          let hd := .nest cont (Doc.fillSep (pieces.toList.map Doc.text))
+          let bodyDoc ← walk args[n - 1]!
+          if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then return (← verbatim stx)
+          return hd ++ .group (.nest cont (.line ++ bodyDoc))
       else
         let t := (bareSrc (Lean.mkNullNode (args.extract 0 (n - 1)))).trimAscii.toString
         if t.any (· == '\n') then return (← verbatim stx)

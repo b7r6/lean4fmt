@@ -68,8 +68,13 @@ def isBinderComma
     : Bool :=
 
   let s := ((kind.components.getLast?.map toString).getD "")
-  s.startsWith "«term" && s.endsWith "_,_»" && !isBinOp kind
+  (s.startsWith "«term" && s.endsWith "_,_»" && !isBinOp kind)
+    -- the NAMED big-operator binders (`∑ x ∈ s, body` parses as
+    -- `BigOperators.bigsum`, not a «term…» spelling): same
+    -- head-comma-body shape, same extended source-exact-head route
+    || kind == `BigOperators.bigsum || kind == `BigOperators.bigprod
 
+#guard isBinderComma `BigOperators.bigsum
 #guard isBinderComma `Finset.«term∑_∈_,_»
 #guard isBinderComma `«term⨆_,_»
 #guard isBinderComma `MeasureTheory.«term∀ᵐ_∂_,_»
