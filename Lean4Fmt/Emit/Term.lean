@@ -646,21 +646,40 @@ partial def emit
       -- block (re-anchoring one mid-layout drifts).
       if args.size != 5 then return (← verbatim stx)
       if (bareSrc args[3]!).trimAscii.toString != ":=" then return (← verbatim stx)
-      let headParts := ((args.extract 0 3).map Lean4Fmt.Emit.canonTok).filter
+      let headParts := ((args.extract 0 2).map Lean4Fmt.Emit.canonTok).filter
         (fun s => !s.isEmpty)
-      let head := String.intercalate " " headParts.toList
-      if head.isEmpty || head.any (· == '\n') then return (← verbatim stx)
+      let head0 := String.intercalate " " headParts.toList
+      if head0.isEmpty || head0.any (· == '\n') then return (← verbatim stx)
+      let tyT := Lean4Fmt.Emit.canonTok (args[2]?.getD .missing)
+      let headDoc : Doc ← do
+        if tyT.isEmpty then pure (.text head0)
+        else if !tyT.any (· == '\n') then pure (.text (head0 ++ " " ++ tyT))
+        else
+          -- multi-line TYPE (the have/let broken-head class — the census
+          -- cluster's dominator): name+binders flat, `:` trails the head,
+          -- the walked type breaks at +4 (the sig continuation shape);
+          -- `:= value` glues after the type's last line
+          let ts := args[2]!
+          let tyNode :=
+            if ts.getKind == ``Lean.Parser.Term.typeSpec then ts.getArgs[1]?.getD .missing
+            else .missing
+          if tyNode.isMissing then return (← verbatim stx)
+          let tyDoc ← walk tyNode
+          if (match tyDoc with | .verbatim _ _ => true | _ => false)
+              || Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then
+            return (← verbatim stx)
+          pure (.text (head0 ++ " :") ++ .group (.nest 4 (.line ++ tyDoc)))
       let v := args[4]!
       let vdoc ← walk v
       -- by glues like do (`h : T := by` + tactics below — the sequence-seam
       -- invariant tolerates interior verbatims); other kinds keep the bail
       if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic then
-        return .text head ++ .text " := " ++ vdoc
+        return headDoc ++ .text " := " ++ vdoc
       -- the vertical structInst glues by its unconditional `{` left edge —
       -- house shape `:= {` … `}` (see valForm; same seam argument)
       if Lean4Fmt.Doc.leftEdgeText? vdoc == some "{"
           && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
-        return .text head ++ .text " := " ++ vdoc
+        return headDoc ++ .text " := " ++ vdoc
       if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
         -- multi-line opaque value: OWN-LINE placement is a deterministic
         -- seam (the uniform re-anchor preserves interior relations) — the
@@ -670,8 +689,8 @@ partial def emit
         | .verbatim _ _ => return (← verbatim stx)
         | _ =>
           if Lean4Fmt.Doc.hasMidlineReanchor vdoc then return (← verbatim stx)
-          return .text head ++ .text " :=" ++ .nest 2 (.hardline ++ vdoc)
-      return .text head ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
+          return headDoc ++ .text " :=" ++ .nest 2 (.hardline ++ vdoc)
+      return headDoc ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
     else if kind == ``Lean.Parser.Term.match then
       -- [match, motive?, motive?, discrs, "with", matchAlts]. Reproduce the head
       -- `match <discrs> with` token-for-token; lay each arm `| pat => body` on its
