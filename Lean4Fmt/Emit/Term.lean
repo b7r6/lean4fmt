@@ -507,11 +507,14 @@ partial def emit
         let decl := a[2]?.getD .missing
         let declDoc ← walk decl
         -- ws-sensitivity (fixed-point master class): the binding glues after
-        -- `let ` mid-line — a multi-line re-anchoring declDoc drifts by its
-        -- placement column (gate-caught on SSP/Trust.Protocol home files:
-        -- comma-less structInst values, +4/pass). Whole-chain verbatim keeps
-        -- the source's column alignment byte-exact.
-        if Lean4Fmt.Doc.hasMultilineReanchor declDoc then
+        -- `let ` mid-line — a BARE multi-line verbatim binding drifts by its
+        -- placement column (SSP/Trust.Protocol, +4/pass). The letIdDecl path
+        -- now places its interior opaque values OWN-LINE (seam-stable), so
+        -- an ACTIVE declDoc with seam-placed verbatims is safe to glue —
+        -- trust the inner discipline, bail only on the bare-verbatim bind
+        -- (the tacticHave lesson).
+        if (match declDoc with | .verbatim _ _ => true | _ => false)
+            || Lean4Fmt.Doc.hasMidlineReanchor declDoc then
           return (← verbatim stx "let-multiline-binding")
         let sepT := (((a[3]?.map bareSrc).getD "").trimAscii.toString)
         if sepT.any (· == '\n') then return (← verbatim stx)
@@ -560,7 +563,16 @@ partial def emit
       -- invariant tolerates interior verbatims); other kinds keep the bail
       if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic then
         return .text head ++ .text " := " ++ vdoc
-      if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return (← verbatim stx)
+      if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
+        -- multi-line opaque value: OWN-LINE placement is a deterministic
+        -- seam (the uniform re-anchor preserves interior relations) — the
+        -- old whole-binding bail protected against the mid-line glue only.
+        -- A bare whole-verbatim value still bails (nothing active to keep).
+        match vdoc with
+        | .verbatim _ _ => return (← verbatim stx)
+        | _ =>
+          if Lean4Fmt.Doc.hasMidlineReanchor vdoc then return (← verbatim stx)
+          return .text head ++ .text " :=" ++ .nest 2 (.hardline ++ vdoc)
       return .text head ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
     else if kind == ``Lean.Parser.Term.match then
       -- [match, motive?, motive?, discrs, "with", matchAlts]. Reproduce the head

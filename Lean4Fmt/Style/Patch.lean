@@ -28,15 +28,19 @@ structure StylePatch where
   deriving Inhabited
 
 /-- Right-biased merge: the later patch wins per group. -/
-instance : Append StylePatch := ⟨fun a b => {
-  layout := b.layout <|> a.layout
-  breaking := b.breaking <|> a.breaking
-  alignment := b.alignment <|> a.alignment
-  blankLines := b.blankLines <|> a.blankLines
-  spacing := b.spacing <|> a.spacing
-  imports := b.imports <|> a.imports
-  comments := b.comments <|> a.comments
-}⟩
+instance : Append StylePatch :=
+
+  ⟨
+    fun a b => {
+      layout := b.layout <|> a.layout
+      breaking := b.breaking <|> a.breaking
+      alignment := b.alignment <|> a.alignment
+      blankLines := b.blankLines <|> a.blankLines
+      spacing := b.spacing <|> a.spacing
+      imports := b.imports <|> a.imports
+      comments := b.comments <|> a.comments
+    }
+  ⟩
 
 /-- Apply a patch to a base style (patch wins where present). -/
 def Style.apply

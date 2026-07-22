@@ -26,30 +26,40 @@ open Lean Lean4Fmt.Doc
     multi-line import span, or a seamless comment. -/
 private def headerDoc?
             (h : Lean.Syntax)
-            : Option Doc := Id.run do
-  if h.getKind != ``Lean.Parser.Module.header then return none
-  let a := h.getArgs
-  if a.size != 3 then return none
-  if !((a[0]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString.isEmpty then return none
-  if !((a[1]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString.isEmpty then return none
-  let imps := (a[2]?.map (·.getArgs)).getD #[]
-  if imps.isEmpty then return none
-  let mut acc : Doc := .nil
-  for i in [0:imps.size] do
-    let imp := imps[i]!
-    let t := (Lean4Fmt.Emit.bareSrc imp).trimAscii.toString
-    if t.isEmpty || t.any (· == '\n') then return none
-    let last := i + 1 == imps.size
-    let trailT := ((Lean4Fmt.Syntax.trailing? imp).getD "").trimAscii.toString
-    if !last && trailT.any (· == '\n') then return none
-    let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-    let sep : Doc ← do
-      if i == 0 then pure Doc.nil   -- head leading = the file banner, placed by `unit`
-      else match Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? imp).getD "") with
-        | some s => pure s
-        | none => return none
-    acc := acc ++ sep ++ .text t ++ trailDoc
-  return some acc
+            : Option Doc :=
+
+  Id.run
+    do
+      if h.getKind != ``Lean.Parser.Module.header then
+        return none
+      let a := h.getArgs
+      if a.size != 3 then
+        return none
+      if !((a[0]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString.isEmpty then
+        return none
+      if !((a[1]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString.isEmpty then
+        return none
+      let imps := (a[2]?.map (·.getArgs)).getD #[]
+      if imps.isEmpty then
+        return none
+      let mut acc : Doc := .nil
+      for i in [0:imps.size] do
+        let imp := imps[i]!
+        let t := (Lean4Fmt.Emit.bareSrc imp).trimAscii.toString
+        if t.isEmpty || t.any (· == '\n') then
+          return none
+        let last := i + 1 == imps.size
+        let trailT := ((Lean4Fmt.Syntax.trailing? imp).getD "").trimAscii.toString
+        if !last && trailT.any (· == '\n') then
+          return none
+        let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
+        let sep : Doc ← do
+          if i == 0 then pure Doc.nil   -- head leading = the file banner, placed by `unit`
+          else match Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? imp).getD "") with
+            | some s => pure s
+            | none => return none
+        acc := acc ++ sep ++ .text t ++ trailDoc
+      return some acc
 
 /-- Structural placement of MODULE-LEVEL trivia with block-comment awareness:
     comment chunks (line comments; balanced `/- … -/` blocks INCLUDING their
@@ -60,70 +70,76 @@ private def headerDoc?
 private def moduleTrivia?
             (lead : String)
             (atFileStart : Bool)
-            : Option Doc := Id.run do
-  let ls := lead.splitOn "\n"
-  if ls.isEmpty then return some .nil
-  -- head segment: remainder of the previous line (must be ws) — except at
-  -- file start, where the first segment IS the first line of the file
-  let mut i := 0
-  if !atFileStart then
-    if !(ls[0]!.toList.all (·.isWhitespace)) then return none
-    i := 1
-  let mut d : Doc := .nil
-  let mut blanks := 0
-  let mut sawAny := false
-  let mut depth := 0
-  let mut chunk : Array String := #[]
-  let n := ls.length
-  let flushChunk (d : Doc) (blanks : Nat) (sawAny : Bool) (chunk : Array String) : Doc :=
-    if chunk.isEmpty then d
-    else
-      let sep : Doc :=
-        if atFileStart && !sawAny then .nil
-        else if blanks > 0 then .blank blanks else .hardline
-      d ++ sep ++ .textRaw (String.intercalate "\n"
-        (chunk.toList.map (fun l => l.trimAsciiEnd.toString)))
-  while i < n do
-    let l := ls[i]!
-    let last := i + 1 == n
-    let t := l.trimAscii.toString
-    if depth > 0 then
-      chunk := chunk.push l
-      depth := depth + (t.splitOn "/-").length - 1 - ((t.splitOn "-/").length - 1)
-    else if t.isEmpty then
-      if last then
-        -- tail segment: the form's own indentation — the renderer re-indents
+            : Option Doc :=
+
+  Id.run
+    do
+      let ls := lead.splitOn "\n"
+      if ls.isEmpty then
+        return some .nil
+      -- head segment: remainder of the previous line (must be ws) — except at
+      -- file start, where the first segment IS the first line of the file
+      let mut i := 0
+      if !atFileStart then
+        if !(ls[0]!.toList.all (·.isWhitespace)) then
+          return none
+        i := 1
+      let mut d : Doc := .nil
+      let mut blanks := 0
+      let mut sawAny := false
+      let mut depth := 0
+      let mut chunk : Array String := #[]
+      let n := ls.length
+      let flushChunk (d : Doc) (blanks : Nat) (sawAny : Bool) (chunk : Array String) : Doc :=
+        if chunk.isEmpty then
+          d
+        else
+          let sep : Doc :=
+            if atFileStart && !sawAny then .nil else if blanks > 0 then .blank blanks else .hardline
+          d ++ sep
+              ++ .textRaw
+                (String.intercalate "\n" (chunk.toList.map (fun l => l.trimAsciiEnd.toString)))
+      while i < n do
+        let l := ls[i]!
+        let last := i + 1 == n
+        let t := l.trimAscii.toString
+        if depth > 0 then
+          chunk := chunk.push l
+          depth := depth + (t.splitOn "/-").length - 1 - ((t.splitOn "-/").length - 1)
+        else if t.isEmpty then
+          if last then
+            -- tail segment: the form's own indentation — the renderer re-indents
+            i := i + 1
+            continue
+          if !chunk.isEmpty then
+            d := flushChunk d blanks sawAny chunk
+            sawAny := true
+            chunk := #[]
+            blanks := 1   -- THIS blank line counts toward the next separator
+          else
+            blanks := blanks + 1
+        else if t.startsWith "--" || t.startsWith "/-" then
+          if !chunk.isEmpty && t.startsWith "/-" then
+            d := flushChunk d blanks sawAny chunk
+            sawAny := true
+            chunk := #[]
+            blanks := 0
+          chunk := chunk.push (l.trimAsciiEnd.toString)
+          if t.startsWith "/-" then
+            depth := depth + (t.splitOn "/-").length - 1 - ((t.splitOn "-/").length - 1)
+        else
+          return none -- content line that is not a comment: no seam owns it
         i := i + 1
-        continue
+      if depth != 0 then
+        return none
       if !chunk.isEmpty then
         d := flushChunk d blanks sawAny chunk
         sawAny := true
-        chunk := #[]
-        blanks := 1   -- THIS blank line counts toward the next separator
-      else
-        blanks := blanks + 1
-    else if t.startsWith "--" || t.startsWith "/-" then
-      if !chunk.isEmpty && t.startsWith "/-" then
-        d := flushChunk d blanks sawAny chunk
-        sawAny := true
-        chunk := #[]
         blanks := 0
-      chunk := chunk.push (l.trimAsciiEnd.toString)
-      if t.startsWith "/-" then
-        depth := depth + (t.splitOn "/-").length - 1 - ((t.splitOn "-/").length - 1)
-    else
-      return none   -- content line that is not a comment: no seam owns it
-    i := i + 1
-  if depth != 0 then return none
-  if !chunk.isEmpty then
-    d := flushChunk d blanks sawAny chunk
-    sawAny := true
-    blanks := 0
-  -- final separator before the form
-  let finalSep : Doc :=
-    if atFileStart && !sawAny then .nil
-    else if blanks > 0 then .blank blanks else .hardline
-  return some (d ++ finalSep)
+      -- final separator before the form
+      let finalSep : Doc :=
+        if atFileStart && !sawAny then .nil else if blanks > 0 then .blank blanks else .hardline
+      return some (d ++ finalSep)
 
 /-- Drop the leftmost separator of a seam doc (the file head has no previous
     line — a leading hardline/blank would open the file with a stray newline). -/

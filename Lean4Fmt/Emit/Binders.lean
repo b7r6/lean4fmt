@@ -24,28 +24,36 @@ open Lean Lean4Fmt.Doc
 def binderText?
     (b : Lean.Syntax)
     (preserve : Bool := false)
-    : Option String := Id.run do
-  let k := b.getKind
-  if k != ``Lean.Parser.Term.explicitBinder && k != ``Lean.Parser.Term.implicitBinder
-      && k != ``Lean.Parser.Term.strictImplicitBinder && k != ``Lean.Parser.Term.instBinder then
-    return none
-  let a := b.getArgs
-  if a.size < 3 then return none
-  let l := (bareSrc a[0]!).trimAscii.toString
-  let r := (bareSrc a[a.size-1]!).trimAscii.toString
-  if l.isEmpty || r.isEmpty then return none
-  if preserve then
-    -- byte-exact interior (the author's `s: String` survives)
-    let t := (bareSrc b).trimAscii.toString
-    if t.isEmpty || t.any (· == '\n') then return none
-    return some t
-  let mut interior := ""
-  for c in a.extract 1 (a.size - 1) do
-    let t := Lean4Fmt.Emit.canonTok c
-    if t.any (· == '\n') then return none
-    if !t.isEmpty then interior := if interior.isEmpty then t else interior ++ " " ++ t
-  if interior.isEmpty then return none
-  return some (l ++ interior ++ r)
+    : Option String :=
+
+  Id.run
+    do
+      let k := b.getKind
+      if k != ``Lean.Parser.Term.explicitBinder && k != ``Lean.Parser.Term.implicitBinder
+          && k != ``Lean.Parser.Term.strictImplicitBinder && k != ``Lean.Parser.Term.instBinder then
+        return none
+      let a := b.getArgs
+      if a.size < 3 then
+        return none
+      let l := (bareSrc a[0]!).trimAscii.toString
+      let r := (bareSrc a[a.size-1]!).trimAscii.toString
+      if l.isEmpty || r.isEmpty then
+        return none
+      if preserve then
+        -- byte-exact interior (the author's `s: String` survives)
+        let t := (bareSrc b).trimAscii.toString
+        if t.isEmpty || t.any (· == '\n') then
+          return none
+        return some t
+      let mut interior := ""
+      for c in a.extract 1 (a.size - 1) do
+        let t := Lean4Fmt.Emit.canonTok c
+        if t.any (· == '\n') then
+          return none
+        if !t.isEmpty then interior := if interior.isEmpty then t else interior ++ " " ++ t
+      if interior.isEmpty then
+        return none
+      return some (l ++ interior ++ r)
 
 /-- A binder doc: active single-line text when `binderText?` can hold it;
     a MULTI-LINE binder walks its type (chains/apps lay out actively inside

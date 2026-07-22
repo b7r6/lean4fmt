@@ -125,6 +125,34 @@ mutual
 
 end
 
+/-- A multi-line `.verbatim` anchored MID-LINE — the fixed-point hazard (its
+    re-anchor is additive with placement); one AT a line start is a stable
+    seam. The traversal threads "are we at a line start": breaks set it (any
+    group containing a multi-line verbatim cannot flatten, so its separators
+    genuinely break — which is what makes `.line → true` sound here); visible
+    text clears it. Returns (hazardFound, atLineStartAfter). -/
+partial def midlineReanchorAux : Doc → Bool → Bool × Bool
+  | .nil, atLS => (false, atLS)
+  | .verbatim s _, atLS =>
+    if s.any (· == '\n') then (!atLS, false) else (false, if s.isEmpty then atLS else false)
+  | .text s, atLS => (false, if s.isEmpty then atLS else false)
+  | .textRaw s, _ => (false, s.endsWith "\n")
+  | .line, _ | .softline, _ | .hardline, _ | .blank _, _ => (false, true)
+  | .pad _, atLS => (false, atLS)
+  | .cat a b, atLS =>
+    let (fa, la) := midlineReanchorAux a atLS
+    let (fb, lb) := midlineReanchorAux b la
+    (fa || fb, lb)
+  | .group d, atLS | .nest _ d, atLS | .align d, atLS | .flatten d, atLS =>
+    midlineReanchorAux d atLS
+  | .alignOr _ _ fb, atLS => midlineReanchorAux fb atLS
+  | .fillSep items, _ => (items.any hasMultilineVerbatim, false)
+  | .alignTable _ rows, _ => (rows.any (·.any hasMultilineVerbatim), false)
+
+/-- Hazard check for a doc placed AT A LINE START (own-line seam): any
+    multi-line verbatim it glues mid-line is a fixed-point drift. -/
+def hasMidlineReanchor (d : Doc) : Bool := (midlineReanchorAux d true).1
+
 mutual
 
   /-- Coverage accounting (DESIGN_V2 §15): (active, verbatim, trivia) bytes. -/
@@ -264,63 +292,67 @@ def wrLines (indent base : Nat) : List (List Char) → RSt → RSt
     boundary). Mirrors the `stripTrailingWs` mode machine. -/
 def inStringLineMask
     (cs : List Char)
-    : List Bool := Id.run do
-  let a : Array Char := cs.toArray
-  let n := a.size
-  let isIdChar := fun (c : Char) =>
-    c.isAlphanum || c == '_' || c == '\'' || c == '!' || c == '?' || c.val > 127
-  -- modes: 0 code, 1 line comment, 2 block comment, 3 string, 4 raw string, 5 char
-  let mut mode : Nat := 0
-  let mut depth : Nat := 0
-  let mut prev : Char := ' '
-  let mut mask : Array Bool := #[false]
-  let mut i := 0
-  while _h : i < n do
-    let c := a[i]!
-    let c1 := a[i + 1]?
-    if c == '\n' then
-      -- line comments close at the newline; char-literal recovery likewise
-      if mode == 1 || mode == 5 then mode := 0
-      mask := mask.push (mode == 3 || mode == 4)
-    else
-      match mode with
-      | 0 =>
-        if c == '-' && c1 == some '-' then mode := 1; i := i + 1
-        else if c == '/' && c1 == some '-' then mode := 2; depth := 1; i := i + 1
-        else if c == '"' then mode := 3
-        else if c == 'r' && !isIdChar prev && (c1 == some '"' || c1 == some '#') then
-          let mut j := i + 1
-          let mut hs := 0
-          while _hj : j < n && a[j]! == '#' do hs := hs + 1; j := j + 1
-          if a[j]? == some '"' then mode := 4; depth := hs; i := j
-        else if c == '\'' && !isIdChar prev then mode := 5
-      | 1 => pure ()
-      | 2 =>
-        if c == '/' && c1 == some '-' then depth := depth + 1; i := i + 1
-        else if c == '-' && c1 == some '/' then
-          depth := depth - 1; i := i + 1
-          if depth == 0 then mode := 0
-      | 3 =>
-        if c == '\\' then
-          -- a string gap (`\⏎`): the escape consumes the newline — the LINE
-          -- BOUNDARY must still land in the mask (in-string: true)
-          if c1 == some '\n' then mask := mask.push true
-          i := i + 1
-        else if c == '"' then mode := 0
-      | 4 =>
-        if c == '"' then
-          let mut j := i + 1
-          let mut hs := 0
-          while _hj : j < n && a[j]! == '#' && hs < depth do hs := hs + 1; j := j + 1
-          if hs == depth then mode := 0; i := j - 1
-      | _ =>
-        if c == '\\' then
-          if c1 == some '\n' then mask := mask.push false
-          i := i + 1
-        else if c == '\'' then mode := 0
-    prev := c
-    i := i + 1
-  return mask.toList
+    : List Bool :=
+
+  Id.run
+    do
+      let a : Array Char := cs.toArray
+      let n := a.size
+      let isIdChar :=
+        fun (c : Char) =>
+          c.isAlphanum || c == '_' || c == '\'' || c == '!' || c == '?' || c.val > 127
+      -- modes: 0 code, 1 line comment, 2 block comment, 3 string, 4 raw string, 5 char
+      let mut mode : Nat := 0
+      let mut depth : Nat := 0
+      let mut prev : Char := ' '
+      let mut mask : Array Bool := #[false]
+      let mut i := 0
+      while _h : i < n do
+        let c := a[i]!
+        let c1 := a[i + 1]?
+        if c == '\n' then
+          -- line comments close at the newline; char-literal recovery likewise
+          if mode == 1 || mode == 5 then mode := 0
+          mask := mask.push (mode == 3 || mode == 4)
+        else
+          match mode with
+          | 0 =>
+            if c == '-' && c1 == some '-' then mode := 1; i := i + 1
+            else if c == '/' && c1 == some '-' then mode := 2; depth := 1; i := i + 1
+            else if c == '"' then mode := 3
+            else if c == 'r' && !isIdChar prev && (c1 == some '"' || c1 == some '#') then
+              let mut j := i + 1
+              let mut hs := 0
+              while _hj : j < n && a[j]! == '#' do hs := hs + 1; j := j + 1
+              if a[j]? == some '"' then mode := 4; depth := hs; i := j
+            else if c == '\'' && !isIdChar prev then mode := 5
+          | 1 => pure ()
+          | 2 =>
+            if c == '/' && c1 == some '-' then depth := depth + 1; i := i + 1
+            else if c == '-' && c1 == some '/' then
+              depth := depth - 1; i := i + 1
+              if depth == 0 then mode := 0
+          | 3 =>
+            if c == '\\' then
+              -- a string gap (`\⏎`): the escape consumes the newline — the LINE
+              -- BOUNDARY must still land in the mask (in-string: true)
+              if c1 == some '\n' then mask := mask.push true
+              i := i + 1
+            else if c == '"' then mode := 0
+          | 4 =>
+            if c == '"' then
+              let mut j := i + 1
+              let mut hs := 0
+              while _hj : j < n && a[j]! == '#' && hs < depth do hs := hs + 1; j := j + 1
+              if hs == depth then mode := 0; i := j - 1
+          | _ =>
+            if c == '\\' then
+              if c1 == some '\n' then mask := mask.push false
+              i := i + 1
+            else if c == '\'' then mode := 0
+        prev := c
+        i := i + 1
+      return mask.toList
 
 /-- `wrLines` with the in-string mask: a masked line is STRING-TOKEN INTERIOR
     and emits byte-exact at its original absolute column (indent 0, no
@@ -375,9 +407,11 @@ def emitTable
     (st : RSt)
     : RSt :=
 
-  (strRows.foldl (fun (p : RSt × Bool) r =>
-    let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
-    (wr st indent (renderRowStr sep widths r), false)) (st, true)).1
+  (strRows.foldl
+    (fun (p : RSt × Bool) r =>
+      let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
+      (wr st indent (renderRowStr sep widths r), false))
+    (st, true)).1
 
 mutual
 
@@ -507,93 +541,100 @@ end
     inside interpolation code, which the gate would catch anyway). -/
 def stripTrailingWs
     (s : String)
-    : String := Id.run do
-  let a : Array Char := s.toList.toArray
-  let n := a.size
-  let isIdChar := fun (c : Char) =>
-    c.isAlphanum || c == '_' || c == '\'' || c == '!' || c == '?' || c.val > 127
-  -- modes: 0 code, 1 line comment, 2 block comment, 3 string, 4 raw string, 5 char
-  let mut mode : Nat := 0
-  let mut depth : Nat := 0          -- block-comment nesting / raw-string hash count
-  let mut docComment := false       -- `/--`/`/-!` are ATOMS (leafToks) — never strip inside
-  let mut prev : Char := ' '
-  let mut out : Array Char := Array.mkEmpty n
-  let strip := fun (o : Array Char) => Id.run do
-    let mut o := o
-    while !o.isEmpty && (o.back! == ' ' || o.back! == '\t') do o := o.pop
-    return o
-  let mut i := 0
-  while _h : i < n do
-    let c := a[i]!
-    let c1 := a[i + 1]?
-    match mode with
-    | 0 =>
-      if c == '\n' then
-        out := (strip out).push c
-      else if c == '-' && c1 == some '-' then
-        mode := 1; out := (out.push c).push '-'; i := i + 1
-      else if c == '/' && c1 == some '-' then
-        mode := 2; depth := 1
-        docComment := a[i + 2]? == some '-' || a[i + 2]? == some '!'
-        out := (out.push c).push '-'; i := i + 1
-      else if c == '"' then
-        mode := 3; out := out.push c
-      else if c == 'r' && !isIdChar prev && (c1 == some '"' || c1 == some '#') then
-        -- raw string candidate: r#*" — count hashes, confirm the quote
-        let mut j := i + 1
-        let mut hs := 0
-        while _hj : j < n && a[j]! == '#' do hs := hs + 1; j := j + 1
-        if a[j]? == some '"' then
-          mode := 4; depth := hs
-          for k in [i:j+1] do out := out.push a[k]!
-          i := j
-        else
-          out := out.push c
-      else if c == '\'' && !isIdChar prev then
-        mode := 5; out := out.push c
-      else
-        out := out.push c
-    | 1 =>  -- line comment: the newline both strips and closes
-      if c == '\n' then mode := 0; out := (strip out).push c
-      else out := out.push c
-    | 2 =>  -- block comment (nested): line ends inside are strippable trivia,
-            -- EXCEPT in doc comments, whose whole text is one leaf token
-      if c == '\n' then out := (if docComment then out else strip out).push c
-      else if c == '/' && c1 == some '-' then
-        depth := depth + 1; out := (out.push c).push '-'; i := i + 1
-      else if c == '-' && c1 == some '/' then
-        depth := depth - 1; out := (out.push c).push '/'; i := i + 1
-        if depth == 0 then mode := 0
-      else out := out.push c
-    | 3 =>  -- string literal: NOTHING is stripped (multi-line interiors are content)
-      if c == '\\' then
-        out := out.push c
-        match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
-      else
-        if c == '"' then mode := 0
-        out := out.push c
-    | 4 =>  -- raw string: closes on `"` + depth hashes; interiors are content
-      if c == '"' then
-        let mut j := i + 1
-        let mut hs := 0
-        while _hj : j < n && a[j]! == '#' && hs < depth do hs := hs + 1; j := j + 1
-        if hs == depth then
-          mode := 0
-          for k in [i:j] do out := out.push a[k]!
-          i := j - 1
-        else
-          out := out.push c
-      else out := out.push c
-    | _ =>  -- char literal (or prime-misparse recovery on newline)
-      if c == '\\' then
-        out := out.push c
-        match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
-      else
-        if c == '\'' || c == '\n' then mode := 0
-        if c == '\n' then out := (strip out).push c else out := out.push c
-    prev := (out.back?).getD ' '
-    i := i + 1
-  return String.ofList (strip out).toList
+    : String :=
+
+  Id.run
+    do
+      let a : Array Char := s.toList.toArray
+      let n := a.size
+      let isIdChar :=
+        fun (c : Char) =>
+          c.isAlphanum || c == '_' || c == '\'' || c == '!' || c == '?' || c.val > 127
+      -- modes: 0 code, 1 line comment, 2 block comment, 3 string, 4 raw string, 5 char
+      let mut mode : Nat := 0
+      let mut depth : Nat := 0 -- block-comment nesting / raw-string hash count
+      let mut docComment := false -- `/--`/`/-!` are ATOMS (leafToks) — never strip inside
+      let mut prev : Char := ' '
+      let mut out : Array Char := Array.mkEmpty n
+      let strip :=
+        fun (o : Array Char) =>
+          Id.run do
+            let mut o := o
+            while !o.isEmpty && (o.back! == ' ' || o.back! == '\t') do
+              o := o.pop
+            return o
+      let mut i := 0
+      while _h : i < n do
+        let c := a[i]!
+        let c1 := a[i + 1]?
+        match mode with
+        | 0 =>
+          if c == '\n' then
+            out := (strip out).push c
+          else if c == '-' && c1 == some '-' then
+            mode := 1; out := (out.push c).push '-'; i := i + 1
+          else if c == '/' && c1 == some '-' then
+            mode := 2; depth := 1
+            docComment := a[i + 2]? == some '-' || a[i + 2]? == some '!'
+            out := (out.push c).push '-'; i := i + 1
+          else if c == '"' then
+            mode := 3; out := out.push c
+          else if c == 'r' && !isIdChar prev && (c1 == some '"' || c1 == some '#') then
+            -- raw string candidate: r#*" — count hashes, confirm the quote
+            let mut j := i + 1
+            let mut hs := 0
+            while _hj : j < n && a[j]! == '#' do hs := hs + 1; j := j + 1
+            if a[j]? == some '"' then
+              mode := 4; depth := hs
+              for k in [i:j+1] do out := out.push a[k]!
+              i := j
+            else
+              out := out.push c
+          else if c == '\'' && !isIdChar prev then
+            mode := 5; out := out.push c
+          else
+            out := out.push c
+        | 1 =>  -- line comment: the newline both strips and closes
+          if c == '\n' then mode := 0; out := (strip out).push c
+          else out := out.push c
+        | 2 =>  -- block comment (nested): line ends inside are strippable trivia,
+                -- EXCEPT in doc comments, whose whole text is one leaf token
+          if c == '\n' then out := (if docComment then out else strip out).push c
+          else if c == '/' && c1 == some '-' then
+            depth := depth + 1; out := (out.push c).push '-'; i := i + 1
+          else if c == '-' && c1 == some '/' then
+            depth := depth - 1; out := (out.push c).push '/'; i := i + 1
+            if depth == 0 then mode := 0
+          else out := out.push c
+        | 3 =>  -- string literal: NOTHING is stripped (multi-line interiors are content)
+          if c == '\\' then
+            out := out.push c
+            match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
+          else
+            if c == '"' then mode := 0
+            out := out.push c
+        | 4 =>  -- raw string: closes on `"` + depth hashes; interiors are content
+          if c == '"' then
+            let mut j := i + 1
+            let mut hs := 0
+            while _hj : j < n && a[j]! == '#' && hs < depth do hs := hs + 1; j := j + 1
+            if hs == depth then
+              mode := 0
+              for k in [i:j] do out := out.push a[k]!
+              i := j - 1
+            else
+              out := out.push c
+          else out := out.push c
+        | _ =>  -- char literal (or prime-misparse recovery on newline)
+          if c == '\\' then
+            out := out.push c
+            match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
+          else
+            if c == '\'' || c == '\n' then mode := 0
+            if c == '\n' then out := (strip out).push c else out := out.push c
+        prev := (out.back?).getD ' '
+        i := i + 1
+      return String.ofList (strip out).toList
 
 /-- Canonical whitespace for OPAQUE (verbatim) block content — the zero-
     passthrough closure for constructs the walker has not ported. Two rules,
@@ -612,128 +653,132 @@ def stripTrailingWs
     construction. -/
 def canonVerbatimWs
     (s : String)
-    : String := Id.run do
-  let a : Array Char := s.toList.toArray
-  let n := a.size
-  let isIdChar := fun (c : Char) =>
-    c.isAlphanum || c == '_' || c == '\'' || c == '!' || c == '?' || c.val > 127
-  -- modes: 0 code, 1 line comment, 2 block comment, 3 string, 4 raw string, 5 char
-  let mut mode : Nat := 0
-  let mut depth : Nat := 0
-  let mut prev : Char := ' '
-  let mut out : Array Char := Array.mkEmpty n
-  let mut i := 0
-  while _h : i < n do
-    let c := a[i]!
-    let c1 := a[i + 1]?
-    match mode with
-    | 0 =>
-      if c == '\n' then
-        -- newline RUN: consume spaces/newlines ahead; k newlines = k-1 blank
-        -- lines; emit min(k,2) newlines and resume at the LAST one so the
-        -- final line's indentation flows through untouched
-        let mut j := i
-        let mut k := 0
-        let mut last := i
-        while _hj : j < n && (a[j]! == '\n' || a[j]! == ' ' || a[j]! == '\t') do
-          if a[j]! == '\n' then k := k + 1; last := j
-          j := j + 1
-        out := if k ≥ 2 then (out.push '\n').push '\n' else out.push '\n'
-        i := last
-      else if c == ' ' then
-        let lineStart := out.isEmpty || out.back! == '\n'
-        let mut j := i
-        while _hj : j < n && a[j]! == ' ' do j := j + 1
-        let commentNext := (a[j]? == some '-' && a[j+1]? == some '-')
-          || (a[j]? == some '/' && a[j+1]? == some '-')
-        -- ws-sensitivity CLASS 4 (Emit/WsSensitivity, mirrored in
-        -- fuzz/perturb.py): the run after a `{` is exempt — a
-        -- newline-separated structInst aligns its fields by COLUMN and
-        -- `{  f := v` sets that column; collapsing it shifted the first
-        -- field and the output failed to reparse. Exemptions here stay
-        -- LEXICAL AND NARROW, never subtree-wide.
-        let afterBrace := !out.isEmpty && out.back! == '{'
-        if lineStart || j - i == 1 || commentNext || afterBrace then
-          for k in [i:j] do out := out.push a[k]!
-        else if a[j]? != some '\n' && j < n then
-          out := out.push ' '
-        -- (run before a newline or at end: trailing ws, dropped)
-        i := j - 1
-      else if c == '[' && (c1.map (fun x => x.isAlpha || x == '_')).getD false then
-        -- DSL template candidate `[ident| … |]`: the interior is CONTENT
-        -- (the quasiquotation pin) — copy verbatim through the closing `|]`
-        let mut j := i + 1
-        while _hj : j < n && (a[j]!.isAlphanum || a[j]! == '_' || a[j]! == '.') do
-          j := j + 1
-        if (a[j]? == some '|') && a[j+1]? != some ']' then
-          let mut e := j + 1
-          while _he : e + 1 < n && !(a[e]! == '|' && a[e+1]! == ']') do e := e + 1
-          let last := if e + 1 < n then e + 1 else n - 1
-          for m in [i:last+1] do out := out.push a[m]!
-          i := last
-        else
-          out := out.push c
-      else if c == '-' && c1 == some '-' then
-        mode := 1; out := (out.push c).push '-'; i := i + 1
-      else if c == '/' && c1 == some '-' then
-        mode := 2; depth := 1
-        out := (out.push c).push '-'; i := i + 1
-      else if c == '"' then
-        mode := 3; out := out.push c
-      else if c == 'r' && !isIdChar prev && (c1 == some '"' || c1 == some '#') then
-        let mut j := i + 1
-        let mut hs := 0
-        while _hj : j < n && a[j]! == '#' do hs := hs + 1; j := j + 1
-        if a[j]? == some '"' then
-          mode := 4; depth := hs
-          for k in [i:j+1] do out := out.push a[k]!
-          i := j
-        else
-          out := out.push c
-      else if c == '\'' && !isIdChar prev then
-        mode := 5; out := out.push c
-      else
-        out := out.push c
-    | 1 =>  -- line comment: interior is content; the newline closes AND starts
-            -- a code-mode run (step back onto it so the run rule applies)
-      if c == '\n' then mode := 0; i := i - 1
-      else out := out.push c
-    | 2 =>  -- block comment (nested): interior is content, blank lines included
-      if c == '/' && c1 == some '-' then
-        depth := depth + 1; out := (out.push c).push '-'; i := i + 1
-      else if c == '-' && c1 == some '/' then
-        depth := depth - 1; out := (out.push c).push '/'; i := i + 1
-        if depth == 0 then mode := 0
-      else out := out.push c
-    | 3 =>  -- string literal: content
-      if c == '\\' then
-        out := out.push c
-        match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
-      else
-        if c == '"' then mode := 0
-        out := out.push c
-    | 4 =>  -- raw string: closes on `"` + depth hashes; interior is content
-      if c == '"' then
-        let mut j := i + 1
-        let mut hs := 0
-        while _hj : j < n && a[j]! == '#' && hs < depth do hs := hs + 1; j := j + 1
-        if hs == depth then
-          mode := 0
-          for k in [i:j] do out := out.push a[k]!
-          i := j - 1
-        else
-          out := out.push c
-      else out := out.push c
-    | _ =>  -- char literal (or prime-misparse recovery on newline)
-      if c == '\\' then
-        out := out.push c
-        match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
-      else
-        if c == '\'' || c == '\n' then mode := 0
-        out := out.push c
-    prev := (out.back?).getD ' '
-    i := i + 1
-  return String.ofList out.toList
+    : String :=
+
+  Id.run
+    do
+      let a : Array Char := s.toList.toArray
+      let n := a.size
+      let isIdChar :=
+        fun (c : Char) =>
+          c.isAlphanum || c == '_' || c == '\'' || c == '!' || c == '?' || c.val > 127
+      -- modes: 0 code, 1 line comment, 2 block comment, 3 string, 4 raw string, 5 char
+      let mut mode : Nat := 0
+      let mut depth : Nat := 0
+      let mut prev : Char := ' '
+      let mut out : Array Char := Array.mkEmpty n
+      let mut i := 0
+      while _h : i < n do
+        let c := a[i]!
+        let c1 := a[i + 1]?
+        match mode with
+        | 0 =>
+          if c == '\n' then
+            -- newline RUN: consume spaces/newlines ahead; k newlines = k-1 blank
+            -- lines; emit min(k,2) newlines and resume at the LAST one so the
+            -- final line's indentation flows through untouched
+            let mut j := i
+            let mut k := 0
+            let mut last := i
+            while _hj : j < n && (a[j]! == '\n' || a[j]! == ' ' || a[j]! == '\t') do
+              if a[j]! == '\n' then k := k + 1; last := j
+              j := j + 1
+            out := if k ≥ 2 then (out.push '\n').push '\n' else out.push '\n'
+            i := last
+          else if c == ' ' then
+            let lineStart := out.isEmpty || out.back! == '\n'
+            let mut j := i
+            while _hj : j < n && a[j]! == ' ' do j := j + 1
+            let commentNext := (a[j]? == some '-' && a[j+1]? == some '-')
+              || (a[j]? == some '/' && a[j+1]? == some '-')
+            -- ws-sensitivity CLASS 4 (Emit/WsSensitivity, mirrored in
+            -- fuzz/perturb.py): the run after a `{` is exempt — a
+            -- newline-separated structInst aligns its fields by COLUMN and
+            -- `{  f := v` sets that column; collapsing it shifted the first
+            -- field and the output failed to reparse. Exemptions here stay
+            -- LEXICAL AND NARROW, never subtree-wide.
+            let afterBrace := !out.isEmpty && out.back! == '{'
+            if lineStart || j - i == 1 || commentNext || afterBrace then
+              for k in [i:j] do out := out.push a[k]!
+            else if a[j]? != some '\n' && j < n then
+              out := out.push ' '
+            -- (run before a newline or at end: trailing ws, dropped)
+            i := j - 1
+          else if c == '[' && (c1.map (fun x => x.isAlpha || x == '_')).getD false then
+            -- DSL template candidate `[ident| … |]`: the interior is CONTENT
+            -- (the quasiquotation pin) — copy verbatim through the closing `|]`
+            let mut j := i + 1
+            while _hj : j < n && (a[j]!.isAlphanum || a[j]! == '_' || a[j]! == '.') do
+              j := j + 1
+            if (a[j]? == some '|') && a[j+1]? != some ']' then
+              let mut e := j + 1
+              while _he : e + 1 < n && !(a[e]! == '|' && a[e+1]! == ']') do e := e + 1
+              let last := if e + 1 < n then e + 1 else n - 1
+              for m in [i:last+1] do out := out.push a[m]!
+              i := last
+            else
+              out := out.push c
+          else if c == '-' && c1 == some '-' then
+            mode := 1; out := (out.push c).push '-'; i := i + 1
+          else if c == '/' && c1 == some '-' then
+            mode := 2; depth := 1
+            out := (out.push c).push '-'; i := i + 1
+          else if c == '"' then
+            mode := 3; out := out.push c
+          else if c == 'r' && !isIdChar prev && (c1 == some '"' || c1 == some '#') then
+            let mut j := i + 1
+            let mut hs := 0
+            while _hj : j < n && a[j]! == '#' do hs := hs + 1; j := j + 1
+            if a[j]? == some '"' then
+              mode := 4; depth := hs
+              for k in [i:j+1] do out := out.push a[k]!
+              i := j
+            else
+              out := out.push c
+          else if c == '\'' && !isIdChar prev then
+            mode := 5; out := out.push c
+          else
+            out := out.push c
+        | 1 =>  -- line comment: interior is content; the newline closes AND starts
+                -- a code-mode run (step back onto it so the run rule applies)
+          if c == '\n' then mode := 0; i := i - 1
+          else out := out.push c
+        | 2 =>  -- block comment (nested): interior is content, blank lines included
+          if c == '/' && c1 == some '-' then
+            depth := depth + 1; out := (out.push c).push '-'; i := i + 1
+          else if c == '-' && c1 == some '/' then
+            depth := depth - 1; out := (out.push c).push '/'; i := i + 1
+            if depth == 0 then mode := 0
+          else out := out.push c
+        | 3 =>  -- string literal: content
+          if c == '\\' then
+            out := out.push c
+            match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
+          else
+            if c == '"' then mode := 0
+            out := out.push c
+        | 4 =>  -- raw string: closes on `"` + depth hashes; interior is content
+          if c == '"' then
+            let mut j := i + 1
+            let mut hs := 0
+            while _hj : j < n && a[j]! == '#' && hs < depth do hs := hs + 1; j := j + 1
+            if hs == depth then
+              mode := 0
+              for k in [i:j] do out := out.push a[k]!
+              i := j - 1
+            else
+              out := out.push c
+          else out := out.push c
+        | _ =>  -- char literal (or prime-misparse recovery on newline)
+          if c == '\\' then
+            out := out.push c
+            match c1 with | some e => out := out.push e; i := i + 1 | none => pure ()
+          else
+            if c == '\'' || c == '\n' then mode := 0
+            out := out.push c
+        prev := (out.back?).getD ' '
+        i := i + 1
+      return String.ofList out.toList
 
 /-- Render a `Doc` to a string under `style`. -/
 def render

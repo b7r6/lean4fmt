@@ -384,15 +384,14 @@ private def valForm
         -- blocks below it, their leading trivia placed structurally. The value
         -- must be comment-free and single-line-leaf-clean (same rules as the
         -- plain body path); anything else keeps the whole safe span.
-        let tailCmts := Lean4Fmt.Syntax.countLineComments
-          ((Lean4Fmt.Syntax.trailing? v).getD "")
-        let leadCmts := Lean4Fmt.Syntax.countLineComments
-          ((Lean4Fmt.Syntax.leading? v).getD "")
+        let tailCmts := Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.trailing? v).getD "")
+        let leadCmts := Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? v).getD "")
         if (if Lean4Fmt.Syntax.ownsSeams v.getKind then leadCmts > 0
             else Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts) then
           return .span (← verbatim declVal "val-comment")
         let vdoc ← walk v
-        if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return .span (← verbatim declVal "val-suffix-multiline")
+        if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
+          return .span (← verbatim declVal "val-suffix-multiline")
         let mut tail : Doc := .nil
         for slot in [a[2]?, a[3]?] do
           match slot with
@@ -408,8 +407,9 @@ private def valForm
               return .span (← verbatim declVal "val-suffix-docstring")
             tail := tail ++ sep ++ (← verbatim sfx)
           | none => continue
-        let glue := v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic
-          || ((← read).breaking.glueFun && v.getKind == ``Lean.Parser.Term.fun)
+        let glue :=
+          v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic
+              || ((← read).breaking.glueFun && v.getKind == ``Lean.Parser.Term.fun)
         return .body (vdoc ++ tail) glue
       let vdoc ← walk v
       -- `:= do` glues even when the do carries comments BETWEEN its statements —
@@ -425,7 +425,7 @@ private def valForm
       -- interior comment rides inside its verbatim bytes. `fun` keeps the
       -- guard: its body embeds in a width-aware group.
       if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic then
-        return .body vdoc true    -- glue `:= do` / `:= by`
+        return .body vdoc true -- glue `:= do` / `:= by`
       if (← read).breaking.glueFun && v.getKind == ``Lean.Parser.Term.fun
           && !Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
         return .body vdoc true
@@ -434,14 +434,12 @@ private def valForm
       -- by Module) has no seam to survive at in an active layout — in particular
       -- the flat-body path would silently drop a comment between `:=` and a
       -- single-line value. Keep the whole `:= …` span.
-      let tailCmts := Lean4Fmt.Syntax.countLineComments
-        ((Lean4Fmt.Syntax.trailing? v).getD "")
+      let tailCmts := Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.trailing? v).getD "")
       -- EXEMPT seam-owning kinds (Kinds.ownsSeams) — but only for comments
       -- INSIDE their seams: the value's own HEAD leading (between `:=` and
       -- the first token) has no owner in expression space, so it keeps the
       -- span (which carries it byte-exact)
-      let leadCmts := Lean4Fmt.Syntax.countLineComments
-        ((Lean4Fmt.Syntax.leading? v).getD "")
+      let leadCmts := Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? v).getD "")
       if (if Lean4Fmt.Syntax.ownsSeams v.getKind then False
           else Lean4Fmt.Syntax.countSubtreeLineComments v > tailCmts + leadCmts) then
         return .span (← verbatim declVal "val-comment")
@@ -451,9 +449,9 @@ private def valForm
       -- CHAIN walkers (let/letrec) place their OWN leading (their head
       -- comments are chain seams) — prepending would double them; every
       -- other kind gets the seam-kit prefix (idempotence sweep verifies)
-      let selfLead := v.getKind == ``Lean.Parser.Term.let
-        || v.getKind == ``Lean.Parser.Term.have
-        || v.getKind == ``Lean.Parser.Term.letrec
+      let selfLead :=
+        v.getKind == ``Lean.Parser.Term.let || v.getKind == ``Lean.Parser.Term.have
+            || v.getKind == ``Lean.Parser.Term.letrec
       let vdoc ← (do
         if leadCmts > 0 && !selfLead then
           match Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? v).getD "") with
@@ -464,11 +462,23 @@ private def valForm
           && !(match Lean4Fmt.Emit.leadingSep?
           ((Lean4Fmt.Syntax.leading? v).getD "") with | some _ => true | none => false) then
         return .span (← verbatim declVal "val-lead-unplaceable")
-      let clean := !Lean4Fmt.Doc.hasMultilineVerbatim vdoc   -- comments handled above
-      if (isActiveMultiline v.getKind || leadCmts > 0) && clean then return .body vdoc false
+      let clean := !Lean4Fmt.Doc.hasMultilineVerbatim vdoc -- comments handled above
+      if (isActiveMultiline v.getKind || leadCmts > 0) && clean then
+        return .body vdoc false
       match Lean4Fmt.Doc.flatWidth vdoc with
       | some _ => return .body vdoc false      -- width decides (no forced flatten)
-      | none => return .span (← verbatim declVal "val-multiline")                                    -- multi-line: safe span
+      | none =>
+        -- multi-line value with interior opaque pieces: the BROKEN body
+        -- placement (after `:=`, at a hardline seam) is deterministic — the
+        -- val-multiline span (76KB of the wide mathlib census) protected
+        -- against a glue this path never performs. A bare whole-verbatim
+        -- value keeps the span (nothing active to gain).
+        match vdoc with
+        | .verbatim _ _ => return .span (← verbatim declVal "val-multiline")
+        | _ =>
+          if Lean4Fmt.Doc.hasMidlineReanchor vdoc then
+            return .span (← verbatim declVal "val-multiline")
+          return .body vdoc false
     | none => return .span (← verbatim declVal "val-shape")
   else if declVal.getKind == ``Lean.Parser.Command.declValEqns then
     -- `| pat => body` equation arms. Structure:

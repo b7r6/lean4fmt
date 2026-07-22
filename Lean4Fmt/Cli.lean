@@ -44,24 +44,26 @@ structure Options where
 /-- Parse argv into `Options`. -/
 def parse
     (args : List String)
-    : Options := Id.run do
-  let mut o : Options := {}
-  let mut rest := args
-  repeat
-    match rest with
-    | "--check" :: r => o := { o with mode := .check }; rest := r
-    | "--stats" :: r => o := { o with mode := .stats }; rest := r
-    | "--write" :: r => o := { o with mode := .write }; rest := r
-    | "-w" :: r => o := { o with mode := .write }; rest := r
-    | "--width" :: n :: r => o := { o with width := some n.toNat! }; rest := r
-    | "--style" :: s :: r => o := { o with preset := s }; rest := r
-    | "--log-level" :: l :: r => o := { o with logLevel := l }; rest := r
-    | "--elab" :: v :: r => o := { o with elabFallback := v != "off" }; rest := r
-    | "--no-retry" :: r => o := { o with retry := false }; rest := r
-    | "--lake" :: v :: r => o := { o with lakeEnv := v != "off" }; rest := r
-    | f :: r => o := { o with files := o.files ++ [f] }; rest := r
-    | [] => break
-  return o
+    : Options :=
+
+  Id.run do
+    let mut o : Options := {}
+    let mut rest := args
+    repeat
+      match rest with
+      | "--check" :: r => o := { o with mode := .check }; rest := r
+      | "--stats" :: r => o := { o with mode := .stats }; rest := r
+      | "--write" :: r => o := { o with mode := .write }; rest := r
+      | "-w" :: r => o := { o with mode := .write }; rest := r
+      | "--width" :: n :: r => o := { o with width := some n.toNat! }; rest := r
+      | "--style" :: s :: r => o := { o with preset := s }; rest := r
+      | "--log-level" :: l :: r => o := { o with logLevel := l }; rest := r
+      | "--elab" :: v :: r => o := { o with elabFallback := v != "off" }; rest := r
+      | "--no-retry" :: r => o := { o with retry := false }; rest := r
+      | "--lake" :: v :: r => o := { o with lakeEnv := v != "off" }; rest := r
+      | f :: r => o := { o with files := o.files ++ [f] }; rest := r
+      | [] => break
+    return o
 
 def usage
     : String :=

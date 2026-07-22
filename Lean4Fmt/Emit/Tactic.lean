@@ -71,32 +71,37 @@ private partial def lastByDescendant?
 private def seqGroupsCore?
             (seqKind seq1Kind : Lean.Name)
             (seq : Lean.Syntax)
-            : Option (Array (Array Lean.Syntax)) := Id.run do
-  if seq.getKind != seqKind then return none
-  let s1 := (seq.getArgs[0]?).getD .missing
-  if s1.getKind != seq1Kind then return none
-  let some inner := s1.getArgs[0]? | return none
-  let mut groups : Array (Array Lean.Syntax) := #[]
-  let mut cur : Array Lean.Syntax := #[]
-  let mut joinNext := false
-  for c in inner.getArgs do
-    if (Lean4Fmt.Emit.bareSrc c).trimAscii.toString.isEmpty then continue -- newline slot
-    if c.isAtom then
-      if (Lean4Fmt.Emit.bareSrc c).trimAscii.toString == ";" then
-        if cur.isEmpty then return none
-        joinNext := true
-        continue
-      else return none
-    if joinNext then
-      cur := cur.push c
-      joinNext := false
-    else
+            : Option (Array (Array Lean.Syntax)) :=
+
+  Id.run
+    do
+      if seq.getKind != seqKind then
+        return none
+      let s1 := (seq.getArgs[0]?).getD .missing
+      if s1.getKind != seq1Kind then
+        return none
+      let some inner := s1.getArgs[0]? | return none
+      let mut groups : Array (Array Lean.Syntax) := #[]
+      let mut cur : Array Lean.Syntax := #[]
+      let mut joinNext := false
+      for c in inner.getArgs do
+        if (Lean4Fmt.Emit.bareSrc c).trimAscii.toString.isEmpty then continue -- newline slot
+        if c.isAtom then
+          if (Lean4Fmt.Emit.bareSrc c).trimAscii.toString == ";" then
+            if cur.isEmpty then return none
+            joinNext := true
+            continue
+          else return none
+        if joinNext then
+          cur := cur.push c
+          joinNext := false
+        else
+          if !cur.isEmpty then groups := groups.push cur
+          cur := #[c]
+      if joinNext then return none          -- dangling `;`
       if !cur.isEmpty then groups := groups.push cur
-      cur := #[c]
-  if joinNext then return none          -- dangling `;`
-  if !cur.isEmpty then groups := groups.push cur
-  if groups.isEmpty then return none
-  return some groups
+      if groups.isEmpty then return none
+      return some groups
 
 private def tacticGroups?
             (seq : Lean.Syntax)
@@ -244,40 +249,42 @@ private def listItems?
 private partial def lineWords?
                     (stx : Lean.Syntax)
                     (fill : Bool := false)
-                    : Option (Array Doc) := Id.run do
-  let a := stx.getArgs
-  let mut out : Array Doc := #[]
-  let mut i := 0
-  while i < a.size do
-    let c := a[i]!
-    if c.isAtom && (Lean4Fmt.Emit.bareSrc c).trimAscii.toString == "[" then
-      let mut close : Option Nat := none
-      let mut j := i + 1
-      while j < a.size do
-        if a[j]!.isAtom && (Lean4Fmt.Emit.bareSrc a[j]!).trimAscii.toString == "]" then
-          close := some j
-          break
-        j := j + 1
-      let some jc := close | return none
-      let some items := listItems? (a.extract (i + 1) jc) | return none
-      out := out.push (if fill then Lean4Fmt.Doc.fillList "[" "]" items
-        else Lean4Fmt.Doc.commaList "[" "]" items)
-      i := jc + 1
-      continue
-    let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
-    if t.isEmpty then
+                    : Option (Array Doc) :=
+
+  Id.run do
+    let a := stx.getArgs
+    let mut out : Array Doc := #[]
+    let mut i := 0
+    while i < a.size do
+      let c := a[i]!
+      if c.isAtom && (Lean4Fmt.Emit.bareSrc c).trimAscii.toString == "[" then
+        let mut close : Option Nat := none
+        let mut j := i + 1
+        while j < a.size do
+          if a[j]!.isAtom && (Lean4Fmt.Emit.bareSrc a[j]!).trimAscii.toString == "]" then
+            close := some j
+            break
+          j := j + 1
+        let some jc := close | return none
+        let some items := listItems? (a.extract (i + 1) jc) | return none
+        out := out.push (if fill then Lean4Fmt.Doc.fillList "[" "]" items
+          else Lean4Fmt.Doc.commaList "[" "]" items)
+        i := jc + 1
+        continue
+      let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString
+      if t.isEmpty then
+        i := i + 1
+        continue
+      let hasBracket :=
+        c.getArgs.any fun x => x.isAtom && (Lean4Fmt.Emit.bareSrc x).trimAscii.toString == "["
+      if !t.any (· == '\n') && !hasBracket then
+        out := out.push (.text ((Lean4Fmt.Emit.tokenJoin? c).getD t))
+      else
+        match lineWords? c fill with
+        | some ws => out := out ++ ws
+        | none => return none
       i := i + 1
-      continue
-    let hasBracket := c.getArgs.any fun x =>
-      x.isAtom && (Lean4Fmt.Emit.bareSrc x).trimAscii.toString == "["
-    if !t.any (· == '\n') && !hasBracket then
-      out := out.push (.text ((Lean4Fmt.Emit.tokenJoin? c).getD t))
-    else
-      match lineWords? c fill with
-      | some ws => out := out ++ ws
-      | none => return none
-    i := i + 1
-  return some out
+    return some out
 
 /-- Join line words with single spaces. -/
 private def joinWords

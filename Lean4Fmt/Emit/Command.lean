@@ -130,63 +130,70 @@ private def assemble
             (colMode : Lean4Fmt.Style.AlignMode)
             (maxDelta : Nat)
             (items : Array Item)
-            : Doc := Id.run do
-  let trailOn := trailMode != Lean4Fmt.Style.AlignMode.never
-  let colOn := colMode != Lean4Fmt.Style.AlignMode.never
-  let cap := if trailMode == Lean4Fmt.Style.AlignMode.always
-      || colMode == Lean4Fmt.Style.AlignMode.always
-    then 1000000 else maxDelta
-  let plain (o : Doc) (it : Item) : Doc :=
-    o ++ it.sep ++ it.prefixDoc
-      ++ (match it.lineDoc with | some d => d | none => .text it.line)
-      ++ (if it.trailT.isEmpty then Doc.nil else .text (" " ++ it.trailT))
-  let flush (o : Doc) (run : Array Item) : Doc := Id.run do
-    if run.size < 2 then
-      -- short runs emit plainly, WITH their separators
-      let mut o := o
-      for it in run do o := plain o it
-      return o
-    -- the run's leading separator is emitted once, outside the alignOr — the
-    -- fallback must start sep-less, or a fallback render would double it (a
-    -- spurious blank that shifts the run every pass: caught as idempotence
-    -- failures by the harness)
-    let mut fallback : Doc := .nil
-    for h : i in [0:run.size] do
-      let it := run[i]!
-      if i == 0 then
-        fallback := fallback ++ it.prefixDoc ++ .text it.line
-          ++ (if it.trailT.isEmpty then Doc.nil else .text (" " ++ it.trailT))
-      else fallback := plain fallback it
-    if run.size >= 2 then
-      -- name-column rows when the site provides the split (structFields);
-      -- [code, comment] rows otherwise. A row without a trailing comment is
-      -- shorter — its last populated column goes unpadded, so no trailing
-      -- whitespace is ever produced.
-      let rows := run.toList.map (fun it =>
-        if colOn && !it.nameSeg.isEmpty then
-          if it.trailT.isEmpty then [Doc.text it.nameSeg, Doc.text it.restSeg]
-          else [Doc.text it.nameSeg, Doc.text it.restSeg, Doc.text it.trailT]
+            : Doc :=
+
+  Id.run
+    do
+      let trailOn := trailMode != Lean4Fmt.Style.AlignMode.never
+      let colOn := colMode != Lean4Fmt.Style.AlignMode.never
+      let cap :=
+        if trailMode == Lean4Fmt.Style.AlignMode.always
+            || colMode == Lean4Fmt.Style.AlignMode.always then
+          1000000
         else
-          if it.trailT.isEmpty then [Doc.text it.line]
-          else [Doc.text it.line, Doc.text it.trailT])
-      return o ++ run[0]!.sep
-        ++ Doc.alignOr { sep := " ", maxDelta := cap } rows fallback
-    return o ++ fallback  -- unreachable (size < 2 returned above)
-  -- run eligibility: plain separator, no doc-comment prefix, and — when only
-  -- trailing alignment is on — a trailing comment to align
-  let eligible (it : Item) : Bool :=
-    it.plainSep && !it.hasPrefix
-      && ((colOn && !it.nameSeg.isEmpty) || (trailOn && !it.trailT.isEmpty))
-  let mut out : Doc := .nil
-  let mut run : Array Item := #[]
-  for it in items do
-    if eligible it then
-      run := run.push it
-    else
-      out := flush out run
-      run := #[]
-      out := plain out it
-  return flush out run
+          maxDelta
+      let plain (o : Doc) (it : Item) : Doc :=
+        o ++ it.sep ++ it.prefixDoc
+            ++ (match it.lineDoc with
+            | some d => d
+            | none   => .text it.line)
+            ++ (if it.trailT.isEmpty then Doc.nil else .text (" " ++ it.trailT))
+      let flush (o : Doc) (run : Array Item) : Doc := Id.run do
+        if run.size < 2 then
+          -- short runs emit plainly, WITH their separators
+          let mut o := o
+          for it in run do o := plain o it
+          return o
+        -- the run's leading separator is emitted once, outside the alignOr — the
+        -- fallback must start sep-less, or a fallback render would double it (a
+        -- spurious blank that shifts the run every pass: caught as idempotence
+        -- failures by the harness)
+        let mut fallback : Doc := .nil
+        for h : i in [0:run.size] do
+          let it := run[i]!
+          if i == 0 then
+            fallback := fallback ++ it.prefixDoc ++ .text it.line
+              ++ (if it.trailT.isEmpty then Doc.nil else .text (" " ++ it.trailT))
+          else fallback := plain fallback it
+        if run.size >= 2 then
+          -- name-column rows when the site provides the split (structFields);
+          -- [code, comment] rows otherwise. A row without a trailing comment is
+          -- shorter — its last populated column goes unpadded, so no trailing
+          -- whitespace is ever produced.
+          let rows := run.toList.map (fun it =>
+            if colOn && !it.nameSeg.isEmpty then
+              if it.trailT.isEmpty then [Doc.text it.nameSeg, Doc.text it.restSeg]
+              else [Doc.text it.nameSeg, Doc.text it.restSeg, Doc.text it.trailT]
+            else
+              if it.trailT.isEmpty then [Doc.text it.line]
+              else [Doc.text it.line, Doc.text it.trailT])
+          return o ++ run[0]!.sep
+            ++ Doc.alignOr { sep := " ", maxDelta := cap } rows fallback
+        return o ++ fallback -- unreachable (size < 2 returned above)
+      -- run eligibility: plain separator, no doc-comment prefix, and — when only
+      -- trailing alignment is on — a trailing comment to align
+      let eligible (it : Item) : Bool :=
+        it.plainSep && !it.hasPrefix
+            && ((colOn && !it.nameSeg.isEmpty) || (trailOn && !it.trailT.isEmpty))
+      let mut out : Doc := .nil
+      let mut run : Array Item := #[]
+      for it in items do
+        if eligible it then run := run.push it
+        else
+          out := flush out run
+          run := #[]
+          out := plain out it
+      return flush out run
 
 /-- Active layout for a `where`-style `inductive` body (the declaration node
     WITHOUT its modifiers — `Decl.emit` places those). `none` when this layout
