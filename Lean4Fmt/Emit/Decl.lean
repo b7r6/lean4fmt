@@ -735,9 +735,19 @@ private def whereFieldDoc?
   let da := fdef.getArgs
   let some v := da[da.size - 1]? | return none
   let vdoc ← walk v
+  if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic then
+    -- glued `:= by` / `:= do` FIELD values tolerate interior multi-line
+    -- verbatims exactly like decl values do (the poison-relaxation
+    -- invariant: members sit at sequence-seam hardlines) — this was the
+    -- 26KB defwhere-shape class on mathlib (Equiv/Iso instances whose
+    -- left_inv/right_inv are multi-line proofs). A WHOLE-VALUE verbatim
+    -- (the by emitter itself bailed) still bails the field: glued mid-line
+    -- it is the master fixed-point class.
+    match vdoc with
+    | .verbatim _ _ => return none
+    | _ => return some (.text (head ++ " := ") ++ vdoc)
   if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return none
-  if v.getKind == ``Lean.Parser.Term.do || v.getKind == ``Lean.Parser.Term.byTactic
-      || ((← read).breaking.glueFun && v.getKind == ``Lean.Parser.Term.fun) then
+  if (← read).breaking.glueFun && v.getKind == ``Lean.Parser.Term.fun then
     return some (.text (head ++ " := ") ++ vdoc)
   return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc)))
 
