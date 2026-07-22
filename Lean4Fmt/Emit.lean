@@ -46,7 +46,10 @@ partial def walkCore
     -- `«let»`) round-trips through toString WITHOUT its guillemets and
     -- reparses as the keyword (found on Pantograph — MANGLED)
     let t := Lean4Fmt.Emit.bareSrc stx
-    pure (.text (if t.isEmpty then n.toString else t))
+    -- an EMPTY-SOURCE anonymous ident is SYNTHETIC (cdot expansion): its
+    -- toString would INJECT the literal text "[anonymous]" into the output
+    -- (gate-caught on mathlib Determinant, tokens +1) — emit nothing
+    pure (.text (if t.isEmpty then (if n == Lean.Name.anonymous then "" else n.toString) else t))
   | .node _ kind _ =>
     if kind == ``Lean.Parser.Module.module then Module.emit walk stx
     else if kind == ``Lean.Parser.Command.declaration

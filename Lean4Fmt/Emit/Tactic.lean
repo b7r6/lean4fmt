@@ -24,13 +24,40 @@ namespace Lean4Fmt.Emit.Tactic
 
 open Lean Lean4Fmt.Doc
 
+/-- Whether any node STARTING before `limit` is NEWLINE-SEMANTIC — a
+    let-in-term (its newline IS the `in`), do, by, or comma-less structInst:
+    flatten-joining such a head produces a DIFFERENT PARSE (gate-caught on
+    Proofs.lean: a five-line suffices goal with a let-in-term flattened into
+    an application). -/
+private partial def headWsSensitive
+                    (limit : Nat)
+                    (s : Lean.Syntax)
+                    : Bool :=
+
+  match s with
+  | .node _ k args =>
+    (((s.getPos?.map (·.byteIdx)).getD limit) < limit
+        && (k == ``Lean.Parser.Term.let || k == ``Lean.Parser.Term.letrec
+            || k == ``Lean.Parser.Term.do
+            || k == ``Lean.Parser.Term.byTactic
+            || k == `Lean.Parser.Term.byTactic'
+            || k == ``Lean.Parser.Term.structInst))
+        || args.any (headWsSensitive limit)
+  | _ => false
+
 /-- The deepest final `by`-block descendant (last-child descent) — the
     position-split ports slice the head bytes before it. -/
 private partial def lastByDescendant?
                     (s : Lean.Syntax)
                     : Option Lean.Syntax :=
 
-  if s.getKind == ``Lean.Parser.Term.byTactic then some s
+  -- BOTH by kinds: tactic-position `by` is byTactic' (the prime variant) —
+  -- matching only byTactic descended THROUGH a suffices' own by into a deep
+  -- `<| by` tail and flattened the whole proof body into the "head"
+  -- (gate-caught on Fixed + CosetCover, tokens, ~300 tokens reflowed)
+  if s.getKind == ``Lean.Parser.Term.byTactic
+      || s.getKind == `Lean.Parser.Term.byTactic' then
+    some s
   else
     match (s.getArgs.filter
         (fun c => !(Lean4Fmt.Emit.bareSrc c).trimAscii.toString.isEmpty)).back? with
@@ -586,6 +613,10 @@ def emit
     let bare := Lean4Fmt.Emit.bareSrc stx
     match lastByDescendant? stx, stx.getPos?, (lastByDescendant? stx).bind (·.getPos?) with
     | some byN, some p0, some pb =>
+      -- TAIL-EXACTNESS: the by must END the tactic — a mid-node `(by …)`
+      -- with trailing bytes would lose them to the slice
+      if byN.getTailPos? != stx.getTailPos? then return (← Lean4Fmt.Emit.verbatim stx)
+      if headWsSensitive pb.byteIdx stx then return (← Lean4Fmt.Emit.verbatim stx)
       let headB := (String.fromUTF8? (bare.toUTF8.extract 0 (pb.byteIdx - p0.byteIdx))).getD ""
       if headB.isEmpty || headB.toList.any (· == '"')
           || (headB.splitOn "--").length > 1 || (headB.splitOn "/-").length > 1 then

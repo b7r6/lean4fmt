@@ -78,6 +78,11 @@ unsafe def formatSafe
       | none =>
         -- gate fallback is NEVER silent: an emitter bug that breaks the reparse
         -- would otherwise masquerade as a byte-identical "OK" in --check
+        -- (drill note: this class has NO parenthesized tag in its message —
+        -- outcome greps must include 'failed to reparse')
+        if let some dir ← IO.getEnv "L4F_DRILL_DIR" then
+          IO.FS.createDirAll ⟨dir⟩
+          IO.FS.writeFile ⟨s!"{dir}/{path.replace "/" "_"}.noparse.lean"⟩ active
         pure
           (
             contents,
