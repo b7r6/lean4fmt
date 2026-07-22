@@ -114,6 +114,19 @@ private def seamCommaList?
   let openD : Doc := if openTrail.isEmpty then .nil else .text (" " ++ openTrail)
   return some (.text l ++ openD ++ .nest 2 body ++ .hardline ++ .text r)
 
+/-- Whether the subtree contains a COMMA-form structInst — the one doc shape
+    whose broken layout carries FIRST-LINE-ANCHORED interior columns (later
+    fields must sit colGe the first field, which rides the `{ ` line). Glued
+    after `lval := ` that anchor is deep and the parser closes the inner
+    list early on reparse (home Preset.lean). Every other multi-line value
+    is nest-relative and re-anchors deterministically. -/
+private partial def containsCommaStructInst
+                    (s : Lean.Syntax)
+                    : Bool :=
+
+  (s.getKind == ``Lean.Parser.Term.structInst && (bareSrc s).any (· == ','))
+      || s.getArgs.any containsCommaStructInst
+
 /-- A single `structInstField` = [structInstLVal, «rest»]. The LVal (field name /
     path) is reproduced verbatim; the value (the term after `:=`, found inside the
     `structInstFieldDef` in «rest») is walked so it lays out actively. A shorthand
@@ -322,9 +335,18 @@ partial def emit
       if argList.size ≥ 1 then
         let lastA := argList[argList.size - 1]!
         if lastA.getKind == ``Lean.Parser.Term.do
-            || lastA.getKind == ``Lean.Parser.Term.byTactic then
+            || lastA.getKind == ``Lean.Parser.Term.byTactic
+            -- trailing-lambda idiom (`.map fun s => do …`): the fun doc is
+            -- self-anchored when its own body glued (do/by/match) — same
+            -- seam as a final do arg
+            || ((← read).breaking.glueFun && lastA.getKind == ``Lean.Parser.Term.fun) then
           let dDoc ← walk lastA
-          if !(match dDoc with | .verbatim _ _ => true | _ => false) then
+          -- fun args additionally guard the mid-line hazard (do/by docs
+          -- place interior verbatims at seams by construction; fun bodies
+          -- may not)
+          let funHazard := lastA.getKind == ``Lean.Parser.Term.fun
+              && Lean4Fmt.Doc.hasMidlineReanchor dDoc
+          if !(match dDoc with | .verbatim _ _ => true | _ => false) && !funHazard then
             let mut headD := fnDoc
             let mut flatOk := (Lean4Fmt.Doc.flatWidth fnDoc).isSome
             for h : i in [0:argList.size - 1] do
@@ -430,19 +452,24 @@ partial def emit
         let mut body : Doc := .nil
         for f in fields do
           let fDoc ← structFieldDoc walk f
-          -- structInstFields is sepByIndent: a field that BREAKS internally
-          -- puts its continuation left of the first field's column and the
-          -- parser closes the list early (home Preset.lean, nested
-          -- comma-instance). Each field is therefore forced FLAT, and a
-          -- field too wide to plausibly fit flat keeps the whole verbatim.
+          -- structInstFields is sepByIndent: the hazard is FIRST-LINE-
+          -- ANCHORED interior columns — a comma-form structInst in the
+          -- value breaks with later fields colGe its own first field, which
+          -- glued after `lval := ` sits deep, and the parser closes the
+          -- inner list early on reparse (home Preset.lean). Bail on that
+          -- shape (containsCommaStructInst); every other multi-line value
+          -- is nest-relative (by-glue hardlines, fresh-line app groups) and
+          -- both re-anchors deterministically AND lands strictly deeper
+          -- than the field column (outer colGe holds).
           match Lean4Fmt.Doc.flatWidth fDoc with
-          | none => return (← verbatim stx)
+          | none =>
+            if containsCommaStructInst f then return (← verbatim stx)
           | some w =>
             if w + 8 > (← read).layout.lineWidth then return (← verbatim stx)
           if (match fDoc with | .verbatim _ _ => true | _ => false)
               || Lean4Fmt.Doc.hasMidlineReanchor fDoc then
             return (← verbatim stx)
-          body := body ++ .hardline ++ .flatten fDoc
+          body := body ++ .hardline ++ fDoc
         return .text "{" ++ .nest 2 body ++ .hardline ++ .text "}"
       if Lean4Fmt.Syntax.interiorHasLineComment stx then
         if !srcT.isEmpty then return (← verbatim stx)
@@ -746,6 +773,12 @@ partial def emit
       if Lean4Fmt.Doc.leftEdgeText? bodyDoc == some "{"
           && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then
         return .text (head ++ " " ++ arrowT ++ " ") ++ bodyDoc
+      -- a MATCH body glues too (`fun s => match s with` riding, arms at
+      -- their hardline seams below at +2 — the house shape)
+      if body.getKind == ``Lean.Parser.Term.match
+          && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
+          && !(match bodyDoc with | .verbatim _ _ => true | _ => false) then
+        return .text (head ++ " " ++ arrowT ++ " ") ++ .nest 2 bodyDoc
       if Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc then
         -- multi-line opaque body: OWN-LINE at +2 is a deterministic seam
         -- (the fun class was 26KB of the wide census and the interior piece

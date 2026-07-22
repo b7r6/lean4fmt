@@ -86,11 +86,10 @@ def newline
   if st.inlineMode then
     return -- suppress newlines in inline mode
   let config ← getConfig
-  modifyState
-    fun st =>
-      { st with
-        pendingNewlines := min (st.pendingNewlines + 1) (config.maxBlankLines + 1),
-        pendingSpace := false }
+  modifyState fun st =>
+    { st with
+      pendingNewlines := min (st.pendingNewlines + 1) (config.maxBlankLines + 1),
+      pendingSpace := false }
 
 def blankLine : EmitterM Unit := do newline; newline
 def space : EmitterM Unit := modifyState fun st => { st with pendingSpace := true }
@@ -170,8 +169,8 @@ def emitVerbatim
       -- Emit at the CURRENT indent level (no extra nesting): a verbatim body
       -- must stay column-aligned with its enclosing let-chain / continuation,
       -- which some column-sensitive custom syntaxes require.
-      modifyState
-        fun st => { st with pendingNewlines := Nat.max st.pendingNewlines 1, pendingSpace := false }
+      modifyState fun st =>
+        { st with pendingNewlines := Nat.max st.pendingNewlines 1, pendingSpace := false }
       emitVerbatimStr sTrim
     else emitVerbatimStr sTrim
   | none => pure ()

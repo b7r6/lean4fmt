@@ -292,8 +292,7 @@ private def joinWords
             : Doc :=
 
   ws.foldl
-    (fun d w =>
-      match d with
+    (fun d w => match d with
       | .nil => w
       | _    => d ++ .text " " ++ w)
     .nil
