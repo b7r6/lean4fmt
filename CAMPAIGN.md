@@ -97,43 +97,66 @@ kinds INTO the ceiling (per-kind, documented — never silently); full-tree
 sweep (8,245 files) with rejects = 0; this census becomes a standing gate.
 Exit: ≥ 98 of the reclassified ceiling at full width.
 
-## The phases
+## The closing plan (set 2026-07-22 at 89.6; supersedes the phase list)
 
-**Phase 0 — instruments** ✅ byte-weighted trail with bail reasons; walk
-interception pops its stale entry; `--stats` ceiling accounting; this harness.
+Phases 0–3 closed inside Gates 1–2 (the round commits and scoreboard carry
+the history). What remains is a ranked burn-down. Measured at 086258c:
+**gap to 90.0 = 8.7K active bytes; gap to 95.0 = 114.7K** (portable pool
+2.12MB). Every round is the same monotone loop:
 
-**Phase 1 — zero the whole-file losses.** Drill every gate reject with the
-established kit (TOKDIFF/SPINEDIFF probes, writeFile-on-reject, reparse the
-dump). Known targets: fixed-point ×4 (`Control/Applicative`, `Tactic/Abel`,
-`Util/AddRelatedDecl`, `Data/List/Basic` — suspect: the reverted
-simpa-`using` mechanism), tokens ×2 (`ArchimedeanDensely` — fillList-wrap
-last-tactic drop — and `MeasureTheory/PiSystem`), comments ×1
-(`Lean/ContextInfo`). Column-shaped root causes land as classes in
-`Emit/WsSensitivity.lean`. *Exit: sample rejects = 0, home slice 0/100 holds.*
+1. Pick top-of-queue targets, **≤ 3 ports per census round**.
+2. Sample real sites from the latest census `.err` trail (grep the opt-out
+   kind, read the mathlib lines) — never port from an imagined shape.
+3. Port on the established laws: flat-vs-broken decisions width/parse-derived
+   only; unknown notation heads source-exact; inner machinery over blanket
+   bails; precise hazards over guards.
+4. Home battery: `scripts/lean4fmt.sh --check src` 401/0/0 · fuzz-core ≤ 4 ·
+   comment_check on every formatter diff · converge.
+5. Census; aggregate with `mathlib-census.py`; **any drop → per-file mover
+   diff before anything else**; outcome greps must cover all variants
+   ('gate rejected', 'falling back').
+6. Scoreboard row, commit (`git commit -F -` heredoc), push.
 
-**Phase 2 — the declaration payload.** The whole-`Command.declaration`
-verbatims are where the bytes are; the trail's `why=` tags bucket them into
-classes (modifiers-comment, eqns-unformattable, unported-value-multiline,
-…). Port or relax per class, poison-chain bisection for stragglers.
-*Exit: whole-decl verbatims < 10 on the sample, remainder named-permanent.*
+**Gate 2 close (89.6 → ≥ 90.0, 1–2 rounds).** The queue's top two pools are
+residual shapes of ported classes: `tacticHave__` 68K, `letIdDecl` 61K
+(nested opt-outs double-count; still the biggest live pools by far).
+R1: classify the top 2 tacticHave shapes from sites and port — a third of
+the pool overshoots the gate. R2 if needed: letIdDecl shapes. No ceiling
+reclassification inside G2 — the 90 is absolute; quotation-only bodies stay
+in the denominator until G4. *Exit: ≥ 90.0, rejects 0, home clean.*
 
-**Phase 3 — mathlib-native ports.**
-- *Bracketed binops*: `isBinOp` routes `→ₗ[R]`/`→ₐ[R]`/`≃ₐ[R]`/`≫`/`≅` but
-  the chain code expects 3-slot `[lhs, op, rhs]` and bails on the 5-slot
-  bracket shape — generalize the chain, the family goes active at once.
-- *`variable`* (trivial), *calc* term+tactic (taxonomy check first — step
-  columns may be parser-read), the tactic tail
-  (`suffices`/`have`/`rwSeq`/`simp_rw`/`obtain`/`haveI`) via the token-line /
-  head-block recipes. *Exit: queue top-10 ported or policy-permanent.*
+**Gate 3 (90 → ≥ 95, ~6–8 rounds).** Ranked queue at 086258c:
+- R3 — finish the tacticHave / letIdDecl pools (comment-bearing + interior
+  forms).
+- R4 — `declaration` whole-verbatims (27.5K) + `declValSimple` (21.7K):
+  bucket by why= tags; port-or-name-permanent per bucket.
+- R5 — `paren` interiors (16.3K), `structInst` residue (13.0K), `typeSpec`
+  (12.6K).
+- R6 — the do-cluster: `letDecl` (8.6K), `doMatch` (7.6K), `doLetArrow`
+  (7.0K).
+- R7 — the tactic tail: `calcTactic` residue (8.3K), `simpa` +
+  `simpaUsingBang` (12.3K), `replace` (6.8K), `exact` (6.0K), `show`
+  (5.6K), `cdot` residue (6.1K).
+- R8 — chain residue: `«term_<|_»` (7.4K), `«term_=_»` (4.4K), remaining
+  5-slot shapes.
+- R9 — cross-cutting sweeps: enumerate every remaining blanket
+  `interiorHasLineComment` / `hasMultilineReanchor` bail and replace with
+  precise hazards (the over-guard pattern, proven ×3); block-comment
+  blindness sweep.
+*Exit: ≥ 95.0, no portable kind > 10K in the queue, rejects 0, home clean.*
 
-**Phase 4 — residue burn-down.** `declValSimple`/`typeSpec`/`letIdDecl`/
-`doLetArrow` at mathlib density; extend the perturbation fuzzer to the
-mathlib sample. *Exit: portable residue < 2% of code bytes.*
-
-**Phase 5 — scale and lock.** Full-tree sweep (union import + pooled format;
-mathlib is the co-importable shape), full gate at rejects=0, pin the mathlib
-preset and run the conformance wash (roundtrip = mathlib-canonical form, not
-imposed house style), lock this census as a standing gate.
+**Gate 4 (ceiling honest, tree locked, ≥ 98 of refined ceiling).**
+- R10 — per-kind ceiling reclassification, documented, never silent:
+  `elab`/`elabTail`/`syntax`/`macro`/`alias` quotation-only bodies (~34K
+  pool; criterion: measured no-portable-spelling — the 13 worst files, the
+  Tactic/Util meta cluster at 1–25%, are THIS, not port targets).
+- R11 — full-tree sweep, 8,245 files, chunked over the census cache;
+  rejects must be 0; drill any straggler with the standard kit.
+- R12 — mathlib conformance wash: roundtrip = mathlib-canonical form, not
+  imposed house style; pin the mathlib preset.
+- R13 — lock: the census becomes a standing gate (make target), scoreboard
+  frozen.
+*Exit: ≥ 98 of the refined ceiling at full width, full tree rejects 0.*
 
 ## Standing rules (every round)
 
