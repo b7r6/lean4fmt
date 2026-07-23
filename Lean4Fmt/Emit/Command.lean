@@ -570,7 +570,41 @@ def emit
     : Lean4Fmt.Emit.EmitM Doc := do
 
   let kind := stx.getKind
-  if kind == ``Lean.Parser.Command.elab then
+  if kind == `Batteries.Tactic.Alias.alias then
+    -- `@[deprecated] alias longName := target` — [declModifiers, "alias",
+    -- ident, ":=", ident]: docstring/attrs on their own lines (the decl
+    -- treatment), the alias line joins flat or breaks after `:=` at +2 when
+    -- wide. The deprecation-rename idiom: 44 wide-census sites, one shape.
+    let a := stx.getArgs
+    if a.size != 5 then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let m := a[0]!
+    let docText := ((m.getArgs[0]?.map bareSrc).getD "").trimAscii.toString
+    let mut modDoc : Doc := if docText.isEmpty then .nil else .textRaw docText ++ .hardline
+    let attrText := ((m.getArgs[1]?.map Lean4Fmt.Emit.canonTok).getD "").trimAscii.toString
+    if attrText.any (· == '\n') then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    if !attrText.isEmpty then modDoc := modDoc ++ .text attrText ++ .hardline
+    let mut pre := ""
+    for c in (m.getArgs.toList.drop 2) do
+      let t := Lean4Fmt.Emit.canonTok c
+      if t.any (· == '\n') then
+        return (← Lean4Fmt.Emit.verbatim stx)
+      if !t.isEmpty then pre := pre ++ t ++ " "
+    let kwT := (bareSrc a[1]!).trimAscii.toString
+    let nameT := Lean4Fmt.Emit.canonTok a[2]!
+    let asgnT := (bareSrc a[3]!).trimAscii.toString
+    let tgtT := Lean4Fmt.Emit.canonTok a[4]!
+    if kwT.isEmpty || nameT.isEmpty || tgtT.isEmpty
+        || [kwT, nameT, asgnT, tgtT].any (·.any (· == '\n')) then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let asgnT := if asgnT.isEmpty then ":=" else asgnT
+    return modDoc
+        ++ .group
+          (.text (pre ++ kwT ++ " " ++ nameT ++ " " ++ asgnT) ++ .nest 2 (.line ++ .text tgtT))
+  else if kind == ``Lean.Parser.Command.elab then
     -- `elab (name := X) "pat" args : cat => body` (11K of the wide census,
     -- the Mathlib/Tactic meta cluster): the HEAD through `=>` is
     -- quotation-laden syntax-pattern content — SOURCE-EXACT by the

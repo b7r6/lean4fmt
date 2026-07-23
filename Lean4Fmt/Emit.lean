@@ -64,6 +64,7 @@ partial def walkCore
          || kind == ``Lean.Parser.Command.universe
          || kind == ``Lean.Parser.Command.variable
          || kind == ``Lean.Parser.Command.elab
+         || kind == `Batteries.Tactic.Alias.alias
          || kind == ``Lean.Parser.Command.eval
          || kind == ``Lean.Parser.Command.in then
       Command.emit walk stx

@@ -37,15 +37,26 @@ private def idDeclDoc?
             (d : Lean.Syntax)
             : Lean4Fmt.Emit.EmitM (Option Doc) := do
 
-  if d.getKind != ``Lean.Parser.Term.doIdDecl then
-    return none
   let a := d.getArgs
-  if a.size != 4 then
-    return none
-  let idT := Lean4Fmt.Emit.canonTok a[0]!
-  let tyT := Lean4Fmt.Emit.canonTok a[1]!
+  -- doIdDecl = [id, type?, "←", doExpr]; doPatDecl = [pat, type?, "←",
+  -- doExpr, else?] — same arrow/expr slots; the pattern joins flat and the
+  -- optional `| else` tail bails
+  let head ← do
+    if d.getKind == ``Lean.Parser.Term.doIdDecl then
+      if a.size != 4 then return none
+      let idT := Lean4Fmt.Emit.canonTok a[0]!
+      let tyT := Lean4Fmt.Emit.canonTok a[1]!
+      pure (String.intercalate " " ([idT, tyT].filter (fun s => !s.isEmpty)))
+    else if d.getKind == ``Lean.Parser.Term.doPatDecl then
+      if a.size != 5 then return none
+      if !((a[4]?.map (fun s =>
+          (Lean4Fmt.Emit.bareSrc s).trimAscii.toString.isEmpty)).getD true) then
+        return none
+      let patT := Lean4Fmt.Emit.canonTok a[0]!
+      let tyT := Lean4Fmt.Emit.canonTok a[1]!
+      pure (String.intercalate " " ([patT, tyT].filter (fun s => !s.isEmpty)))
+    else return none
   let arrowT := (Lean4Fmt.Emit.bareSrc a[2]!).trimAscii.toString
-  let head := String.intercalate " " ([idT, tyT].filter (fun s => !s.isEmpty))
   if head.isEmpty || head.any (· == '\n') || arrowT.any (· == '\n') then
     return none
   let ex := a[3]!
@@ -53,10 +64,25 @@ private def idDeclDoc?
     return none
   let some v := ex.getArgs[0]? | return none
   let vdoc ← walk v
-  if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then return none
-  if v.getKind == ``Lean.Parser.Term.do then
-    return some (.text head ++ .text (" " ++ arrowT ++ " ") ++ vdoc)
-  return some (.text head ++ .text (" " ++ arrowT) ++ .group (.nest 2 (.line ++ vdoc)))
+  -- a bare whole-verbatim value gains nothing; otherwise the ASSEMBLED
+  -- layout decides (hasMidlineReanchor — interior verbatims at hardline
+  -- seams re-anchor deterministically): a do/by/match value GLUES to the
+  -- arrow (its members bring their own hardlines — `let x ← match e with`
+  -- + arms below, the ApplyFun shape), anything else width-aware at +2
+  if (match vdoc with | .verbatim _ _ => true | _ => false) then return none
+  -- ANY multi-line value glues (`x ← cachedBuild args do`, `x ← match e
+  -- with` — the house shape hangs the value head on the arrow line; its own
+  -- doc breaks below); a FLAT value keeps the width-aware group (inline
+  -- when it fits, else own line at +2 — unchanged)
+  let glue := v.getKind == ``Lean.Parser.Term.do
+    || v.getKind == ``Lean.Parser.Term.byTactic
+    || v.getKind == ``Lean.Parser.Term.match
+    || (Lean4Fmt.Doc.flatWidth vdoc).isNone
+  let layout : Doc :=
+    if glue then .text head ++ .text (" " ++ arrowT ++ " ") ++ vdoc
+    else .text head ++ .text (" " ++ arrowT) ++ .group (.nest 2 (.line ++ vdoc))
+  if Lean4Fmt.Doc.hasMidlineReanchor layout then return none
+  return some layout
 
 /-- The statements of a plain `doSeqIndent`, provided no item carries an explicit
     `;` terminator (walking only the statement would lose that token). `none` on
@@ -182,10 +208,10 @@ def emit
   let a := stx.getArgs
   if kind == ``Lean.Parser.Term.doLet || kind == ``Lean.Parser.Term.doLetArrow then
     -- `let (mut)? (config)? decl` = [let, mut?, letConfig, decl] where decl is a
-    -- letDecl (`:=`, walked — Term handles the 5-slot shape) or a doIdDecl (`←`).
-    -- The pattern-arrow form (doPatDecl, with its optional `| else` tail) stays
-    -- verbatim. Only INTERIOR comments force verbatim — the statement's outer
-    -- leading/trailing are the do-loop's to place.
+    -- letDecl (`:=`, walked — Term handles the 5-slot shape), a doIdDecl (`←`),
+    -- or a doPatDecl (`pat ←`; its optional `| else` tail bails inside
+    -- idDeclDoc?). Only INTERIOR comments force verbatim — the statement's
+    -- outer leading/trailing are the do-loop's to place.
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
     if a.size != 4 then return (← Lean4Fmt.Emit.verbatim stx)
     let mutT := (Lean4Fmt.Emit.bareSrc a[1]!).trimAscii.toString
