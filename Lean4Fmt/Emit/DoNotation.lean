@@ -32,11 +32,11 @@ open Lean Lean4Fmt.Doc
     else on the next line at +2. A `do` value glues to the arrow (its body brings
     its own hardline). `none` on any structural surprise or a value carrying a
     multi-line opaque block — the caller reproduces the whole statement verbatim. -/
-private def idDeclDoc?
-            (walk : Lean4Fmt.Emit.Walk)
-            (d : Lean.Syntax)
-            : Lean4Fmt.Emit.EmitM (Option Doc) := do
-
+private
+def idDeclDoc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (d : Lean.Syntax)
+    : Lean4Fmt.Emit.EmitM (Option Doc) := do
   let a := d.getArgs
   -- doIdDecl = [id, type?, "←", doExpr]; doPatDecl = [pat, type?, "←",
   -- doExpr, else?] — same arrow/expr slots; the pattern joins flat and the
@@ -87,10 +87,10 @@ private def idDeclDoc?
 /-- The statements of a plain `doSeqIndent`, provided no item carries an explicit
     `;` terminator (walking only the statement would lose that token). `none` on
     the bracketed `{ … }` shape or any structural surprise. -/
-private def stmts?
-            (seq : Lean.Syntax)
-            : Option (Array Lean.Syntax) :=
-
+private
+def stmts?
+    (seq : Lean.Syntax)
+    : Option (Array Lean.Syntax) :=
   Id.run do
     if seq.getKind != ``Lean.Parser.Term.doSeqIndent then
       return none
@@ -118,7 +118,6 @@ def seqLinesDoc?
     (ss : Array Lean.Syntax)
     (lastOwned : Bool)
     : Lean4Fmt.Emit.EmitM (Option Doc) := do
-
   let mut body : Doc := .nil
   for h : i in [0:ss.size] do
     let stmt := ss[i]
@@ -147,13 +146,13 @@ def seqLinesDoc?
     comment, flattenable) becomes a width-aware `group` — inline when it fits
     (`if c then return 1`), else on its own line at +2; anything else goes one
     statement per line at +2. `none` when the sequence has no safe layout. -/
-private def branchDoc?
-            (walk : Lean4Fmt.Emit.Walk)
-            (seq : Lean.Syntax)
-            (lastOwned : Bool)
-            (guardBreak : Bool := false)
-            : Lean4Fmt.Emit.EmitM (Option Doc) := do
-
+private
+def branchDoc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (seq : Lean.Syntax)
+    (lastOwned : Bool)
+    (guardBreak : Bool := false)
+    : Lean4Fmt.Emit.EmitM (Option Doc) := do
   let some ss := stmts? seq | return none
   if ss.size == 1 then
     let lead := (Lean4Fmt.Syntax.leading? ss[0]!).getD ""

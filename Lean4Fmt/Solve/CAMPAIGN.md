@@ -57,16 +57,21 @@ on in repo `fmt.lean`, off in the preset the census uses).
 > visibility). `Solve.Layout` is imported into `Emit.Decl` (one-way, no cycle),
 > so the exe build runs its #guards.
 
-**G-L4 — adopt the house style + the preference map + blank-line knobs.** The
-visible landing: flip `fmt.lean` to the pin (visibilityOwnLine + bodyOwnLine
-=false), add the `oneLine`/`fill` rungs and real preference weights so the
-solver CHOOSES among sig shapes per-def (not just inline-vs-hang), fold in the
-blank-line knobs (the original ask) as zero-width choice points, and reformat
-`src/` — now driven by the adaptive solver on proven machinery (never touching
-the `ServeFd`/`GradedMonad`/`experimental` files). *Exit: adaptive shapes live
-(a def picks oneLine where onePerLine would explode it), blank knobs exercised
-on a blank-dense anchor (Δlines > 0), preference map config-driven, home +
-census clean.*
+> **The pin landed here** (adopt-house-style commit) — `fmt.lean` flipped to
+> visibilityOwnLine + bodyOwnLine=false and the whole `src/` reformatted, on
+> the byte-identical-drop-in solver of G-L3 plus the involution fix that
+> `bodyOwnLine=false` required. The user's `ServeFd` hand-edit turned out to be
+> already pin-clean — the inference was right. `ServeFd`/`GradedMonad`/the
+> untracked `experimental/algebra` are excluded; the tracked `experimental/llm`
+> tree (clean repo code, not a formatting study) adopts the style with the rest.
+
+**G-L4 — the preference map + blank-line knobs + adaptive shapes.** Now that the
+pin is live, make the solver CHOOSE among sig shapes per-def: add the
+`oneLine`/`fill` rungs and real preference weights (a 2-binder def picks
+`oneLine` where `onePerLine` would explode it), and fold in the blank-line knobs
+(the original ask) as zero-width choice points. *Exit: adaptive shapes live
+(same sig, different rung by width), blank knobs exercised on a blank-dense
+anchor (Δlines > 0), preference map config-driven, home + census clean.*
 
 **G-L5 — the shape family + fold `.group`.** Extend to theorem/instance/
 structure sig ladders; document/fold `.group` (= the 2-candidate `.choice`) and
@@ -80,4 +85,6 @@ shape, census stable, pinned as the house layout engine.*
 | core | 5fcb3e9 | measure-algebra DP, Pareto frontier, omega feasibility; greedy-beat (1 vs 10) + def adaptivity #guards | build-time guards green |
 | **G-L1** | ff46f7f | brute-force ground truth; solve==bruteOpt on the nested battery; frontier sub-exponential (chain-12: 4096 raw → 13) | guards green, module builds |
 | **G-L2** | 64b20fb | DefPieces bridge + defLadder/renderDef; byte-lock reproduces the exact pinned `find_upstream` shape; width-optimal + feasible on real ServeFd sigs; adaptivity holds | guards green, module builds |
-| **G-L3** | (this) | `inlineDefFits` = `bestUnder` routes defnDoc's inline/break decision, `solveDefs` knob (repo on / preset off); `#guard` proves `≡ (total ≤ W)` totally; imported into Emit.Decl | home 401/2, corpus-gate 234/0/0, census 0-reject, guards green |
+| **G-L3** | 6ee4842 | `inlineDefFits` = `bestUnder` routes defnDoc's inline/break decision, `solveDefs` knob (repo on / preset off); `#guard` proves `≡ (total ≤ W)` totally; imported into Emit.Decl | home 401/2, corpus-gate 234/0/0, census 0-reject, guards green |
+| involution-fix | 990bc47 | `plainLead` blank-invariant: a blank-only leading in a single-tactic by/do body no longer diverts it off the inline path (the 2-step-convergence fixed-point bug the pin surfaced on 71 files) | corpus-gate 234/0/0, home 401/2, pin fallbacks 71→0 |
+| pin (adopt house style) | (this) | `fmt.lean` → visibilityOwnLine + bodyOwnLine=false; whole `src/` reformatted to the pin (314 files, experiments excluded); the formatter self-hosts (rebuilds from its own pinned source, guards green) | home pin-clean, idempotent, census dormant |

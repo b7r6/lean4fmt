@@ -225,7 +225,6 @@ def run
     (style : Style)
     (stx : Lean.Syntax)
     : Doc × Array Rules.Diagnostic :=
-
   (walk stx |>.run style).run #[]
 
 /-- Convenience: format a module directly to a string. -/
@@ -233,7 +232,6 @@ def format
     (style : Style)
     (stx : Lean.Syntax)
     : String × Array Rules.Diagnostic :=
-
   let (doc, diags) := run style stx
   (Lean4Fmt.Doc.render style doc, diags)
 

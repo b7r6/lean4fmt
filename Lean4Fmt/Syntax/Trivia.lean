@@ -19,7 +19,6 @@ open Lean
 def leading?
     (stx : Lean.Syntax)
     : Option String :=
-
   match stx.getHeadInfo with
   | .original leading .. => some (Substring.Raw.toString leading)
   | _ => none
@@ -29,17 +28,16 @@ def leading?
 def trailing?
     (stx : Lean.Syntax)
     : Option String :=
-
   match stx.getTailInfo with
   | .original _ _ trailing _ => some (Substring.Raw.toString trailing)
   | _ => none
 
 /-- The trailing trivia of the LAST token in the subtree (robust against
     trailing empty null slots, which defeat `getTailInfo`). -/
-partial def lastTokenTrailing?
-            (stx : Lean.Syntax)
-            : Option String :=
-
+partial
+def lastTokenTrailing?
+    (stx : Lean.Syntax)
+    : Option String :=
   match trailing? stx with
   | some t => some t
   | none   => stx.getArgs.reverse.findSome? lastTokenTrailing?
@@ -50,10 +48,10 @@ def hasLineComment (s : String) : Bool := (s.splitOn "--").length > 1
 
 /-- True if any token in the subtree carries a line comment in its trivia. Such
     a subtree must never be inlined/flattened (§0.4). -/
-partial def subtreeHasLineComment
-            (stx : Lean.Syntax)
-            : Bool :=
-
+partial
+def subtreeHasLineComment
+    (stx : Lean.Syntax)
+    : Bool :=
   let inTrivia (info : SourceInfo) : Bool :=
     match info with
     | .original l _ t _ =>
@@ -74,10 +72,10 @@ def countLineComments (s : String) : Nat := (s.splitOn "--").length - 1
     specific zone (e.g. the tail token's trailing, which the enclosing seam
     places byte-exact) by subtracting its count; a boolean can't express that,
     since a comment in an exempt zone would mask one in the interior. -/
-partial def countSubtreeLineComments
-            (stx : Lean.Syntax)
-            : Nat :=
-
+partial
+def countSubtreeLineComments
+    (stx : Lean.Syntax)
+    : Nat :=
   let inInfo (info : SourceInfo) : Nat :=
     match info with
     | .original l _ t _ =>
@@ -98,7 +96,6 @@ partial def countSubtreeLineComments
 def hasOwnedLineComment
     (stx : Lean.Syntax)
     : Bool :=
-
   countSubtreeLineComments stx > countLineComments ((trailing? stx).getD "")
 
 /-- Line comment strictly INTERIOR to a form: between its first and last token.
@@ -121,7 +118,6 @@ def interiorHasLineComment
 def verbatimSrc?
     (stx : Lean.Syntax)
     : Option String :=
-
   match stx.reprint with
   | some s => some s
   | none   => (stx.getSubstring? true false).map (·.toString)

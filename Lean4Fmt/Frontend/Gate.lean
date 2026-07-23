@@ -35,12 +35,12 @@ open Lean
     the interleaved elaborating frontend (`Session.parseModule?`, `full` depth).
     `env` is imported once per process by `formatFile`; both the source parse and
     the fixed-point reparse reuse it (re-importing per call is what breaks). -/
-unsafe def parseFull?
-           (env : Environment)
-           (path contents : String)
-           (elabFallback : Bool := true)
-           : IO (Option Lean.Syntax) := do
-
+unsafe
+def parseFull?
+    (env : Environment)
+    (path contents : String)
+    (elabFallback : Bool := true)
+    : IO (Option Lean.Syntax) := do
   match ← parseModule? env path contents with
   | some stx => pure (some stx)
   | none =>
@@ -53,13 +53,13 @@ unsafe def parseFull?
     syntax regardless of whether the reformat is kept). An unparseable file passes
     through UNCHANGED but never silently: a warning diagnostic says why (skipped
     coverage must be visible — a formatter that quietly no-ops looks like it ran). -/
-unsafe def formatSafe
-           (env : Environment)
-           (path contents : String)
-           (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
-           (elabFallback : Bool := true)
-           : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
-
+unsafe
+def formatSafe
+    (env : Environment)
+    (path contents : String)
+    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
+    (elabFallback : Bool := true)
+    : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   match ← parseFull? env path contents elabFallback with
   | none =>
     let msg :=
@@ -160,12 +160,12 @@ unsafe def formatSafe
             )
 
 /-- Build the environment for a file (loads its imports) and format it. -/
-unsafe def formatFile
-           (path contents : String)
-           (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
-           (elabFallback : Bool := true)
-           : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
-
+unsafe
+def formatFile
+    (path contents : String)
+    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
+    (elabFallback : Bool := true)
+    : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   let ictx := Parser.mkInputContext contents path
   let (hdr, _, msgs) ← Parser.parseHeader ictx
   let (env, _) ← Elab.processHeader hdr {} msgs ictx (trustLevel := 1024)

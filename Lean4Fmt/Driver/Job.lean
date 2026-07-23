@@ -49,14 +49,14 @@ def Result.changed (r : Result) : Bool := r.output != r.original
     it returns a value. Catches its own errors (falling back to identity output +
     an error diagnostic) so a batch never aborts — this is what a worker pool
     dispatches. -/
-unsafe def runJob
-           (env : Lean.Environment)
-           (style : Style.Style)
-           (path : System.FilePath)
-           (elabFallback : Bool := true)
-           (retry : Option (String × Array String) := none)
-           : IO Result := do
-
+unsafe
+def runJob
+    (env : Lean.Environment)
+    (style : Style.Style)
+    (path : System.FilePath)
+    (elabFallback : Bool := true)
+    (retry : Option (String × Array String) := none)
+    : IO Result := do
   let original ← IO.FS.readFile path
   try
     -- per-file config: `style` is the CLI base; fmt.lean chain overrides
@@ -80,10 +80,10 @@ unsafe def runJob
 /-- Whether a result is a candidate for the subprocess retry: unchanged output
     with a parse diagnostic (a superset-env conflict, an own-notation file the
     union could not help, or a genuinely broken file — the retry sorts them). -/
-private def Result.retryable
-            (r : Result)
-            : Bool :=
-
+private
+def Result.retryable
+    (r : Result)
+    : Bool :=
   r.output == r.original && r.diagnostics.any (·.rule == "parse")
 
 /-- The scheduler seam. The main pass is SEQUENTIAL today — the single place a
@@ -98,13 +98,13 @@ private def Result.retryable
     retry as ONE-FILE SUBPROCESSES, spawned in bounded concurrent waves — they
     are independent processes, each importing its own (subset) env, so the only
     coupling is transient memory: `LEAN4FMT_JOBS` bounds the wave (default 8). -/
-unsafe def runAll
-           (style : Style.Style)
-           (paths : Array System.FilePath)
-           (elabFallback : Bool := true)
-           (retry : Option (String × Array String) := none)
-           : IO (Array Result) := do
-
+unsafe
+def runAll
+    (style : Style.Style)
+    (paths : Array System.FilePath)
+    (elabFallback : Bool := true)
+    (retry : Option (String × Array String) := none)
+    : IO (Array Result) := do
   let env ← Frontend.batchEnv paths
   -- main pass: IO tasks over the shared frozen env (default task priority = the
   -- runtime's core-sized pool; the env is `leakEnv`-persistent, shared
@@ -156,7 +156,6 @@ unsafe def runAll
 def expand
     (inputs : Array System.FilePath)
     : IO (Array System.FilePath) := do
-
   let mut acc : Array System.FilePath := #[]
   for p in inputs do
     if ← p.isDir then acc := acc ++ (← findLean p)

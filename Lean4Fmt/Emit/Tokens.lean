@@ -21,11 +21,11 @@ import Lean4Fmt.Syntax.Kinds
 namespace Lean4Fmt.Emit
 
 /-- The leaf tokens of a subtree, in order (atoms + idents with source bytes). -/
-partial def leafTokens
-            (stx : Lean.Syntax)
-            (acc : Array Lean.Syntax := #[])
-            : Array Lean.Syntax :=
-
+partial
+def leafTokens
+    (stx : Lean.Syntax)
+    (acc : Array Lean.Syntax := #[])
+    : Array Lean.Syntax :=
   match stx with
   | .atom ..       => acc.push stx
   | .ident ..      => acc.push stx
@@ -34,10 +34,10 @@ partial def leafTokens
 
 /-- Any `choice` node in the subtree (ambiguous parse: children are ALL the
     alternatives — flattening would duplicate tokens). -/
-partial def hasChoice
-            (stx : Lean.Syntax)
-            : Bool :=
-
+partial
+def hasChoice
+    (stx : Lean.Syntax)
+    : Bool :=
   match stx with
   | .node _ k args => k == Lean.choiceKind || args.any hasChoice
   | _              => false
@@ -48,10 +48,10 @@ partial def hasChoice
     adjacency, so forcing either spelling could change the tree (the gate
     would catch it as a per-file fallback — correctness holds, coverage pays).
     clang-format is the shape of the eventual full table. -/
-private def gapRule
-            (prev next : String)
-            : Option Bool :=
-
+private
+def gapRule
+    (prev next : String)
+    : Option Bool :=
   let identLike (t : String) :=
     t.toList.all fun c => c.isAlphanum || c == '_' || c == '\'' || c == '.' || c.toNat > 127
   if prev == "(" || prev == "⟨" || prev == "‹" || prev == "⦃" || prev == "¬" then
@@ -71,7 +71,6 @@ private def gapRule
 def tokenJoin?
     (stx : Lean.Syntax)
     : Option String :=
-
   Id.run
     do
       if hasChoice stx then
@@ -134,10 +133,10 @@ def tokenJoin?
     class, gate-caught on mathlib Divisors: a calc step's `:= by` + two
     tactics joined into an application). Single-line ones are safe: their
     interior is already one line and the join preserves it. -/
-partial def hasNewlineSemantic
-            (s : Lean.Syntax)
-            : Bool :=
-
+partial
+def hasNewlineSemantic
+    (s : Lean.Syntax)
+    : Bool :=
   ((s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
       || s.getKind == `Lean.Parser.Term.byTactic'
       || s.getKind == ``Lean.Parser.Term.let
@@ -156,7 +155,6 @@ partial def hasNewlineSemantic
 def tokenJoinFlat?
     (stx : Lean.Syntax)
     : Option String :=
-
   Id.run
     do
       if hasChoice stx then
@@ -211,7 +209,6 @@ def tokenJoinFlat?
 def canonTok
     (stx : Lean.Syntax)
     : String :=
-
   match tokenJoin? stx with
   | some t => t
   | none =>

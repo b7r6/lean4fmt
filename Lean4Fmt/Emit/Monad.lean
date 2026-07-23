@@ -39,7 +39,6 @@ abbrev Walk := Lean.Syntax → EmitM Doc
 def bareSrc
     (stx : Lean.Syntax)
     : String :=
-
   (stx.getSubstring? false false).map (·.toString) |>.getD ""
 
 /-- `canonVerbatimWs` applied PIECEWISE around embedded quotation TERMS: the
@@ -55,7 +54,6 @@ def canonWsPiecewise
     (s : String)
     (skipBytes : Nat := 0)
     : String :=
-
   Id.run
     do
       if Lean4Fmt.Syntax.hasQuotationCommand stx then
@@ -93,7 +91,6 @@ def logOptOut
     (stx : Lean.Syntax)
     (why : String := "")
     : EmitM Unit :=
-
   let pos := (stx.getPos?.map (·.byteIdx)).getD 0
   let len := ((stx.getTailPos?.map (·.byteIdx)).getD pos) - pos
   emitDiag
@@ -112,7 +109,6 @@ def logOptOut
 def verbatimQuiet
     (stx : Lean.Syntax)
     : EmitM Doc := do
-
   let lead := (Lean4Fmt.Syntax.leading? stx).getD ""
   let base :=
     if lead.any (· == '\n') then
@@ -141,7 +137,6 @@ def verbatim
     (stx : Lean.Syntax)
     (why : String := "")
     : EmitM Doc := do
-
   if !(bareSrc stx).isEmpty then   -- an empty node emits nothing: not an opt-out
     logOptOut stx why
   verbatimQuiet stx
@@ -150,7 +145,6 @@ def verbatim
 def passthrough
     (stx : Lean.Syntax)
     : EmitM Doc := do
-
   emitDiag
     { severity := .debug,
       pos      := (stx.getPos?.map (·.byteIdx)).getD 0,
@@ -184,7 +178,6 @@ def armsAligned
     (arms : Array (Doc × Option Doc))
     (fallback : Doc)
     : Doc :=
-
   Id.run do
     if mode == Lean4Fmt.Style.AlignMode.never || arms.size < 2 then
       return fallback
@@ -223,7 +216,6 @@ def armsAlignedRuns
     (maxDelta : Nat)
     (pieces : Array ArmPiece)
     : Doc :=
-
   Id.run do
     let flush :=
       fun (out sectLead : Doc) (sect : Array ArmPiece) =>
@@ -256,7 +248,6 @@ def armsAlignedRuns
 def matchAltsOf
     (altsNode : Lean.Syntax)
     : Array Lean.Syntax :=
-
   Id.run do
     let mut alts : Array Lean.Syntax := #[]
     for g in altsNode.getArgs do
@@ -278,7 +269,6 @@ def altPatternStack?
     (patStx : Lean.Syntax)
     (joinFlat? : Lean.Syntax → Option String)
     : EmitM (Option (Doc × Bool)) := do
-
   let width := (← read).layout.lineWidth
   let flushG :=
     fun (g : Array Lean.Syntax) =>
@@ -352,7 +342,6 @@ def armPieces?
     (alts : Array Lean.Syntax)
     (joinFlat? : Lean.Syntax → Option String := fun _ => none)
     : EmitM (Option (Array ArmPiece)) := do
-
   let mut pieces : Array ArmPiece := #[]
   for h : i in [0:alts.size] do
     let alt := alts[i]

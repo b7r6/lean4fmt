@@ -19,9 +19,9 @@ import Lean4Fmt.Driver
 open Lean
 open Lean4Fmt
 
-unsafe def initEnvImpl
-           : IO Unit := do
-
+unsafe
+def initEnvImpl
+    : IO Unit := do
   initSearchPath (← findSysroot)
   enableInitializersExecution -- required before importing modules with syntax extensions
 
@@ -34,9 +34,10 @@ opaque initEnv : IO Unit
     hand-built symlink farm. Additive and failure-tolerant: entries APPEND
     to the search path (an explicit LEAN_PATH keeps first-match priority),
     and a missing or failing `lake` is a silent skip, never an error. -/
-unsafe def addLakePathsImpl
-           (files : List String)
-           : IO Unit := do
+unsafe
+def addLakePathsImpl
+    (files : List String)
+    : IO Unit := do
 
   -- an explicit LEAN_PATH is the caller taking control (corpus-gate's farm,
   -- batch loops): skip the ~1.6s/root lake startup — discovery is the
@@ -78,16 +79,16 @@ opaque addLakePaths (files : List String) : IO Unit
 /-- Resolve style, expand inputs (files/dirs) to the file set, and run all jobs
     through the scheduler seam (`Driver.runAll`). Behind an opaque boundary so the
     non-`unsafe` `main` can invoke the unsafe frontend. -/
-unsafe def runJobsImpl
-           (files : List String)
-           (width : Option Nat)
-           (preset : String)
-           (elabFallback : Bool)
-           (retry : Bool)
-           (logLevel : String)
-           (lakeEnv : Bool)
-           : IO (Array Driver.Result) := do
-
+unsafe
+def runJobsImpl
+    (files : List String)
+    (width : Option Nat)
+    (preset : String)
+    (elabFallback : Bool)
+    (retry : Bool)
+    (logLevel : String)
+    (lakeEnv : Bool)
+    : IO (Array Driver.Result) := do
   let base := (Style.byName? preset).getD Style.straylight
   let style :=
     match width with
@@ -115,14 +116,14 @@ opaque runJobs (files : List String) (width : Option Nat) (preset : String) (ela
     active/verbatim/trivia byte rows plus the aggregate. Files the shared env
     cannot parse retry as one-file `--stats` subprocesses (own env); a file
     nothing can parse counts fully verbatim — passthrough is what it gets. -/
-unsafe def runStatsImpl
-           (files : List String)
-           (width : Option Nat)
-           (preset : String)
-           (elabFallback : Bool)
-           (retry : Bool)
-           : IO (Array (Nat × Nat × Nat × Nat × String)) := do
-
+unsafe
+def runStatsImpl
+    (files : List String)
+    (width : Option Nat)
+    (preset : String)
+    (elabFallback : Bool)
+    (retry : Bool)
+    : IO (Array (Nat × Nat × Nat × Nat × String)) := do
   let base := (Style.byName? preset).getD Style.straylight
   let style :=
     match width with
@@ -163,7 +164,6 @@ opaque runStats (files : List String) (width : Option Nat) (preset : String) (el
 def main
     (argv : List String)
     : IO Unit := do
-
   let o := Cli.parse argv
   if o.files.isEmpty then
     (← IO.getStderr).putStrLn Cli.usage

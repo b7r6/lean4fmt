@@ -40,10 +40,10 @@ structure ConfigEntry where
 
 /-- Parse a literal value token: `"str"` → str, bare token kept as-is
     (numbers, `true`/`false`, bare enum names all arrive as their token). -/
-private def unquote
-            (v : String)
-            : String :=
-
+private
+def unquote
+    (v : String)
+    : String :=
   let v := v.trimAscii.toString
   if v.length ≥ 2 && v.startsWith "\"" && v.endsWith "\"" then
     ((v.drop 1).dropRight 1).toString
@@ -56,7 +56,6 @@ private def unquote
 def parseConfig
     (text : String)
     : Except String (List ConfigEntry) := do
-
   let mut out : List ConfigEntry := []
   let mut n := 0
   for line in text.splitOn "\n" do
@@ -74,27 +73,27 @@ def parseConfig
     | _ => throw s!"line {n}: expected `def <key> := <value>` (got: {t})"
   return out
 
-private def asNat
-            (e : ConfigEntry)
-            : Except String Nat :=
-
+private
+def asNat
+    (e : ConfigEntry)
+    : Except String Nat :=
   match e.val.toNat? with
   | some n => pure n
   | none   => throw s!"line {e.line}: `{e.key}` expects a number (got `{e.val}`)"
 
-private def asBool
-            (e : ConfigEntry)
-            : Except String Bool :=
-
+private
+def asBool
+    (e : ConfigEntry)
+    : Except String Bool :=
   match e.val with
   | "true"  => pure true
   | "false" => pure false
   | _       => throw s!"line {e.line}: `{e.key}` expects true/false (got `{e.val}`)"
 
-private def asAlign
-            (e : ConfigEntry)
-            : Except String AlignMode :=
-
+private
+def asAlign
+    (e : ConfigEntry)
+    : Except String AlignMode :=
   match AlignMode.ofString? e.val with
   | some m => pure m
   | none   => throw s!"line {e.line}: `{e.key}` expects always/whenShort/never (got `{e.val}`)"
@@ -105,7 +104,6 @@ def applyEntry
     (s : Style)
     (e : ConfigEntry)
     : Except String Style := do
-
   match e.key with
   | "preset" =>
     match byName? e.val with
@@ -177,15 +175,12 @@ def applyConfig
     (s : Style)
     (entries : List ConfigEntry)
     : Except String Style :=
-
   entries.foldlM applyEntry s
 
 /-- Parse + apply in one step (the per-file unit the resolver folds). -/
 def applyConfigText
     (s : Style)
     (text : String)
-    : Except String Style := do
-
-  applyConfig s (← parseConfig text)
+    : Except String Style := do applyConfig s (← parseConfig text)
 
 end Lean4Fmt.Style

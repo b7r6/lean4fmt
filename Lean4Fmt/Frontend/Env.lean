@@ -21,10 +21,10 @@ open Lean
 /-- The imports of one file's header (`#[]` when the file is unreadable or the
     header doesn't parse — the caller's job will diagnose). Header parsing is
     cheap text work; no environment is needed. -/
-unsafe def fileImports
-           (path : System.FilePath)
-           : IO (Array Import) := do
-
+unsafe
+def fileImports
+    (path : System.FilePath)
+    : IO (Array Import) := do
   try
     let contents ← IO.FS.readFile path
     let ictx := Parser.mkInputContext contents path.toString
@@ -38,10 +38,10 @@ unsafe def fileImports
     (notation/macros) — without it nothing nontrivial parses; `leakEnv` skips
     end-of-process teardown of a region that lives for the whole invocation
     anyway. -/
-unsafe def importsEnv
-           (imports : Array Import)
-           : IO Environment := do
-
+unsafe
+def importsEnv
+    (imports : Array Import)
+    : IO Environment := do
   let mut seen : NameSet := {}
   let mut resolved : Array Import := #[]
   for imp in imports do
@@ -59,7 +59,6 @@ unsafe def importsEnv
 def importsKey
     (imports : Array Import)
     : String :=
-
   String.intercalate ";" (((imports.map (·.module.toString)).qsort (· < ·)).toList)
 
 /-- One environment for a whole batch: union every file's header imports and
@@ -71,10 +70,10 @@ def importsKey
     fine under its own imports. The driver handles that with a retry against the
     file's own import set (`importsEnv`, cached by `importsKey`), so the union
     stays the fast path and conflicts cost only their own files. -/
-unsafe def batchEnv
-           (paths : Array System.FilePath)
-           : IO Environment := do
-
+unsafe
+def batchEnv
+    (paths : Array System.FilePath)
+    : IO Environment := do
   let mut all : Array Import := #[]
   for p in paths do
     all := all ++ (← fileImports p)
@@ -86,13 +85,13 @@ unsafe def batchEnv
     verbatim, so `verbatim - policy` is the honest porting tail), or `none`
     when the file doesn't parse under this env (caller decides: count it fully
     verbatim, or retry under the file's own env in a subprocess). -/
-unsafe def statsFor
-           (env : Environment)
-           (path contents : String)
-           (style : Lean4Fmt.Style.Style)
-           (elabFallback : Bool := true)
-           : IO (Option (Nat × Nat × Nat × Nat)) := do
-
+unsafe
+def statsFor
+    (env : Environment)
+    (path contents : String)
+    (style : Lean4Fmt.Style.Style)
+    (elabFallback : Bool := true)
+    : IO (Option (Nat × Nat × Nat × Nat)) := do
   match ← parseFull? env path contents elabFallback with
   | none => pure none
   | some stx =>

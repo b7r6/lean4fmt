@@ -24,16 +24,15 @@ def quietly
     {α}
     (act : IO α)
     : IO α := do
-
   let buf ← IO.mkRef { : IO.FS.Stream.Buffer }
   IO.withStdout (IO.FS.Stream.ofBuffer buf) act
 
 /-- Parse a module quietly; `none` if it does not parse cleanly in `env`. -/
-unsafe def parseModule?
-           (env : Environment)
-           (path contents : String)
-           : IO (Option Lean.Syntax) :=
-
+unsafe
+def parseModule?
+    (env : Environment)
+    (path contents : String)
+    : IO (Option Lean.Syntax) :=
   quietly do
     try
       let stx ← Parser.testParseModule env path contents
@@ -44,7 +43,6 @@ unsafe def parseModule?
 def headerToks
     (stx : Lean.Syntax)
     : Array String :=
-
   match stx.getArgs[0]? with
   | some h => Lean4Fmt.Syntax.leafToks h
   | none   => #[]

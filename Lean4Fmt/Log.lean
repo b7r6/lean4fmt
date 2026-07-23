@@ -52,7 +52,6 @@ def log
     (l : Level)
     (msg : String)
     : IO Unit := do
-
   if l.rank ≥ (← levelRef.get).rank then (← IO.getStderr).putStrLn s!"[{l.tag}] {msg}"
 
 end Lean4Fmt.Log

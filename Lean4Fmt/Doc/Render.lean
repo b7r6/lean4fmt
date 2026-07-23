@@ -146,7 +146,8 @@ end
     group containing a multi-line verbatim cannot flatten, so its separators
     genuinely break — which is what makes `.line → true` sound here); visible
     text clears it. Returns (hazardFound, atLineStartAfter). -/
-partial def midlineReanchorAux : Doc → Bool → Bool × Bool
+partial
+def midlineReanchorAux : Doc → Bool → Bool × Bool
   | .nil, atLS => (false, atLS)
   | .verbatim s _, atLS =>
     if s.any (· == '\n') then (!atLS, false) else (false, if s.isEmpty then atLS else false)
@@ -249,7 +250,6 @@ def wr
     (indent : Nat)
     (s : String)
     : RSt :=
-
   let st :=
     if st.pend > 0 then
       { out := st.out ++ newlines st.pend ++ spaces indent, col := indent, pend := 0 }
@@ -280,7 +280,6 @@ def dedent
     (base : Nat)
     (l : List Char)
     : List Char :=
-
   if l.length ≥ base && (l.take base).all (· == ' ') then l.drop base else l.dropWhile (· == ' ')
 
 def wrLine
@@ -288,7 +287,6 @@ def wrLine
     (indent base : Nat)
     (l : List Char)
     : RSt :=
-
   if (dedent base l).isEmpty then
     { st with pend := st.pend + 1 }
   else
@@ -308,7 +306,6 @@ def wrLines (indent base : Nat) : List (List Char) → RSt → RSt
 def inStringLineMask
     (cs : List Char)
     : List Bool :=
-
   Id.run
     do
       let a : Array Char := cs.toArray
@@ -394,7 +391,6 @@ def wrBlock
     (base : Nat)
     (raw : String)
     : RSt :=
-
   let cs := trimEndWs raw.toList
   let ls := splitLines cs
   let k := (ls.takeWhile isBlankLine).length
@@ -421,7 +417,6 @@ def emitTable
     (strRows : List (List String))
     (st : RSt)
     : RSt :=
-
   (strRows.foldl
     (fun (p : RSt × Bool) r =>
       let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
@@ -557,7 +552,6 @@ end
 def stripTrailingWs
     (s : String)
     : String :=
-
   Id.run
     do
       let a : Array Char := s.toList.toArray
@@ -669,7 +663,6 @@ def stripTrailingWs
 def canonVerbatimWs
     (s : String)
     : String :=
-
   Id.run
     do
       let a : Array Char := s.toList.toArray
@@ -800,7 +793,6 @@ def render
     (style : Style)
     (doc : Doc)
     : String :=
-
   let st := go style.layout.lineWidth (style.blankLines.maxConsecutive + 1) doc 0 false {}
   -- trailing whitespace is trivia everywhere outside string literals — the
   -- string-aware strip is what makes verbatim blocks canonical at line ends

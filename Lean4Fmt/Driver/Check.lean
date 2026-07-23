@@ -14,11 +14,11 @@ import Lean4Fmt.Driver.Format
 namespace Lean4Fmt.Driver
 
 /-- `true` iff the file is already in formatted form. -/
-unsafe def isFormatted
-           (path : String)
-           (width : Nat := 100)
-           : IO Bool := do
-
+unsafe
+def isFormatted
+    (path : String)
+    (width : Nat := 100)
+    : IO Bool := do
   let (out, _) ← formatFile path width
   let orig ← IO.FS.readFile path
   return out == orig

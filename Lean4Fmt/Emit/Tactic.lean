@@ -29,11 +29,11 @@ open Lean Lean4Fmt.Doc
     flatten-joining such a head produces a DIFFERENT PARSE (gate-caught on
     Proofs.lean: a five-line suffices goal with a let-in-term flattened into
     an application). -/
-private partial def headWsSensitive
-                    (limit : Nat)
-                    (s : Lean.Syntax)
-                    : Bool :=
-
+private partial
+def headWsSensitive
+    (limit : Nat)
+    (s : Lean.Syntax)
+    : Bool :=
   match s with
   | .node _ k args =>
     (((s.getPos?.map (·.byteIdx)).getD limit) < limit
@@ -47,9 +47,10 @@ private partial def headWsSensitive
 
 /-- The deepest final `by`-block descendant (last-child descent) — the
     position-split ports slice the head bytes before it. -/
-private partial def lastByDescendant?
-                    (s : Lean.Syntax)
-                    : Option Lean.Syntax :=
+private partial
+def lastByDescendant?
+    (s : Lean.Syntax)
+    : Option Lean.Syntax :=
 
   -- BOTH by kinds: tactic-position `by` is byTactic' (the prime variant) —
   -- matching only byTactic descended THROUGH a suffices' own by into a deep
@@ -68,11 +69,11 @@ private partial def lastByDescendant?
     LINES: an explicit `;` joins its neighbors into one group (rendered as one
     line, `t1; t2; t3`); empty separator slots (newlines) split groups. `none`
     on a trailing `;` or a structural surprise. -/
-private def seqGroupsCore?
-            (seqKind seq1Kind : Lean.Name)
-            (seq : Lean.Syntax)
-            : Option (Array (Array Lean.Syntax)) :=
-
+private
+def seqGroupsCore?
+    (seqKind seq1Kind : Lean.Name)
+    (seq : Lean.Syntax)
+    : Option (Array (Array Lean.Syntax)) :=
   Id.run
     do
       if seq.getKind != seqKind then
@@ -103,26 +104,26 @@ private def seqGroupsCore?
       if groups.isEmpty then return none
       return some groups
 
-private def tacticGroups?
-            (seq : Lean.Syntax)
-            : Option (Array (Array Lean.Syntax)) :=
-
+private
+def tacticGroups?
+    (seq : Lean.Syntax)
+    : Option (Array (Array Lean.Syntax)) :=
   seqGroupsCore? ``Lean.Parser.Tactic.tacticSeq ``Lean.Parser.Tactic.tacticSeq1Indented seq
 
-private def convGroups?
-            (seq : Lean.Syntax)
-            : Option (Array (Array Lean.Syntax)) :=
-
+private
+def convGroups?
+    (seq : Lean.Syntax)
+    : Option (Array (Array Lean.Syntax)) :=
   seqGroupsCore? `Lean.Parser.Tactic.Conv.convSeq `Lean.Parser.Tactic.Conv.convSeq1Indented seq
 
 /-- One `;`-joined run as a single line: items token-for-token joined by
     `"; "`. `none` when an item is multi-line, carries an interior comment, or
     an INTERMEDIATE item has trailing trivia content (a comment there would
     comment out the rest of the joined line). -/
-private def groupText?
-            (g : Array Lean.Syntax)
-            : Option String :=
-
+private
+def groupText?
+    (g : Array Lean.Syntax)
+    : Option String :=
   Id.run do
     let mut txt := ""
     for j in [0:g.size] do
@@ -147,11 +148,11 @@ private def groupText?
 
 /-- One group's doc: a single tactic walks (active layouts apply); a
     `;`-joined run rides as one text line. -/
-private def groupDoc?
-            (walk : Lean4Fmt.Emit.Walk)
-            (g : Array Lean.Syntax)
-            : Lean4Fmt.Emit.EmitM (Option Doc) := do
-
+private
+def groupDoc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (g : Array Lean.Syntax)
+    : Lean4Fmt.Emit.EmitM (Option Doc) := do
   if g.size == 1 then
     return some (← walk g[0]!)
   return (groupText? g).map Doc.text
@@ -160,12 +161,12 @@ private def groupDoc?
     one line, its leading trivia placed structurally, same-line trailing
     comments re-appended (leading of the group's FIRST item, trailing of its
     LAST). -/
-private def seqGroupsDoc?
-            (walk : Lean4Fmt.Emit.Walk)
-            (groups : Array (Array Lean.Syntax))
-            (lastOwned : Bool)
-            : Lean4Fmt.Emit.EmitM (Option Doc) := do
-
+private
+def seqGroupsDoc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (groups : Array (Array Lean.Syntax))
+    (lastOwned : Bool)
+    : Lean4Fmt.Emit.EmitM (Option Doc) := do
   let mut body : Doc := .nil
   for h : i in [0:groups.size] do
     let g := groups[i]
@@ -192,12 +193,12 @@ private def seqGroupsDoc?
 /-- An arm body (`induction … with | alt => <tactics>`): a single clean flat
     tactic goes width-aware after the `=>` (inline when it fits); anything else
     one tactic per line at +2. `none` when the sequence has no safe layout. -/
-private def armSeqDoc?
-            (walk : Lean4Fmt.Emit.Walk)
-            (seq : Lean.Syntax)
-            (conv : Bool := false)
-            : Lean4Fmt.Emit.EmitM (Option Doc) := do
-
+private
+def armSeqDoc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (seq : Lean.Syntax)
+    (conv : Bool := false)
+    : Lean4Fmt.Emit.EmitM (Option Doc) := do
   let some groups := (if conv then convGroups? seq else tacticGroups? seq) | return none
   if groups.size == 1 then
     let lead := (Lean4Fmt.Syntax.leading? groups[0]![0]!).getD ""
@@ -219,10 +220,10 @@ private def armSeqDoc?
 
 /-- Items of a bracket-list slice (`a, b, c` between `[` and `]`): comma atoms
     skipped, one level of null nesting flattened; `none` on a multi-line item. -/
-private def listItems?
-            (slice : Array Lean.Syntax)
-            : Option (Array Doc) :=
-
+private
+def listItems?
+    (slice : Array Lean.Syntax)
+    : Option (Array Doc) :=
   Id.run
     do
       let mut items : Array Doc := #[]
@@ -252,11 +253,11 @@ private def listItems?
     width-aware commaLists, so a long list BREAKS instead of forcing the whole
     tactic (and its enclosing body) verbatim. `none` on a multi-line piece
     outside a bracket list. -/
-private partial def lineWords?
-                    (stx : Lean.Syntax)
-                    (fill : Bool := false)
-                    : Option (Array Doc) :=
-
+private partial
+def lineWords?
+    (stx : Lean.Syntax)
+    (fill : Bool := false)
+    : Option (Array Doc) :=
   Id.run do
     let a := stx.getArgs
     let mut out : Array Doc := #[]
@@ -300,10 +301,10 @@ private partial def lineWords?
     `["using"/"using!", term]`, searched shallowly), returning the tactic with
     the TERM pruned (the `using` atom stays) and the term itself. `none` when
     no such tail exists. -/
-private partial def pruneUsing?
-                    (s : Lean.Syntax)
-                    : Option (Lean.Syntax × Lean.Syntax) :=
-
+private partial
+def pruneUsing?
+    (s : Lean.Syntax)
+    : Option (Lean.Syntax × Lean.Syntax) :=
   match s with
   | .node info k args =>
     Id.run do
@@ -322,10 +323,10 @@ private partial def pruneUsing?
   | _ => none
 
 /-- Join line words with single spaces. -/
-private def joinWords
-            (ws : Array Doc)
-            : Doc :=
-
+private
+def joinWords
+    (ws : Array Doc)
+    : Doc :=
   ws.foldl
     (fun d w => match d with
       | .nil => w
@@ -337,12 +338,12 @@ private def joinWords
     sequence via the branch layout (inline when a single clean flat group
     fits; else one line per group at +2). The body's inter-group comments ride
     the seam loop; comments in the HEAD have no home → `none`. -/
-private def headBlockDoc?
-            (walk : Lean4Fmt.Emit.Walk)
-            (stx : Lean.Syntax)
-            (conv : Bool := false)
-            : Lean4Fmt.Emit.EmitM (Option Doc) := do
-
+private
+def headBlockDoc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    (conv : Bool := false)
+    : Lean4Fmt.Emit.EmitM (Option Doc) := do
   let a := stx.getArgs
   if a.size < 2 then
     return none
@@ -374,7 +375,6 @@ def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
     : Lean4Fmt.Emit.EmitM Doc := do
-
   let kind := stx.getKind
   let a := stx.getArgs
   if kind == ``Lean.Parser.Tactic.exact || kind == ``Lean.Parser.Tactic.apply

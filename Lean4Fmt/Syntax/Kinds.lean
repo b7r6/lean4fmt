@@ -49,7 +49,6 @@ def diteKind : SyntaxNodeKind := `termDepIfThenElse
 def isBinOp
     (kind : SyntaxNodeKind)
     : Bool :=
-
   let s := ((kind.components.getLast?.map toString).getD "")
   s.startsWith "«term_" && (s.toList.filter (· == '_')).length >= 2
 
@@ -66,7 +65,6 @@ def isBinOp
 def isBinderComma
     (kind : SyntaxNodeKind)
     : Bool :=
-
   let s := ((kind.components.getLast?.map toString).getD "")
   (s.startsWith "«term" && s.endsWith "_,_»" && !isBinOp kind)
     -- the NAMED big-operator binders (`∑ x ∈ s, body` parses as
@@ -90,7 +88,6 @@ def isBinderComma
     multi-line kind. -/
 def activeMultilineTermKinds
     : Array SyntaxNodeKind :=
-
   #[
     iteKind,
     diteKind,
@@ -124,7 +121,6 @@ def activeMultilineTermKinds
     (`Emit/WsSensitivity`). -/
 def walkTermKinds
     : Array SyntaxNodeKind :=
-
   activeMultilineTermKinds
       ++ #[
         `Lean.«term∀__,_»,
@@ -146,7 +142,6 @@ def walkTermKinds
 def isInlineProneContainer
     (kind : SyntaxNodeKind)
     : Bool :=
-
   kind == ``Lean.Parser.Term.app || kind == ``Lean.Parser.Term.anonymousCtor
       || kind == ``Lean.Parser.Term.match
       || kind == ``Lean.Parser.Term.structInst
@@ -160,7 +155,6 @@ def isInlineProneContainer
 def ownsSeams
     (kind : SyntaxNodeKind)
     : Bool :=
-
   kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.have
     || kind == ``Lean.Parser.Term.letI || kind == ``Lean.Parser.Term.haveI
     || kind == ``Lean.Parser.Term.match
@@ -190,7 +184,6 @@ def ownsSeams
 def isFunBlockValue
     (v : Lean.Syntax)
     : Bool :=
-
   v.getKind == ``Lean.Parser.Term.fun
       && (match v.getArgs[1]? with
       | some bf =>
@@ -205,7 +198,6 @@ def isFunBlockValue
 def isNeverInline
     (kind : SyntaxNodeKind)
     : Bool :=
-
   kind == ``Lean.Parser.Term.byTactic || kind == ``Lean.Parser.Term.have
       || kind == ``Lean.Parser.Term.show
       || kind == ``Lean.Parser.Term.suffices
@@ -217,10 +209,10 @@ def isNeverInline
     hasMultilineVerbatim check catches). Counting their subtrees at the parent
     made e.g. `fun c => match … -- comment` verbatim for no reason. The tail
     token's trailing stays exempt (the enclosing seam owns it). -/
-partial def hasUnownedLineComment
-            (stx : Lean.Syntax)
-            : Bool :=
-
+partial
+def hasUnownedLineComment
+    (stx : Lean.Syntax)
+    : Bool :=
   go stx > countLineComments ((lastTokenTrailing? stx).getD "")
   where
     go (s : Lean.Syntax) : Nat :=
@@ -239,10 +231,10 @@ partial def hasUnownedLineComment
     (a comment between `=>` and a `match` body was silently DROPPED when
     the plain ownsSeams cutoff swallowed it — found by the comment diff
     check, the gate is blind to it). -/
-partial def hasUnownedInteriorComment
-            (stx : Lean.Syntax)
-            : Bool :=
-
+partial
+def hasUnownedInteriorComment
+    (stx : Lean.Syntax)
+    : Bool :=
   goI stx
       > countLineComments ((leading? stx).getD "")
           + countLineComments ((lastTokenTrailing? stx).getD "")
@@ -263,7 +255,6 @@ partial def hasUnownedInteriorComment
 def isQuotTermKind
     (k : Lean.SyntaxNodeKind)
     : Bool :=
-
   let s := k.toString
   s.endsWith ".quot" || s.endsWith "Quot"
 
@@ -272,7 +263,6 @@ def isQuotTermKind
 def isQuotationCommand
     (k : Lean.SyntaxNodeKind)
     : Bool :=
-
   k == `Lean.Parser.Command.macro_rules || k == `Lean.Parser.Command.elab_rules
       || k == `Lean.Parser.Command.syntax
       || k == `Lean.Parser.Command.syntaxAbbrev
@@ -281,19 +271,19 @@ def isQuotationCommand
       || k == `Lean.Parser.Command.elab
       || k == `Lean.Parser.Command.mixfix
 
-partial def hasQuotationKind
-            (stx : Lean.Syntax)
-            : Bool :=
-
+partial
+def hasQuotationKind
+    (stx : Lean.Syntax)
+    : Bool :=
   match stx with
   | .node _ k args => isQuotTermKind k || isQuotationCommand k || args.any hasQuotationKind
   | _              => false
 
 /-- Whether the subtree carries one of the byte-exact metaprogram COMMANDS. -/
-partial def hasQuotationCommand
-            (stx : Lean.Syntax)
-            : Bool :=
-
+partial
+def hasQuotationCommand
+    (stx : Lean.Syntax)
+    : Bool :=
   match stx with
   | .node _ k args => isQuotationCommand k || args.any hasQuotationCommand
   | _              => false
@@ -303,10 +293,10 @@ partial def hasQuotationCommand
     honest porting tail is `verbatim - policy`, and `--stats` reports the
     coverage ceiling from it. Bare-source sizes match what `verbatim` emits
     (modulo ws-canon: an accounting approximation, not an invariant). -/
-partial def policyContentBytes
-            (stx : Lean.Syntax)
-            : Nat :=
-
+partial
+def policyContentBytes
+    (stx : Lean.Syntax)
+    : Nat :=
   match stx with
   | .node _ k args =>
     if k == ``Lean.Parser.Module.header || k == `Lean.Parser.Command.moduleDoc
@@ -319,10 +309,10 @@ partial def policyContentBytes
 /-- The byte ranges of embedded quotation TERMS (outermost only — interiors
     belong to their quotation). `none` when a quotation has no position info
     (the caller must then treat the WHOLE text as content). -/
-partial def quotTermRanges?
-            (stx : Lean.Syntax)
-            : Option (Array (Nat × Nat)) :=
-
+partial
+def quotTermRanges?
+    (stx : Lean.Syntax)
+    : Option (Array (Nat × Nat)) :=
   go stx (some #[])
   where
     go (s : Lean.Syntax) (acc : Option (Array (Nat × Nat))) : Option (Array (Nat × Nat)) :=
@@ -344,7 +334,6 @@ partial def quotTermRanges?
 def hasTemplateOpener
     (s : String)
     : Bool :=
-
   Id.run do
     let a : Array Char := s.toList.toArray
     let n := a.size

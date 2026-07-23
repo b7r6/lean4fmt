@@ -16,19 +16,22 @@ open Lean
 
 /-- The token stream (atoms + idents), ignoring whitespace/trivia and empty EOI
     atoms. A meaning-preserving formatter keeps this exactly (§0.1). -/
-partial def leafToks : Lean.Syntax → Array String
+partial
+def leafToks : Lean.Syntax → Array String
   | .atom _ v      => if v.isEmpty then #[] else #[v]
   | .ident _ _ n _ => #[n.toString]
   | .missing       => #[]
   | .node _ _ args => args.foldl (fun acc x => acc ++ leafToks x) #[]
 
 /-- The trivia (leading+trailing) of a leaf's `SourceInfo`, as raw text. -/
-private def triviaOfInfo : Lean.SourceInfo → String
+private
+def triviaOfInfo : Lean.SourceInfo → String
   | .original leading _ trailing _ => leading.toString ++ trailing.toString
   | _ => ""
 
 /-- All trivia text across the tree (leaves carry the trivia). -/
-partial def triviaText : Lean.Syntax → String
+partial
+def triviaText : Lean.Syntax → String
   | .atom info _      => triviaOfInfo info
   | .ident info _ _ _ => triviaOfInfo info
   | .node _ _ args    => args.foldl (fun acc x => acc ++ triviaText x) ""
@@ -41,7 +44,6 @@ partial def triviaText : Lean.Syntax → String
 def commentContent
     (stx : Lean.Syntax)
     : String :=
-
   String.ofList ((triviaText stx).toList.filter (fun c => !c.isWhitespace))
 
 /-- The kind SPINE: every node kind in preorder. Token equality alone
@@ -49,16 +51,17 @@ def commentContent
     out of a `·` bullet (or a statement out of a branch) moves it to a different
     scope with an IDENTICAL token stream. Tree-shape equality closes that class:
     a meaning-preserving formatter keeps the token stream AND the kind spine. -/
-partial def kindSpine
-            (stx : Lean.Syntax)
-            : Array Name :=
-
+partial
+def kindSpine
+    (stx : Lean.Syntax)
+    : Array Name :=
   match stx with
   | .node _ kind args => args.foldl (fun acc x => acc ++ kindSpine x) #[kind]
   | _                 => #[]
 
 /-- First identifier appearing in a subtree (the target of `namespace`/`open`). -/
-partial def firstIdent : Lean.Syntax → Name
+partial
+def firstIdent : Lean.Syntax → Name
   | .ident _ _ n _ => n
   | .node _ _ args =>
     args.foldl (fun acc x => if acc.isAnonymous then firstIdent x else acc) .anonymous

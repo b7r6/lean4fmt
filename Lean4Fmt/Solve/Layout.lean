@@ -30,7 +30,6 @@ def linesMaxw (ls : Lines) : Nat := ls.foldl (fun m p => max m (p.1 + p.2.length
 def linesLast
     (ls : Lines)
     : Nat :=
-
   match ls.getLast? with
   | some p => p.1 + p.2.length
   | none   => 0
@@ -40,7 +39,6 @@ def linesLast
 def catLines
     (a b : Lines)
     : Lines :=
-
   match a.getLast? with
   | none => b
   | some pa =>
@@ -57,7 +55,6 @@ def nestLines
     (n : Nat)
     (a : Lines)
     : Lines :=
-
   match a with
   | []        => []
   | p :: rest => p :: rest.map (fun q => (q.1 + n, q.2))
@@ -85,7 +82,6 @@ def insertPareto
     (m : Meas)
     (acc : List Meas)
     : List Meas :=
-
   if acc.any (fun n => dominates n m) then acc else m :: acc.filter (fun n => !dominates m n)
 
 /-- Reduce a candidate set to its Pareto frontier. -/
@@ -108,7 +104,8 @@ inductive LDoc where
 /-- The DP: the Pareto frontier of every layout the subtree admits, computed
     bottom-up. `frontier ∘ choice` is the feasible-set union; `crossCat` is the
     horizontal product; both re-pruned. -/
-partial def frontier : LDoc → List Meas
+partial
+def frontier : LDoc → List Meas
   | .text s      => [{ lines := [(0, s)], cost := 0 }]
   | .cat a b     => prune (crossCat (frontier a) (frontier b))
   | .flush a     => prune ((frontier a).map flushM)
@@ -123,7 +120,6 @@ def bestUnder
     (W : Nat)
     (f : List Meas)
     : Option Meas :=
-
   let feas := f.filter (fun m => m.maxw ≤ W)
   let pool := if feas.isEmpty then f else feas
   pool.foldl
@@ -137,7 +133,8 @@ def solve (W : Nat) (d : LDoc) : Option Meas := bestUnder W (frontier d)
 /-- The greedy caricature: each `choice` commits to the first alternative that
     fits ON ITS OWN, left-to-right, blind to how downstream placement or cost
     will land. This is the local optimum `.group` printers take. -/
-partial def greedy (W : Nat) : LDoc → Meas
+partial
+def greedy (W : Nat) : LDoc → Meas
   | .text s => { lines := [(0, s)], cost := 0 }
   | .cat a b => catM (greedy W a) (greedy W b)
   | .flush a => flushM (greedy W a)
@@ -152,7 +149,6 @@ partial def greedy (W : Nat) : LDoc → Meas
 def renderMeas
     (m : Meas)
     : String :=
-
   String.intercalate "\n" (m.lines.map (fun p => String.ofList (List.replicate p.1 ' ') ++ p.2))
 
 /-- The affine feasibility of a horizontal composition — the two line-width
@@ -162,9 +158,7 @@ theorem cat_fits
         (aMax aLast bMax W : Nat)
         (ha : aMax ≤ W)
         (hb : aLast + bMax ≤ W)
-        : aMax ≤ W ∧ aLast + bMax ≤ W := by
-
-  omega
+        : aMax ≤ W ∧ aLast + bMax ≤ W := by omega
 
 -- ── sanity: the measure algebra ─────────────────────────────────────────────
 
@@ -183,7 +177,6 @@ theorem cat_fits
 
 def inner
     : LDoc :=
-
   .choice
     [
       .pen 0 (.text "iiiiiiiiii"), -- flat, 10 wide, free
@@ -192,7 +185,6 @@ def inner
 
 def whole
     : LDoc :=
-
   .choice
     [
       .pen 0 (.cat (.text "PPPPPPPPPPPP") inner), -- flat outer
@@ -215,7 +207,6 @@ def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')
 def joinSp
     (xs : List String)
     : String :=
-
   xs.foldl (fun s x => if s.isEmpty then x else s ++ " " ++ x) ""
 
 /-- Rung 0: everything on one line. -/
@@ -224,7 +215,6 @@ def defInline
     (bs : List String)
     (ret : String)
     : LDoc :=
-
   .text (joinSp ([vis, kw, name] ++ bs) ++ " : " ++ ret ++ " :=")
 
 /-- Rung 1: the pinned house shape — `private` own line, `def name` at col 0,
@@ -234,7 +224,6 @@ def defHang
     (bs : List String)
     (ret : String)
     : LDoc :=
-
   let ls : List LDoc :=
     [.text vis, .text (kw ++ " " ++ name)] ++ bs.map (fun b => .text (spaces 4 ++ b))
         ++ [.text (spaces 4 ++ ": " ++ ret ++ " :=")]
@@ -247,12 +236,10 @@ def defDoc
     (bs : List String)
     (ret : String)
     : LDoc :=
-
   .choice [.pen 0 (defInline vis kw name bs ret), .pen 2 (defHang vis kw name bs ret)]
 
 def exBs
     : List String :=
-
   ["(pool : Array upstream_slot)", "(slot_predicate : pooled_upstream_state → Bool)"]
 
 def exDef : LDoc := defDoc "private" "def" "find_upstream_slot" exBs "Option Nat"
@@ -265,7 +252,8 @@ def exDef : LDoc := defDoc "private" "def" "find_upstream_slot" exBs "Option Nat
 
 /-- Every layout the tree admits, WITHOUT the Pareto prune — the exhaustive
     ground truth `solve` must match on cost. -/
-partial def bruteForce : LDoc → List Meas
+partial
+def bruteForce : LDoc → List Meas
   | .text s      => [{ lines := [(0, s)], cost := 0 }]
   | .cat a b     => crossCat (bruteForce a) (bruteForce b)
   | .flush a     => (bruteForce a).map flushM
@@ -288,7 +276,6 @@ def chain : Nat → LDoc
 def nestedDef
     (n : Nat)
     : LDoc :=
-
   .cat (defDoc "private" "def" "f" ["(a : T)"] "R") (.nest 2 (.cat (.flush (.text "")) (chain n)))
 
 -- optimality: the pruned DP finds the SAME optimal cost as exhaustive search
@@ -320,7 +307,6 @@ structure DefPieces where
 def defLadder
     (p : DefPieces)
     : LDoc :=
-
   .choice
     [
       .pen 0 (defInline p.vis p.kw p.name p.binders p.ret),
@@ -331,12 +317,10 @@ def renderDef
     (W : Nat)
     (p : DefPieces)
     : String :=
-
   renderMeas ((solve W (defLadder p)).getD default)
 
 def fxFindUpstream
     : DefPieces :=
-
   { vis     := "private",
     name    := "find_upstream_slot",
     binders := ["(pool : Array upstream_slot)", "(slot_predicate : pooled_upstream_state → Bool)"],
@@ -344,7 +328,6 @@ def fxFindUpstream
 
 def fxFindIdle
     : DefPieces :=
-
   { vis     := "private",
     name    := "find_idle_upstream_slot",
     binders := ["(pool : Array upstream_slot)"],
@@ -352,7 +335,6 @@ def fxFindIdle
 
 def fxDial
     : DefPieces :=
-
   { vis     := "private",
     name    := "dial_upstream_slot",
     binders := ["(loop : Loop)", "(pool : Array upstream_slot)", "(idx : Nat)", "(port : UInt16)"],
@@ -386,7 +368,6 @@ def fxAll : List DefPieces := [fxFindUpstream, fxFindIdle, fxDial]
 def inlineDefFits
     (W total : Nat)
     : Bool :=
-
   let inlineRung : Meas := { lines := [(total, "")], cost := 0 } -- maxw = total, preferred
   let breakRung : Meas := { lines := [(0, "")], cost := 2 } -- maxw = 0, always feasible
   (bestUnder W [inlineRung, breakRung]).map Meas.cost == some 0

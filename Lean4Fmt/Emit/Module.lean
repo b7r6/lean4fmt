@@ -24,10 +24,10 @@ open Lean Lean4Fmt.Doc
     `unit` places it byte-exact); the LAST import's trailing is the header's
     trailing, likewise. `none` (verbatim) on a `module`/`prelude` marker, a
     multi-line import span, or a seamless comment. -/
-private def headerDoc?
-            (h : Lean.Syntax)
-            : Option Doc :=
-
+private
+def headerDoc?
+    (h : Lean.Syntax)
+    : Option Doc :=
   Id.run
     do
       if h.getKind != ``Lean.Parser.Module.header then
@@ -67,11 +67,11 @@ private def headerDoc?
     whitespace runs between chunks become structural separators (blank runs
     clamp to policy). `none` when the trivia has a shape no seam owns
     (a same-line head segment with content). -/
-private def moduleTrivia?
-            (lead : String)
-            (atFileStart : Bool)
-            : Option Doc :=
-
+private
+def moduleTrivia?
+    (lead : String)
+    (atFileStart : Bool)
+    : Option Doc :=
   Id.run
     do
       let ls := lead.splitOn "\n"
@@ -143,7 +143,8 @@ private def moduleTrivia?
 
 /-- Drop the leftmost separator of a seam doc (the file head has no previous
     line — a leading hardline/blank would open the file with a stray newline). -/
-private partial def dropLeadingSep : Doc → Doc
+private partial
+def dropLeadingSep : Doc → Doc
   | .cat a b  => .cat (dropLeadingSep a) b
   | .hardline => .nil
   | .blank _  => .nil
@@ -165,7 +166,6 @@ def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
     : Lean4Fmt.Emit.EmitM Doc := do
-
   let style ← read
   let args := stx.getArgs
   -- multi-line form ⇢ participates in the imposed top-level rhythm. Decided

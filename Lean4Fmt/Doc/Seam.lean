@@ -43,7 +43,6 @@ def seamLines (base : Nat) : Nat → List (List Char) → Doc
 def seamBase
     (full : List (List Char))
     : Nat :=
-
   (full.filter (fun l => !wsLine l)).foldl
     (fun m l => Nat.min m (l.takeWhile (· == ' ')).length)
     1000000
@@ -62,7 +61,6 @@ def seamBase
 def leadingSep?
     (lead : String)
     : Option Doc :=
-
   if !wsLine ((splitLines lead.toList).headD []) then
     none
   else if !wsLine ((splitLines lead.toList).getLastD []) then

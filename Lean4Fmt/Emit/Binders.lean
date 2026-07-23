@@ -25,7 +25,6 @@ def binderText?
     (b : Lean.Syntax)
     (preserve : Bool := false)
     : Option String :=
-
   Id.run
     do
       let k := b.getKind
@@ -62,7 +61,6 @@ def binderDoc
     (walk : Lean4Fmt.Emit.Walk)
     (b : Lean.Syntax)
     : EmitM Doc := do
-
   match binderText? b (← read).spacing.preserveBinders with
   | some t => pure (.text t)
   | none =>

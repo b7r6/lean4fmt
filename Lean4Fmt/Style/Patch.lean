@@ -29,7 +29,6 @@ structure StylePatch where
 
 /-- Right-biased merge: the later patch wins per group. -/
 instance : Append StylePatch :=
-
   ⟨
     fun a b => {
       layout := b.layout <|> a.layout

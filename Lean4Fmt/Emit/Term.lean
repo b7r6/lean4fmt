@@ -25,11 +25,12 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
 /-- Width-aware bracketed comma list `l e₁, e₂, … r`: flat if it fits, else one
     element per line indented by 2 with `l`/`r` on their own lines (the standard
     all-or-nothing `commaList` group). Skips the parser's comma atoms. -/
-private def commaGroup
-            (walk : Walk)
-            (l r : String)
-            (children : Array Lean.Syntax)
-            : EmitM (Option Doc) := do
+private
+def commaGroup
+    (walk : Walk)
+    (l r : String)
+    (children : Array Lean.Syntax)
+    : EmitM (Option Doc) := do
 
   -- an authored TRAILING comma (`[a, b,]`) has no slot in the rebuilt list
   -- (commas go BETWEEN items) — `none` rather than drop the token
@@ -56,14 +57,14 @@ private def commaGroup
     trailing) re-appended, the last element's same-line trailing kept before
     the closer. `none` (caller verbatims) when the closer's leading carries
     content, a trailing spans lines, or a seam has no home. -/
-private def seamCommaList?
-            (walk : Walk)
-            (l r : String)
-            (opener : Lean.Syntax)
-            (pairs : Array (Lean.Syntax × Option Lean.Syntax))
-            (closer : Lean.Syntax)
-            : EmitM (Option Doc) := do
-
+private
+def seamCommaList?
+    (walk : Walk)
+    (l r : String)
+    (opener : Lean.Syntax)
+    (pairs : Array (Lean.Syntax × Option Lean.Syntax))
+    (closer : Lean.Syntax)
+    : EmitM (Option Doc) := do
   if pairs.isEmpty then
     return none
   -- a comment on the opener's own line (`[ -- note`) is OUR zone
@@ -122,10 +123,10 @@ private def seamCommaList?
     parse floor and re-associate the block (the ApplyAt lesson — an
     elaboration-level tree change the gate caught as tokens). let/structInst
     newline semantics ride safely inside their own self-anchored docs. -/
-private partial def containsDoBy
-                    (s : Lean.Syntax)
-                    : Bool :=
-
+private partial
+def containsDoBy
+    (s : Lean.Syntax)
+    : Bool :=
   s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
       || s.getKind == `Lean.Parser.Term.byTactic'
       || s.getArgs.any containsDoBy
@@ -137,10 +138,10 @@ private partial def containsDoBy
     the first step's column, which rides the glued line) re-associates on
     reparse (gate-caught on OmegaLimit: `<| calc` glued flat, the step list
     ended early — tokens). -/
-private partial def tailGlueSafe
-                    (s : Lean.Syntax)
-                    : Bool :=
-
+private partial
+def tailGlueSafe
+    (s : Lean.Syntax)
+    : Bool :=
   let k := s.getKind
   if k == ``Lean.Parser.Term.byTactic || k == `Lean.Parser.Term.byTactic'
       || k == ``Lean.Parser.Term.do then
@@ -167,10 +168,10 @@ private partial def tailGlueSafe
     after `lval := ` that anchor is deep and the parser closes the inner
     list early on reparse (home Preset.lean). Every other multi-line value
     is nest-relative and re-anchors deterministically. -/
-private partial def containsCommaStructInst
-                    (s : Lean.Syntax)
-                    : Bool :=
-
+private partial
+def containsCommaStructInst
+    (s : Lean.Syntax)
+    : Bool :=
   (s.getKind == ``Lean.Parser.Term.structInst && (bareSrc s).any (· == ','))
       || s.getArgs.any containsCommaStructInst
 
@@ -178,10 +179,10 @@ private partial def containsCommaStructInst
     a wide quantifier head): a single-line node is one piece, a multi-line
     container contributes its children's pieces recursively; `none` when a
     leaf itself spans lines (nothing to wrap on). -/
-private partial def headPieces?
-                    (s : Lean.Syntax)
-                    : Option (Array String) :=
-
+private partial
+def headPieces?
+    (s : Lean.Syntax)
+    : Option (Array String) :=
   let t := Lean4Fmt.Emit.canonTok s
   if !t.any (· == '\n') then
     if t.isEmpty then some #[] else some #[t]
@@ -200,11 +201,11 @@ private partial def headPieces?
     hardline seams that anchor at the CURRENT indent — safe at own-line
     placements, a column hazard when glued at a field/binding column
     (doc-derived test: flatWidth none is pass-stable). -/
-private def chainOwnLine
-            (v : Lean.Syntax)
-            (vdoc : Doc)
-            : Bool :=
-
+private
+def chainOwnLine
+    (v : Lean.Syntax)
+    (vdoc : Doc)
+    : Bool :=
   (v.getKind == ``Lean.Parser.Term.let || v.getKind == ``Lean.Parser.Term.letrec
       || v.getKind == ``Lean.Parser.Term.have
       || v.getKind == ``Lean.Parser.Term.letI
@@ -215,11 +216,11 @@ private def chainOwnLine
     path) is reproduced verbatim; the value (the term after `:=`, found inside the
     `structInstFieldDef` in «rest») is walked so it lays out actively. A shorthand
     field `{ x }` (no `:=`) is just its LVal. -/
-private partial def structFieldDoc
-                    (walk : Walk)
-                    (field : Lean.Syntax)
-                    : EmitM Doc := do
-
+private partial
+def structFieldDoc
+    (walk : Walk)
+    (field : Lean.Syntax)
+    : EmitM Doc := do
   let fa := field.getArgs
   let lvalStx := fa[0]?.getD .missing
   let lvalT := bareSrc lvalStx
@@ -274,10 +275,11 @@ private partial def structFieldDoc
 /-- Emit an expression construct, recursing via `walk`. Produces flat Doc for the
     handled kinds; everything else (and anything with a line comment) reproduces
     verbatim. -/
-partial def emit
-            (walk : Walk)
-            (stx : Lean.Syntax)
-            : EmitM Doc := do
+partial
+def emit
+    (walk : Walk)
+    (stx : Lean.Syntax)
+    : EmitM Doc := do
 
   -- comment hazard (§0.4): never restructure a subtree carrying a line comment.
   -- The tail token's TRAILING is exempt: it belongs to the enclosing seam

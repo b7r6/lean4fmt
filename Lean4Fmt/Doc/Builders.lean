@@ -19,7 +19,6 @@ def sepBy
     (sep : Doc)
     (ds : Array Doc)
     : Doc :=
-
   Id.run do
     let mut acc := Doc.nil
     let mut first := true
@@ -33,7 +32,6 @@ def brackets
     (l r : String)
     (d : Doc)
     : Doc :=
-
   .group (.text l ++ .nest 2 (.softline ++ d) ++ .softline ++ .text r)
 
 /-- Comma-and-line separated list inside `l`/`r` (breaks all-or-nothing). -/
@@ -46,7 +44,6 @@ def fillList
     (l r : String)
     (ds : Array Doc)
     : Doc :=
-
   Id.run do
     if ds.isEmpty then
       return .text (l ++ r)

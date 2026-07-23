@@ -26,12 +26,12 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
     single line (the doc comment on its own line above). `none` on a multi-line
     piece or a structural surprise — the caller reproduces the whole
     declaration. -/
-private def ctorDoc?
-            (walk : Lean4Fmt.Emit.Walk)
-            (c : Lean.Syntax)
-            (preserve : Bool)
-            : Lean4Fmt.Emit.EmitM (Option (Doc × String × Option Doc)) := do
-
+private
+def ctorDoc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (c : Lean.Syntax)
+    (preserve : Bool)
+    : Lean4Fmt.Emit.EmitM (Option (Doc × String × Option Doc)) := do
   let ctor := c
   if c.getKind != ``Lean.Parser.Command.ctor then
     return none
@@ -140,7 +140,8 @@ private def ctorDoc?
     already placed), whether that separator is a plain single newline, its
     prefix (doc comment lines), the single-line content, and its trailing
     comment (empty when none / not owned). -/
-private structure Item where
+private
+structure Item where
   sep       : Doc
   plainSep  : Bool
   prefixDoc : Doc
@@ -164,13 +165,13 @@ private structure Item where
     `.always` ignores the delta cap; `.whenShort` passes it to the renderer
     (which opts the whole run out rather than padding raggedly); `.never`
     emits everything plain. -/
-private def assemble
-            (trailMode : Lean4Fmt.Style.AlignMode)
-            (colMode : Lean4Fmt.Style.AlignMode)
-            (maxDelta : Nat)
-            (items : Array Item)
-            : Doc :=
-
+private
+def assemble
+    (trailMode : Lean4Fmt.Style.AlignMode)
+    (colMode : Lean4Fmt.Style.AlignMode)
+    (maxDelta : Nat)
+    (items : Array Item)
+    : Doc :=
   Id.run
     do
       let trailOn := trailMode != Lean4Fmt.Style.AlignMode.never
@@ -244,7 +245,6 @@ def inductiveDoc?
     (alignDelta : Nat)
     (preserve : Bool := false)
     : Lean4Fmt.Emit.EmitM (Option Doc) := do
-
   let a := defn.getArgs
   if a.size != 7 then
     return none
@@ -337,12 +337,12 @@ def inductiveDoc?
     the field's declModifiers, unlike a ctor's). `none` on a multi-line piece,
     a parenthesized field group (`structExplicitBinder`), or a structural
     surprise. -/
-private def fieldDoc?
-            (walk : Lean4Fmt.Emit.Walk)
-            (f : Lean.Syntax)
-            (preserve : Bool)
-            : Lean4Fmt.Emit.EmitM (Option (Doc × String × String × String × Option Doc)) := do
-
+private
+def fieldDoc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (f : Lean.Syntax)
+    (preserve : Bool)
+    : Lean4Fmt.Emit.EmitM (Option (Doc × String × String × String × Option Doc)) := do
   if f.getKind != ``Lean.Parser.Command.structSimpleBinder then
     return none
   let a := f.getArgs
@@ -469,7 +469,6 @@ def structureDoc?
     (alignDelta : Nat)
     (preserve : Bool := false)
     : Lean4Fmt.Emit.EmitM (Option Doc) := do
-
   let a := defn.getArgs
   if a.size != 6 then
     return none
@@ -568,7 +567,6 @@ def emit
     (walk : Lean4Fmt.Emit.Walk)
     (stx : Lean.Syntax)
     : Lean4Fmt.Emit.EmitM Doc := do
-
   let kind := stx.getKind
   if kind == `Batteries.Tactic.Alias.alias then
     -- `@[deprecated] alias longName := target` — [declModifiers, "alias",

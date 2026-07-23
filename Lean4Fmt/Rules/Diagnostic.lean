@@ -27,7 +27,6 @@ structure Diagnostic where
 def Diagnostic.render
     (d : Diagnostic)
     : String :=
-
   let sev :=
     match d.severity with
     | .debug   => "debug"
