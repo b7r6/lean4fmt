@@ -526,7 +526,7 @@ private def valForm
     -- unportable (interior comment, unownable leading, mid-set multi-line
     -- trailing) — whole-declaration verbatim (via the defnDoc multiline-arms
     -- gate: the span carries it)
-    let some pieces ← Lean4Fmt.Emit.armPieces? walk alts
+    let some pieces ← Lean4Fmt.Emit.armPieces? walk alts Lean4Fmt.Emit.tokenJoinFlat?
       | return .span (← verbatim declVal "eqns-arm")
     let al := (← read).alignment
     -- the arms doc OWNS its leading break (defnDoc places it bare at +2):
@@ -784,7 +784,7 @@ private def whereFieldDoc?
     let alts := Lean4Fmt.Emit.matchAltsOf e
     if alts.isEmpty then
       return none
-    let some pieces ← Lean4Fmt.Emit.armPieces? walk alts | return none
+    let some pieces ← Lean4Fmt.Emit.armPieces? walk alts Lean4Fmt.Emit.tokenJoinFlat? | return none
     let al := (← read).alignment
     return some (.text head
       ++ .nest 2 (Lean4Fmt.Emit.armsAlignedRuns al.matchArms al.maxDelta pieces))

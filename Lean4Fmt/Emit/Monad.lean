@@ -282,6 +282,7 @@ def matchAltsOf
 def armPieces?
     (walk : Walk)
     (alts : Array Lean.Syntax)
+    (joinFlat? : Lean.Syntax → Option String := fun _ => none)
     : EmitM (Option (Array ArmPiece)) := do
 
   let mut pieces : Array ArmPiece := #[]
@@ -298,22 +299,76 @@ def armPieces?
     let hasTrail := !last && !trailT.isEmpty
     let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
     let aa := alt.getArgs
-    let patDoc ← walk (aa[1]?.getD .missing)
+    let patStx := aa[1]?.getD .missing
+    let mut patDoc ← walk (aa[1]?.getD .missing)
+    let mut patBroken := false
     -- ws-sensitivity (fixed-point class): a multi-line re-anchoring PATTERN
-    -- (alternative-pattern alts) glued after "| " re-indents by its placement
-    -- column, which the previous pass just moved (gate-caught on mathlib
-    -- Applicative + List/Basic, +2/pass) — the whole set is the caller's to
-    -- verbatim
-    if Lean4Fmt.Doc.hasMultilineReanchor patDoc then return none
+    -- glued after "| " re-indents by its placement column, which the previous
+    -- pass just moved (gate-caught on mathlib Applicative + List/Basic,
+    -- +2/pass). The ALTERNATIVE-pattern stack (`| p₁\n| p₂\n| p₃ => body` —
+    -- the Abel shape) is portable though: split on the top-level `|` atoms,
+    -- each alternative JOINS flat (parse-derived — tokenJoinFlat? refuses
+    -- comments and newline-semantic interiors); whole set flat when the
+    -- joined spelling fits (flatten-first), else one alternative per line at
+    -- the arm's own `|` column (hardline = the arm's seam, mathlib's stack).
+    -- Anything else stays the caller's to verbatim, as before.
+    if Lean4Fmt.Doc.hasMultilineReanchor patDoc then
+      let width := (← read).layout.lineWidth
+      let flushG := fun (g : Array Lean.Syntax) => Id.run do
+        if g.isEmpty then return none
+        match joinFlat? (Lean.mkNullNode g) with
+        | some t =>
+          if t.isEmpty || t.any (· == '\n') then return none
+          return some t
+        | none => return (none : Option String)
+      let mut groups : Array String := #[]
+      let mut curG : Array Lean.Syntax := #[]
+      let mut ok := true
+      for c in patStx.getArgs do
+        match c with
+        | .atom _ "|" =>
+          -- a comment riding the separator's trivia has no seam here
+          if !(((Lean4Fmt.Syntax.leading? c).getD "").trimAscii.toString.isEmpty
+              && ((Lean4Fmt.Syntax.trailing? c).getD "").trimAscii.toString.isEmpty) then
+            ok := false
+          match flushG curG with
+          | some t => groups := groups.push t
+          | none => ok := false
+          curG := #[]
+        | _ => curG := curG.push c
+      match flushG curG with
+      | some t => groups := groups.push t
+      | none => ok := false
+      if !ok || groups.size < 2 then return none
+      if groups.any (fun g => g.length + 8 > width) then return none
+      let joined := " | ".intercalate groups.toList
+      if joined.length + 8 ≤ width then
+        patDoc := .text joined
+      else
+        let mut pd : Doc := .text groups[0]!
+        for g in groups.toList.drop 1 do
+          pd := pd ++ .hardline ++ .text ("| " ++ g)
+        patDoc := pd
+        patBroken := true
+      -- the initial walk logged the pattern null's opt-out, but the rebuilt
+      -- set ships — pop the stale entry (the walk-interception rule)
+      let pos := (patStx.getPos?.map (·.byteIdx)).getD 0
+      modify fun ds =>
+        if ds.size > 0 && ds[ds.size - 1]!.pos == pos
+            && ds[ds.size - 1]!.rule == "verbatim" then ds.pop else ds
     let arrowT := (bareSrc (aa[2]?.getD .missing)).trimAscii.toString
     let arrowT := if arrowT.isEmpty then "=>" else arrowT
     let body := aa[aa.size-1]?.getD .missing
     let bodyDoc ← walk body
     let srcBroken := ((Lean4Fmt.Syntax.leading? body).getD "").any (· == '\n')
     let preserveLB := (← read).breaking.preserveLineBreaks
+    -- a `by` body glues to the arrow whether its members are active or
+    -- verbatim (both sit at sequence-seam hardlines): `=> by` + tactics
+    -- below is the canonical arm shape — the non-glued group put `by` on
+    -- its own line whenever the proof was multi-line (surfaced when the
+    -- alternative-pattern port activated eqns arms with by proofs)
     let glueBody := body.getKind == ``Lean.Parser.Term.do
-      || (body.getKind == ``Lean.Parser.Term.byTactic
-          && Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc)
+      || body.getKind == ``Lean.Parser.Term.byTactic
     let bodyPart : Doc := if glueBody
       then .text " " ++ bodyDoc
       else if preserveLB then
@@ -328,7 +383,7 @@ def armPieces?
       else .text "| " ++ patDoc ++ .text (" " ++ arrowT) ++ bodyPart
     let inlineOk := body.getKind != ``Lean.Parser.Term.do
       && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
-    let row := if inlineOk && !hasTrail && arrowT == "=>"
+    let row := if inlineOk && !hasTrail && arrowT == "=>" && !patBroken
       then some (patDoc, some bodyDoc) else none
     pieces := pieces.push
       { sep := sep, plain := plainSep, doc := armDoc ++ trailDoc, gridRow := row }

@@ -301,12 +301,13 @@ partial def emit
       -- which the previous pass just moved — never a fixed point. A base-0
       -- (mid-line-anchored) verbatim is the worst case: its interior indent
       -- ADDS to the placement (gate-caught on mathlib Abel: `pure <| ←` +
-      -- app drifted +8 per pass). Whole-chain verbatim; porting the piece's
-      -- kind is the coverage fix, this is the correctness floor.
-      if Lean4Fmt.Doc.hasMultilineReanchor lhs || Lean4Fmt.Doc.hasMultilineReanchor op
-          || Lean4Fmt.Doc.hasMultilineReanchor tail
-          || Lean4Fmt.Doc.hasMultilineReanchor rhs then
-        return (← verbatim stx "chain-multiline-piece")
+      -- app drifted +8 per pass). The PRECISE test is on the ASSEMBLED
+      -- layout (hasMidlineReanchor threads line-start through the actual
+      -- seams): a SELF-ANCHORED piece — an app tail ending in a glued
+      -- fun/by/do block, a walked show/have value — keeps its interior
+      -- verbatims at hardline seams and is a deterministic re-anchor; only
+      -- a verbatim the layout genuinely glues mid-line keeps the whole
+      -- chain verbatim (porting that piece's kind is the coverage fix).
       let cont := (← read).layout.continuationIndent
       if (← read).breaking.opBreak == .trailing then
         -- trailing operators (mathlib arrows): `a →\n  b →\n  c`. Flat form
@@ -324,8 +325,14 @@ partial def emit
           tailT := tailT ++ .line ++ (← walk ca[0]!) ++ .space ++ linkOp
           cur2 := ca[ca.size - 1]!
           steps2 := steps2 + 1
-        return .group (lhs ++ .space ++ op ++ .nest cont (tailT ++ .line ++ rhs))
-      return .group (lhs ++ .nest cont (tail ++ .line ++ prevOp ++ .space ++ rhs))
+        let layout := lhs ++ .space ++ op ++ .nest cont (tailT ++ .line ++ rhs)
+        if Lean4Fmt.Doc.hasMidlineReanchor layout then
+          return (← verbatim stx "chain-multiline-piece")
+        return .group layout
+      let layout := lhs ++ .nest cont (tail ++ .line ++ prevOp ++ .space ++ rhs)
+      if Lean4Fmt.Doc.hasMidlineReanchor layout then
+        return (← verbatim stx "chain-multiline-piece")
+      return .group layout
     else if kind == ``Lean.Parser.Term.app then
       -- `fn a b c` — width-aware: flat if it fits, else `fn` on its line with each
       -- argument on a continuation line indented by `layout.indent`. All-or-
@@ -762,7 +769,7 @@ partial def emit
       -- the shared arm loop (Emit/Monad.armPieces?): `none` = some arm is
       -- unportable (interior comment, unownable leading, mid-set multi-line
       -- trailing) — whole-match verbatim
-      let some pieces ← Lean4Fmt.Emit.armPieces? walk alts | return (← verbatim stx)
+      let some pieces ← Lean4Fmt.Emit.armPieces? walk alts Lean4Fmt.Emit.tokenJoinFlat? | return (← verbatim stx)
       let al := (← read).alignment
       -- grids per visible-seam section (comments/blanks split; a section with
       -- a grid-ineligible arm rides plain — see armsAlignedRuns)
@@ -814,7 +821,7 @@ partial def emit
         if kw.isEmpty then return (← verbatim stx)
         let alts := Lean4Fmt.Emit.matchAltsOf bf
         if alts.isEmpty then return (← verbatim stx)
-        let some pieces ← Lean4Fmt.Emit.armPieces? walk alts | return (← verbatim stx)
+        let some pieces ← Lean4Fmt.Emit.armPieces? walk alts Lean4Fmt.Emit.tokenJoinFlat? | return (← verbatim stx)
         let al := (← read).alignment
         return .text kw
           ++ .nest 2 (Lean4Fmt.Emit.armsAlignedRuns al.matchArms al.maxDelta pieces)
