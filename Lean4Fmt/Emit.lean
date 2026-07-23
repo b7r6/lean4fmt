@@ -79,6 +79,7 @@ partial def walkCore
          || kind == `Lean.Parser.Term.doUnless
          || kind == ``Lean.Parser.Term.doLet
          || kind == ``Lean.Parser.Term.doLetRec
+         || kind == ``Lean.Parser.Term.doLetElse
          || kind == ``Lean.Parser.Term.doLetArrow
          || kind == ``Lean.Parser.Term.doReassign
          || kind == ``Lean.Parser.Term.doReassignArrow

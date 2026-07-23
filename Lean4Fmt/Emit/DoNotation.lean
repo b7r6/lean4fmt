@@ -227,6 +227,40 @@ def emit
       match ← idDeclDoc? walk a[3]! with
       | some d => return headD ++ d
       | none => return (← Lean4Fmt.Emit.verbatim stx)
+  else if kind == ``Lean.Parser.Term.doLetElse then
+    -- `let pat := v | fallback` — [let, mut?, letConfig, pat, ":="/"←", v,
+    -- "|", doSeq, tail?]: head flat, the value width-aware (the idDeclDoc?
+    -- treatment), the else arm on its own line at +4 (`    | throwError …`,
+    -- the mathlib shape). Single-statement else only this round.
+    if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    if a.size != 9 then return (← Lean4Fmt.Emit.verbatim stx)
+    let mutT := (Lean4Fmt.Emit.bareSrc a[1]!).trimAscii.toString
+    let cfgT := (Lean4Fmt.Emit.bareSrc a[2]!).trimAscii.toString
+    let patT := Lean4Fmt.Emit.canonTok a[3]!
+    let asgnT := (Lean4Fmt.Emit.bareSrc a[4]!).trimAscii.toString
+    if [mutT, cfgT, patT, asgnT].any (fun t => t.any (· == '\n')) || patT.isEmpty
+        || asgnT.isEmpty then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    if !((Lean4Fmt.Emit.bareSrc a[8]!).trimAscii.toString.isEmpty) then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let vdoc ← walk a[5]!
+    if (match vdoc with | .verbatim _ _ => true | _ => false) then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let some ss := stmts? a[7]! | return (← Lean4Fmt.Emit.verbatim stx)
+    if ss.size != 1 then return (← Lean4Fmt.Emit.verbatim stx)
+    let eDoc ← walk ss[0]!
+    if (match eDoc with | .verbatim _ _ => true | _ => false) then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let head := "let " ++ (if mutT.isEmpty then "" else mutT ++ " ")
+      ++ (if cfgT.isEmpty then "" else cfgT ++ " ") ++ patT ++ " " ++ asgnT
+    let glue := (Lean4Fmt.Doc.flatWidth vdoc).isNone
+    let valPart : Doc :=
+      if glue then .text (head ++ " ") ++ vdoc
+      else .text head ++ .group (.nest 2 (.line ++ vdoc))
+    let layout := valPart ++ .nest 4 (.hardline ++ .text "| " ++ eDoc)
+    if Lean4Fmt.Doc.hasMidlineReanchor layout then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    return layout
   else if kind == ``Lean.Parser.Term.doLetRec then
     -- `let rec <decl>` = [group[let,rec], letRecDecls, null] — single, plain,
     -- suffix-free binding rides the letDecl machinery (mirrors Term.letrec,

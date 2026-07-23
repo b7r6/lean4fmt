@@ -68,6 +68,17 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-23 | 249 (10/dir) | 81.3% | 80.8% | 88.0% of code | 91.8 REGRESSION | 1 (round 6: naive-substring hasLineComment over `@[to_additive /-- -/]` attr text sent 13 files verbatim; OmegaLimit calc-glue tokens) |
 | 2026-07-23 | 249 (10/dir) | 82.6% | 82.6% | 88.0% of code | **93.9%** | 0 (round 7: trivia-COUNT hazards + tailGlueSafe; all five rejects cleared — the newline-blind law, the elab parse-floor law) |
 
+**INSTRUMENT CORRECTION (2026-07-23, round 9):** mathlib-census.py counted
+only tagged `gate rejected output (…)` lines — the reparse-fail class has no
+tag, and THREE files (Configuration, Applicative, Fold) had been silently
+rejecting since before the campaign close. Every number above is ~1pt
+flattered (the 92.7 close = **91.2 honest**). The aggregator now counts
+reparse-fails; rows below are honest. Honest recompute of this run's rounds:
+r2 91.7 · r3 92.1 · r4 92.4 · r7 92.8 · r8 93.4.
+
+| 2026-07-23 | 249 (10/dir) | 83.1% | 82.2% | 88.0% of code | 93.4 honest | 2 HIDDEN (round 8: instance eqns-fields unlock — matchAltsOf needs the matchAlts CHILD of structInstFieldEqns; chain general layout restored with calc-tail fence) |
+| 2026-07-23 | 249 (10/dir) | 83.2% | 83.2% | 88.0% of code | **94.6%** | **0 — both hidden rejects cleared** (round 9: chainOwnLine for structInst field let-values, eqns-arm fallback rides the .eqns +2-hardline placement (mirror-drift-proof), calc chain tails at line-start seams) |
+
 ## CAMPAIGN CLOSED (2026-07-22, at 92.7)
 
 Closed by priority re-ranking, not exhaustion: the formatter is now a
