@@ -616,7 +616,7 @@ def emit
     if n < 3 then
       return (← Lean4Fmt.Emit.verbatim stx)
     let mut i := 0
-    let mut prefixDoc : Doc := .nil
+    let mut pieces : Array (Doc × String) := #[] -- (content, own leading)
     for m in a do
       let mk := m.getKind
       let isDoc :=
@@ -628,17 +628,42 @@ def emit
       if (bareSrc m).trimAscii.toString.isEmpty then i := i + 1
       else if isDoc then
         let t := (bareSrc m).trimAscii.toString
-        prefixDoc := prefixDoc ++ .textRaw t ++ .hardline
+        pieces := pieces.push (.textRaw t, (Lean4Fmt.Syntax.leading? m).getD "")
         i := i + 1
       else if isAttr then
         let t := (bareSrc m).trimAscii.toString
         if t.any (· == '\n') then
           return (← Lean4Fmt.Emit.verbatim stx)
-        prefixDoc := prefixDoc ++ .text t ++ .hardline
+        pieces := pieces.push (.text t, (Lean4Fmt.Syntax.leading? m).getD "")
         i := i + 1
       else break
     if i ≥ n - 1 then
       return (← Lean4Fmt.Emit.verbatim stx)
+    -- seam ownership between the prefix pieces and before the keyword: a
+    -- LATER zone's full-line comments (docstring→`-- note`→attr, or
+    -- attr→`-- note`→`elab` — the ApplyWith comment class) place via
+    -- leadingSep?, REPLACING the plain hardline (stacking both makes a
+    -- blank); the FIRST piece's leading is the command's outer leading —
+    -- Module's to place. Unownable shapes keep the whole command verbatim.
+    let headLead := (Lean4Fmt.Syntax.leading? (Lean.mkNullNode (a.extract i (n - 1)))).getD ""
+    let sepOf : String → Lean4Fmt.Emit.EmitM Doc := fun l => do
+      if Lean4Fmt.Syntax.hasLineComment l then
+        match Lean4Fmt.Emit.leadingSep? l with
+        | some d => pure d
+        | none => pure Doc.hardline   -- unreachable: guarded below
+      else pure Doc.hardline
+    for h : j in [1:pieces.size] do
+      if Lean4Fmt.Syntax.hasLineComment (pieces[j].2)
+          && (Lean4Fmt.Emit.leadingSep? (pieces[j].2)).isNone then
+        return (← Lean4Fmt.Emit.verbatim stx)
+    if !pieces.isEmpty && Lean4Fmt.Syntax.hasLineComment headLead
+        && (Lean4Fmt.Emit.leadingSep? headLead).isNone then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    let mut prefixDoc : Doc := .nil
+    for h : j in [0:pieces.size] do
+      if j > 0 then prefixDoc := prefixDoc ++ (← sepOf pieces[j].2)
+      prefixDoc := prefixDoc ++ pieces[j].1
+    if !pieces.isEmpty then prefixDoc := prefixDoc ++ (← sepOf headLead)
     -- the last arg is usually the elabTail `[":", cat, prec?, "=>", term]` —
     -- its own head joins onto the elab head (canonTok: no quotation content
     -- there), the TERM is the real body. A bare last-arg term (older shape)
@@ -661,7 +686,18 @@ def emit
     if (match bDoc with | .verbatim _ _ => true | _ => false)
         || Lean4Fmt.Doc.hasMidlineReanchor bDoc then
       return (← Lean4Fmt.Emit.verbatim stx)
-    return prefixDoc ++ .text (headT ++ " ") ++ bDoc
+    -- ONLY a do/by body glues to the head line (its statements anchor on the
+    -- first statement's own column — safe left of the keyword). Any other
+    -- multi-line body goes width-aware at +2: an app glued after `=>` whose
+    -- args break to col 2 lands LEFT of the term's first token and the
+    -- reparse ends the command early (gate-caught on AdaptationNote,
+    -- tokens — the parse-floor family).
+    let glue :=
+      body.getKind == ``Lean.Parser.Term.do || body.getKind == ``Lean.Parser.Term.byTactic
+          || body.getKind == `Lean.Parser.Term.byTactic'
+    if glue then
+      return prefixDoc ++ .text (headT ++ " ") ++ bDoc
+    return prefixDoc ++ .text headT ++ .group (.nest 2 (.line ++ bDoc))
   else if kind == ``Lean.Parser.Command.variable then
     -- `variable <binders>`: a MULTI-LINE binder list packs BINDER-WISE as a
     -- fillSep at the continuation (each binder one item — a token fill

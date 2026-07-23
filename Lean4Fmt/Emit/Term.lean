@@ -114,19 +114,21 @@ private def seamCommaList?
   let openD : Doc := if openTrail.isEmpty then .nil else .text (" " ++ openTrail)
   return some (.text l ++ openD ++ .nest 2 body ++ .hardline ++ .text r)
 
-/-- A multi-line `do`/`by` DESCENDANT: its statement hardlines re-anchor at
-    the placement's nest column on the broken chain layout, which can cross
-    the parse floor and re-associate the block (the ApplyAt lesson — an
+/-- A `do`/`by` DESCENDANT — NEWLINE-BLIND: this feeds a layout decision,
+    and "is it multi-line in the SOURCE" flips pass-to-pass (the DualNumber
+    fixed-point: pass 1 glued the chain flat, pass 2 saw the now-single-line
+    `by` and broke at the ops). Statement hardlines re-anchor at the
+    placement's nest column on the broken chain layout, which can cross the
+    parse floor and re-associate the block (the ApplyAt lesson — an
     elaboration-level tree change the gate caught as tokens). let/structInst
     newline semantics ride safely inside their own self-anchored docs. -/
-private partial def containsMultilineDoBy
+private partial def containsDoBy
                     (s : Lean.Syntax)
                     : Bool :=
 
-  ((s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
-      || s.getKind == `Lean.Parser.Term.byTactic')
-      && (bareSrc s).any (· == '\n'))
-      || s.getArgs.any containsMultilineDoBy
+  s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
+      || s.getKind == `Lean.Parser.Term.byTactic'
+      || s.getArgs.any containsDoBy
 
 /-- Whether the subtree contains a COMMA-form structInst — the one doc shape
     whose broken layout carries FIRST-LINE-ANCHORED interior columns (later
@@ -312,7 +314,7 @@ partial def emit
       -- the block (gate-caught on ApplyAt: elaboration-level tree change,
       -- tokens reject) — glue reproduces the flat-head source shape with
       -- members at their sequence seams; a tail that cannot glue bails.
-      let rhsDoBy := containsMultilineDoBy cur
+      let rhsDoBy := containsDoBy cur
       let chainWidth := (← read).layout.lineWidth
       let headFits := match Lean4Fmt.Doc.flatWidth (lhs ++ tail ++ Doc.line ++ prevOp) with
         | some w => w + 12 ≤ chainWidth

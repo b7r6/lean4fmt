@@ -36,6 +36,7 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
 private def modifiersDoc
             (attrsOwnLine : Bool)
             (m : Lean.Syntax)
+            (kwLead : String := "")
             : Doc × Nat :=
 
   Id.run
@@ -52,17 +53,72 @@ private def modifiersDoc
       let restStr := String.intercalate " " restParts
       let restDoc : Doc := if restParts.isEmpty then .nil else .text restStr ++ .space
       let restW := if restParts.isEmpty then 0 else restStr.length + 1
+      -- placed comment seams: full-line comments in a LATER piece's leading
+      -- (`/-- doc -/` then `-- TODO` then `@[attr]` — the mathlib idiom) sit
+      -- at the own-line seams between pieces and place via leadingSep?; the
+      -- zone exists only BEHIND a preceding piece (with none, the leading is
+      -- the declaration's OUTER leading — Module's to place; double emission
+      -- otherwise, the ElementaryMaps law). Unownable shapes bailed in
+      -- modifiersCommentHazard before we got here.
+      let sepOf : String → Option Doc :=
+        fun l => if Lean4Fmt.Syntax.hasLineComment l then Lean4Fmt.Doc.leadingSep? l else none
+      let attrSep : Option Doc :=
+        if !docText.isEmpty && !attrText.isEmpty then
+          sepOf ((margs[1]?.bind Lean4Fmt.Syntax.leading?).getD "")
+        else
+          none
+      let mut restSep : Option Doc := none
+      let mut seen := !docText.isEmpty || !attrText.isEmpty
+      for c in margs.toList.drop 2 do
+        if (bareSrc c).trimAscii.toString.isEmpty then continue
+        if seen then
+          match sepOf ((Lean4Fmt.Syntax.leading? c).getD "") with
+          | some s => restSep := some ((restSep.getD .nil) ++ s)
+          | none => pure ()
+        seen := true
+      let kwSep : Option Doc := if seen then sepOf kwLead else none
+      let _ := docDoc
+      -- assembly with ONE owner per seam: a piece's sep (the comment lines
+      -- from its leading) REPLACES the plain hardline before it — stacking
+      -- both inserted a spurious blank (hardlines are unconditional
+      -- newlines, only .blank pend-merges; the glueBodyBlank lesson)
+      let preKw : Option Doc :=
+        match restSep, kwSep with
+        | some a, some b => some (a ++ b)
+        | some a, none   => some a
+        | none, some b   => some b
+        | none, none     => none
       if attrsOwnLine then
         -- doc (own line) · attributes (own line) · visibility (inline)
-        let attrDoc : Doc := if attrText.isEmpty then .nil else .text attrText ++ .hardline
-        return (docDoc ++ attrDoc ++ restDoc, restW)
+        let mut out : Doc := .nil
+        let mut needNl := false
+        if !docText.isEmpty then
+          out := .textRaw docText
+          needNl := true
+        if !attrText.isEmpty then
+          if needNl then out := out ++ (attrSep.getD Doc.hardline)
+          out := out ++ .text attrText
+          needNl := true
+        if needNl then out := out ++ (preKw.getD Doc.hardline)
+        return (out ++ restDoc, restW)
       else
         -- doc (own line) · attributes+visibility (inline)
         let allStr :=
           String.intercalate " " ((if attrText.isEmpty then [] else [attrText]) ++ restParts)
         let inlineDoc : Doc := if allStr.isEmpty then .nil else .text allStr ++ .space
         let inlineW := if allStr.isEmpty then 0 else allStr.length + 1
-        return (docDoc ++ inlineDoc, inlineW)
+        let seam : Option Doc :=
+          match attrSep, preKw with
+          | some a, some b => some (a ++ b)
+          | some a, none   => some a
+          | none, some b   => some b
+          | none, none     => none
+        let out : Doc :=
+          if !docText.isEmpty then
+            .textRaw docText ++ (seam.getD Doc.hardline)
+          else
+            (seam.getD .nil)
+        return (out ++ inlineDoc, inlineW)
 
 /-- Keyword-led definition shapes we actively format. -/
 private def isDefShape
@@ -1177,10 +1233,20 @@ private def modifiersCommentHazard
 
   Id.run
     do
+      -- an ownable full-line comment run in a LATER piece's leading is NOT a
+      -- hazard anymore — modifiersDoc places it at the own-line seam
+      -- (leadingSep?); comments in a piece's TEXT, its same-line trailing,
+      -- or an unownable leading shape keep the whole-declaration bail
+      let unownable :=
+        fun (l : String) => Lean4Fmt.Syntax.hasLineComment l && (Lean4Fmt.Doc.leadingSep? l).isNone
       let mut seenTokens := false
       for c in m.getArgs do
         if seenTokens then
-          if Lean4Fmt.Syntax.subtreeHasLineComment c then
+          if Lean4Fmt.Syntax.hasLineComment (bareSrc c) then
+            return true
+          if Lean4Fmt.Syntax.hasLineComment ((Lean4Fmt.Syntax.trailing? c).getD "") then
+            return true
+          if unownable ((Lean4Fmt.Syntax.leading? c).getD "") then
             return true
         else if !(bareSrc c).isEmpty then
           seenTokens := true
@@ -1195,8 +1261,15 @@ private def modifiersCommentHazard
           if Lean4Fmt.Syntax.hasLineComment ((Lean4Fmt.Syntax.trailing? c).getD "") then
             return true
       -- gap between the last modifier and the keyword = the defn head's leading;
-      -- with no modifier tokens at all that gap IS the outer leading (exempt)
-      return seenTokens && Lean4Fmt.Syntax.hasLineComment ((Lean4Fmt.Syntax.leading? defn).getD "")
+      -- with no modifier tokens at all that gap IS the outer leading (exempt).
+      -- With INLINE rest modifiers (`protected def`), the keyword shares
+      -- their line — a comment between them has no own-line seam: bail.
+      let kwLead := (Lean4Fmt.Syntax.leading? defn).getD ""
+      let restNonempty :=
+        (m.getArgs.toList.drop 2).any (fun c => !(bareSrc c).trimAscii.toString.isEmpty)
+      if seenTokens && restNonempty && Lean4Fmt.Syntax.hasLineComment kwLead then
+        return true
+      return seenTokens && unownable kwLead
 
 /-- Emit a declaration (bare — `Module` places its leading trivia), recursing
     via `walk` where needed. Plain `:= term` defs and `| pat => body` equation
@@ -1238,7 +1311,7 @@ def emit
     match ← instanceDoc? walk defn with
     | some d =>
       let (modsDoc, _) := match a[0]? with
-        | some m => modifiersDoc attrsOwnLine m
+        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx "instance-shape")
@@ -1260,7 +1333,7 @@ def emit
     match inner? with
     | some d =>
       let (modsDoc, _) := match a[0]? with
-        | some m => modifiersDoc attrsOwnLine m
+        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx "structure-shape")
@@ -1276,7 +1349,7 @@ def emit
                   | none => exampleSpanDoc? defn) with
     | some d =>
       let (modsDoc, _) := match a[0]? with
-        | some m => modifiersDoc attrsOwnLine m
+        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx "example-shape")
@@ -1287,7 +1360,7 @@ def emit
     match ← defWhereDoc? walk defn with
     | some d =>
       let (modsDoc, _) := match a[0]? with
-        | some m => modifiersDoc attrsOwnLine m
+        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx "defwhere-shape")
@@ -1330,14 +1403,14 @@ def emit
       match Lean4Fmt.Emit.tokenJoin? defn with
       | some t' =>
         let (modsDoc, _) := match a[0]? with
-          | some m => modifiersDoc attrsOwnLine m
+          | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
           | none => (.nil, 0)
         return modsDoc ++ .text t'
       | none => return (← verbatim stx "join-fail")
     match ← sigOnlyDoc? with
     | some d =>
       let (modsDoc, _) := match a[0]? with
-        | some m => modifiersDoc attrsOwnLine m
+        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx "unported-value-multiline")     -- multi-line tail: reproduce
@@ -1356,7 +1429,7 @@ def emit
         if mSrc.any (· == '\n') then (Doc.verbatim mSrc 0 ++ sepD, 0)
         else (Doc.text mSrc ++ sepD,
               if kwGap.any (· == '\n') then 0 else mSrc.length + 1)
-      else modifiersDoc attrsOwnLine m
+      else modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
     | none => (.nil, 0)
   return modsDoc ++ (← defnDoc walk modsWidth defn)
 
