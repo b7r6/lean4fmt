@@ -438,8 +438,13 @@ private def fieldDoc?
     | none, none => none
   -- comment LINES between the docstring/modifiers and the field name (the
   -- mathlib Porting-note zone): full `--` lines re-emitted in order between
-  -- the docstring and the field line; anything else in that zone bails
-  let nameLead := ((Lean4Fmt.Syntax.leading? a[1]!).getD "")
+  -- the docstring and the field line; anything else in that zone bails.
+  -- The zone exists ONLY behind a docstring/modifier — with no prefix
+  -- tokens the name's leading IS the field's leading, which the item loop
+  -- already places (emitting it here doubled every bare-commented field:
+  -- comments gate, mathlib ElementaryMaps)
+  let nameLead :=
+    if docT.isEmpty && modsT.isEmpty then "" else ((Lean4Fmt.Syntax.leading? a[1]!).getD "")
   let zoneLines :=
     (((nameLead.splitOn "\n").drop 1).dropLast.map (fun l => l.trimAscii.toString)).filter
       (fun l => !l.isEmpty)
@@ -522,9 +527,12 @@ def structureDoc?
   for h : i in [0:fields.size] do
     let f := fields[i]
     -- interior comments: the docstring→name zone is placeable (fieldDoc?
-    -- re-emits those lines); any OTHER interior comment bails
-    let zoneCnt := Lean4Fmt.Syntax.countLineComments
-      ((Lean4Fmt.Syntax.leading? (f.getArgs[1]?.getD .missing)).getD "")
+    -- re-emits those lines — only behind a docstring/modifier prefix, see
+    -- there); any OTHER interior comment bails
+    let zoneCnt :=
+      if ((f.getArgs[0]?.map (bareSrc ·)).getD "").trimAscii.toString.isEmpty then 0
+      else Lean4Fmt.Syntax.countLineComments
+        ((Lean4Fmt.Syntax.leading? (f.getArgs[1]?.getD .missing)).getD "")
     if Lean4Fmt.Syntax.countSubtreeLineComments f >
         Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? f).getD "")
           + Lean4Fmt.Syntax.countLineComments
