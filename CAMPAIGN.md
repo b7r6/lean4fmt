@@ -78,6 +78,22 @@ r2 91.7 · r3 92.1 · r4 92.4 · r7 92.8 · r8 93.4.
 
 | 2026-07-23 | 249 (10/dir) | 83.1% | 82.2% | 88.0% of code | 93.4 honest | 2 HIDDEN (round 8: instance eqns-fields unlock — matchAltsOf needs the matchAlts CHILD of structInstFieldEqns; chain general layout restored with calc-tail fence) |
 | 2026-07-23 | 249 (10/dir) | 83.2% | 83.2% | 88.0% of code | **94.6%** | **0 — both hidden rejects cleared** (round 9: chainOwnLine for structInst field let-values, eqns-arm fallback rides the .eqns +2-hardline placement (mirror-drift-proof), calc chain tails at line-start seams) |
+| 2026-07-23 | 249 (10/dir) | 83.5% | 83.5% | 88.0% of code | **94.9%** (94.86) | 0 (round 10: Term.letI/haveI join the let/have chain arm — the local-instance ladders) |
+| 2026-07-23 | 249 (10/dir) | 83.5% | 83.5% | 88.0% of code | **94.9%** (94.93) | 0 (round 11: doLetElse port — the a[8] slot is the do-block CONTINUATION; width-derived one-liner) |
+
+## GATE-3 RUN PAUSED at 94.93 (2026-07-23)
+
+Stop rule: rounds 10→11→11b gained +0.26/+0.00/+0.08 — two consecutive
+rounds under the 0.15 floor. 0.07 from the gate, zero rejects, zero
+per-file drops, home 402/0/0 self-enforcing throughout. The HONEST arc of
+this run (post-instrument-fix): 91.2 → 94.93 (+3.7). Residue queue at
+ef70f49 (non-policy): declValSimple ~15K (diffuse inner-kind bails, avg
+~210B/site), declaration ~14K (structure/defwhere-shape drills),
+letIdDecl ~14K + tacticHave ~12K (the Dioph set-builder types — a setOf
+port is the unlock), typeSpec 8K, syntax 7.8K (G4 policy candidate),
+paren 7.3K, simpa 5.2K, cdot 5K, macro 4.9K, mutual 4.3K (x2),
+typeAscription 3.5K, compNotation 3.2K. Any one of the top three pools
+half-cleared closes the gate.
 
 ## CAMPAIGN CLOSED (2026-07-22, at 92.7)
 
