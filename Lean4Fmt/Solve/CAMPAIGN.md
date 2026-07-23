@@ -32,6 +32,31 @@ Emit (knob-gated, on for the house preset). *Exit: home 401/0/0, fuzz ≤ base,
 wide-249 rejects 0, coverage ≥ prior; adaptivity live (short inline, long hang).
 The shipping formatter now solves its defs.*
 
+> **Recon (before starting).** The integration is surgery on `Decl.defnDoc`
+> — the formatter's most intricate function. Findings that make it a straight
+> shot next session:
+> - **Strategy = byte-identical drop-in.** Configure the ladder to the current
+>   hang-always preference so knob-on leaves the home tree `--check`-clean
+>   where the solver fires; that proves correct wiring BEFORE G-L4 flips on
+>   adaptivity. Then the adaptive behaviour is a pure preference change on
+>   known-good machinery.
+> - **Injection = a fast-path short-circuit at the TOP of the def path**, NOT
+>   surgery inside defnDoc. Guard: knob on ∧ top-level ∧ modifiers reduce to
+>   [optional docstring, optional single visibility kw] (no attrs/comments) ∧
+>   single-line type ∧ declValSimple body. Fires → solver owns the whole head
+>   (vis + `def name` + binders + `: ret`), body via the existing `valForm`.
+>   Anything else falls through to defnDoc untouched — never-worse-than-input.
+> - **The coupling:** visibility placement and sig shape are entangled (inline
+>   wants `private` inline; hang wants it own-line). So the solver path must
+>   OWN visibility (skip `modifiersDoc`'s), which is why it takes the whole
+>   head. `visibilityOwnLine` (already shipped) is the hang-rung's vis rule.
+> - **Rendering:** `Lines → Doc` = bake indent into `.text`, join with
+>   `.hardline`; correct at nest 0 (top-level decls, where Lean doesn't indent
+>   namespaces) — hence the top-level guard.
+> - Bail conditions match the existing defnDoc guards (fill-multiline-type,
+>   preserve-sig-inexact, eqns). Import `Solve.Layout` into `Emit.Decl` (one-
+>   way, no cycle) so the exe build runs its #guards.
+
 **G-L4 — the preference map + blank-line knobs.** The cost model becomes
 config: rung weights + break penalties + the blank-line knobs (the original
 ask), blanks as zero-width choice points. *Exit: blank knobs live and exercised
