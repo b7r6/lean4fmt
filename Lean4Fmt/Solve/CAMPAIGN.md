@@ -32,6 +32,18 @@ Emit (knob-gated, on for the house preset). *Exit: home 401/0/0, fuzz ≤ base,
 wide-249 rejects 0, coverage ≥ prior; adaptivity live (short inline, long hang).
 The shipping formatter now solves its defs.*
 
+> **PREREQUISITE — settle the byte-identical target first.** The house-style
+> pin is only half-applied: the `visibilityOwnLine` knob ships (26db864) but
+> `fmt.lean` still selects the OLD style (no visibilityOwnLine, bodyOwnLine
+> true) and the repo has NOT been reformatted. So "byte-identical to current"
+> is ambiguous. Resolve before G-L3: either (a) apply the pin — update
+> `fmt.lean` to visibilityOwnLine + bodyOwnLine=false, reformat `src/`, land
+> it as one "adopt house style" commit (the pending step from the perturb/pin
+> flow) — then the solver's hang shape matches the reformatted repo; or (b)
+> configure the ladder to the OLD style for the drop-in test. (a) is the
+> intended direction and cleaner. The user's `ServeFd`/`GradedMonad` working-
+> tree edits are formatting-study experiments — never format/commit them.
+>
 > **Recon (before starting).** The integration is surgery on `Decl.defnDoc`
 > — the formatter's most intricate function. Findings that make it a straight
 > shot next session:
