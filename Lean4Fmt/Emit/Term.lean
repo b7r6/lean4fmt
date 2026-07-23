@@ -114,6 +114,20 @@ private def seamCommaList?
   let openD : Doc := if openTrail.isEmpty then .nil else .text (" " ++ openTrail)
   return some (.text l ++ openD ++ .nest 2 body ++ .hardline ++ .text r)
 
+/-- A multi-line `do`/`by` DESCENDANT: its statement hardlines re-anchor at
+    the placement's nest column on the broken chain layout, which can cross
+    the parse floor and re-associate the block (the ApplyAt lesson — an
+    elaboration-level tree change the gate caught as tokens). let/structInst
+    newline semantics ride safely inside their own self-anchored docs. -/
+private partial def containsMultilineDoBy
+                    (s : Lean.Syntax)
+                    : Bool :=
+
+  ((s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
+      || s.getKind == `Lean.Parser.Term.byTactic')
+      && (bareSrc s).any (· == '\n'))
+      || s.getArgs.any containsMultilineDoBy
+
 /-- Whether the subtree contains a COMMA-form structInst — the one doc shape
     whose broken layout carries FIRST-LINE-ANCHORED interior columns (later
     fields must sit colGe the first field, which rides the `{ ` line). Glued
@@ -291,11 +305,28 @@ partial def emit
       -- hardlines below (deterministic, same as decl `:= by` glue). Only the
       -- TAIL: a by mid-chain has no seam. A whole-block verbatim by (the
       -- emitter bailed) falls through to the guard below.
-      if (cur.getKind == ``Lean.Parser.Term.byTactic || cur.getKind == ``Lean.Parser.Term.do)
+      -- ANY tail carrying newline-semantic content (an app ending in a do —
+      -- `withSynthesize <| withMainContext do`) must ALSO take the glue
+      -- form: the broken chain layout re-anchors the do's statements at the
+      -- chain's nest column, which can cross the parse floor and re-associate
+      -- the block (gate-caught on ApplyAt: elaboration-level tree change,
+      -- tokens reject) — glue reproduces the flat-head source shape with
+      -- members at their sequence seams; a tail that cannot glue bails.
+      let rhsDoBy := containsMultilineDoBy cur
+      let chainWidth := (← read).layout.lineWidth
+      let headFits := match Lean4Fmt.Doc.flatWidth (lhs ++ tail ++ Doc.line ++ prevOp) with
+        | some w => w + 12 ≤ chainWidth
+        | none => false
+      if (cur.getKind == ``Lean.Parser.Term.byTactic || cur.getKind == ``Lean.Parser.Term.do
+            || (rhsDoBy && headFits))
           && (Lean4Fmt.Doc.flatWidth lhs).isSome && (Lean4Fmt.Doc.flatWidth op).isSome
           && (Lean4Fmt.Doc.flatWidth tail).isSome
-          && !(match rhs with | .verbatim _ _ => true | _ => false) then
+          && !(match rhs with | .verbatim _ _ => true | _ => false)
+          && !Lean4Fmt.Doc.hasMidlineReanchor rhs then
         return .flatten (lhs ++ tail ++ .line ++ prevOp) ++ .space ++ rhs
+      if rhsDoBy && cur.getKind != ``Lean.Parser.Term.byTactic
+          && cur.getKind != ``Lean.Parser.Term.do then
+        return (← verbatim stx "chain-nlsem-tail")
       -- ws-sensitivity (fixed-point class): a multi-line RE-ANCHORING piece
       -- glued mid-chain re-indents its interior by its placement column,
       -- which the previous pass just moved — never a fixed point. A base-0

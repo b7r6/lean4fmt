@@ -639,8 +639,22 @@ def emit
       else break
     if i ≥ n - 1 then
       return (← Lean4Fmt.Emit.verbatim stx)
-    let body := a[n - 1]!
+    -- the last arg is usually the elabTail `[":", cat, prec?, "=>", term]` —
+    -- its own head joins onto the elab head (canonTok: no quotation content
+    -- there), the TERM is the real body. A bare last-arg term (older shape)
+    -- rides as before.
+    let mut body := a[n - 1]!
+    let mut tailHeadT := ""
+    if body.getKind == ``Lean.Parser.Command.elabTail then
+      let ta := body.getArgs
+      if ta.size != 5 then
+        return (← Lean4Fmt.Emit.verbatim stx)
+      tailHeadT := Lean4Fmt.Emit.canonTok (Lean.mkNullNode (ta.extract 0 4))
+      if tailHeadT.isEmpty || tailHeadT.any (· == '\n') then
+        return (← Lean4Fmt.Emit.verbatim stx)
+      body := ta[4]!
     let headT := (bareSrc (Lean.mkNullNode (a.extract i (n - 1)))).trimAscii.toString
+    let headT := headT ++ (if tailHeadT.isEmpty then "" else " " ++ tailHeadT)
     if headT.isEmpty || headT.any (· == '\n') then
       return (← Lean4Fmt.Emit.verbatim stx)
     let bDoc ← walk body
