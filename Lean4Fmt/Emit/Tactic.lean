@@ -760,6 +760,19 @@ def emit
               some asgn.getArgs[1]!
             else none
           else none
+        -- BARE first step (`calc\n  e\n  _ = … := pf` — the mathlib head
+        -- form): no `:=`, the step is its relation alone
+        let bareHead := first && sargs.size == 2
+          && (Lean4Fmt.Emit.bareSrc sargs[1]!).trimAscii.toString.isEmpty
+        if bareHead then
+          match sargs[0]? with
+          | some rel =>
+            let relDoc ← walk rel
+            if (match relDoc with | .verbatim _ _ => true | _ => false)
+                || Lean4Fmt.Doc.hasMultilineVerbatim relDoc then pure none
+            else pure (some relDoc)
+          | none => pure none
+        else
         match pf?, sargs[0]? with
         | some pf, some rel =>
           let relDoc ← walk rel
