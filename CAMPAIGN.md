@@ -59,6 +59,7 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-22 | 249 (10/dir) | 81.1% | 81.1% | 88.0% of code | **92.1%** | 0 (quantifier heads wrap via headPieces? fillSep + BigOperators.bigsum/bigprod routed through the extended binder-comma branch; letIdDecl 19K→13K, tacticHave 21K→12K) |
 | 2026-07-22 | 249 (10/dir) | 81.1% | 80.7% | 88.0% of code | 91.7 | 1 comments (structure Porting-note zone + eqns-form where-fields; the no-prefix zone double-emitted — ElementaryMaps) |
 | 2026-07-22 | 249 (10/dir) | 81.1% | 81.1% | 88.0% of code | **92.1%** | 0 (zone only behind a docstring/modifier prefix; reject cleared same-round) |
+| 2026-07-22 | 249 (10/dir) | 81.6% | 81.6% | 88.0% of code | **92.7%** | 0 (wide vertical-structInst fields break in-group + calc bare first step; the `{ base with` traverse-instance shape and the mathlib calc head form) |
 
 Phase 1 closed in three rounds (nine mechanisms; see the round commits):
 the mid-line verbatim drift law (chain/arm/let sites), the align effective
