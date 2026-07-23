@@ -587,7 +587,17 @@ private def valForm
     -- trailing) — whole-declaration verbatim (via the defnDoc multiline-arms
     -- gate: the span carries it)
     let some pieces ← Lean4Fmt.Emit.armPieces? walk alts Lean4Fmt.Emit.tokenJoinFlat?
-      | return .span (← verbatim declVal "eqns-arm")
+      | do
+        -- arm shapes the loop can't hold (mirror drift is inevitable —
+        -- armPieces? gains bails): the WHOLE eqns rides verbatim at the +2
+        -- hardline seam via the .eqns placement (deterministic re-anchor),
+        -- NEVER glued mid-line after the reformatted sig — the .span glue
+        -- re-anchored the arms across the alternative column floor
+        -- (Applicative, a reparse-fail the census grep hid all campaign)
+        let some sep := Lean4Fmt.Emit.leadingSep?
+            ((Lean4Fmt.Syntax.leading? declVal).getD "")
+          | return .span (← verbatim declVal "eqns-arm")
+        return .eqns (sep ++ (← verbatim declVal "eqns-arm"))
     let al := (← read).alignment
     -- the arms doc OWNS its leading break (defnDoc places it bare at +2):
     -- each section starts with its first arm's separator (a plain hardline

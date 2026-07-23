@@ -62,6 +62,11 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-22 | 249 (10/dir) | 81.6% | 81.6% | 88.0% of code | **92.7%** | 0 (wide vertical-structInst fields break in-group + calc bare first step; the `{ base with` traverse-instance shape and the mathlib calc head form) |
 | 2026-07-23 | 249 (10/dir) | 81.6% | 81.6% | 88.0% of code | **92.7%** (+0.07) | 0 (gate-3 round 1: alternative-pattern stacks via the shared arm loop + chain layout-level hasMidlineReanchor; Abel 75.6→81.2) |
 | 2026-07-23 | 249 (10/dir) | 82.0% | 82.0% | 88.0% of code | **93.2%** | 0 (gate-3 round 2: Term.show port + simpa `using`-tail walk via pruneUsing? + exact/apply/refine layout hazard; paren general-content relaxation attempted and reverted — the half-verbatim mangle class) |
+| 2026-07-23 | 249 (10/dir) | 82.3% | 82.3% | 88.0% of code | **93.6%** | 0 (gate-3 round 3: replace/letI/haveI join the have family + doMatch arm-leading seams + altPatternStack? extracted shared) |
+| 2026-07-23 | 249 (10/dir) | 82.6% | 82.6% | 88.0% of code | **93.8%** | 0 (gate-3 round 4: alias port + doPatDecl/doLetArrow value glue — ten home files re-canonicalized) |
+| 2026-07-23 | 249 (10/dir) | 82.8% | 80.2% | 88.0% of code | 91.1 REGRESSION | 5 (round 5 elabTail unwrap + chain glue: 3 fixed-point from a SOURCE-newline-derived glue decision, 1 tokens elab body parse floor, 1 comments elab prefix zone) |
+| 2026-07-23 | 249 (10/dir) | 81.3% | 80.8% | 88.0% of code | 91.8 REGRESSION | 1 (round 6: naive-substring hasLineComment over `@[to_additive /-- -/]` attr text sent 13 files verbatim; OmegaLimit calc-glue tokens) |
+| 2026-07-23 | 249 (10/dir) | 82.6% | 82.6% | 88.0% of code | **93.9%** | 0 (round 7: trivia-COUNT hazards + tailGlueSafe; all five rejects cleared — the newline-blind law, the elab parse-floor law) |
 
 ## CAMPAIGN CLOSED (2026-07-22, at 92.7)
 

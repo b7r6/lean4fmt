@@ -196,6 +196,19 @@ private partial def headPieces?
         | none => return none
       return some acc
 
+/-- A CHAIN value (let/letrec/have) whose doc breaks: its body rides
+    hardline seams that anchor at the CURRENT indent — safe at own-line
+    placements, a column hazard when glued at a field/binding column
+    (doc-derived test: flatWidth none is pass-stable). -/
+private def chainOwnLine
+            (v : Lean.Syntax)
+            (vdoc : Doc)
+            : Bool :=
+
+  (v.getKind == ``Lean.Parser.Term.let || v.getKind == ``Lean.Parser.Term.letrec
+      || v.getKind == ``Lean.Parser.Term.have)
+      && (Lean4Fmt.Doc.flatWidth vdoc).isNone
+
 /-- A single `structInstField` = [structInstLVal, «rest»]. The LVal (field name /
     path) is reproduced verbatim; the value (the term after `:=`, found inside the
     `structInstFieldDef` in «rest») is walked so it lays out actively. A shorthand
@@ -236,12 +249,24 @@ private partial def structFieldDoc
         else if !t.isEmpty then headT := headT ++ " " ++ t
       -- the def node must be exactly the assign shape (`:=` + value)
       if ok && Lean4Fmt.Syntax.leafToks fd == #[":="] ++ Lean4Fmt.Syntax.leafToks v then
-        return .text (headT ++ " := ") ++ (← walk v)
+        let vdoc ← walk v
+        if chainOwnLine v vdoc then
+          return .text (headT ++ " :=") ++ .nest 2 (.hardline ++ vdoc)
+        return .text (headT ++ " := ") ++ vdoc
       let t := Lean4Fmt.Emit.canonTok field
       if t.isEmpty || t.any (· == '\n') then
         return (← verbatim field)
       return .text t
-    return lval ++ .text " := " ++ (← walk v)
+    let vdoc ← walk v
+    -- a LET-chain value's body sits at hardline seams that ANCHOR AT THE
+    -- CURRENT INDENT — glued after `lval := ` that is the FIELD column, so
+    -- the comma-less field list ends at the chain body on reparse (the
+    -- sepByIndent colGe law; gate-caught on Configuration as a hidden
+    -- reparse-fail). A breaking chain value goes OWN-LINE at +2 instead
+    -- (the mathlib source shape); flat ones still glue.
+    if chainOwnLine v vdoc then
+      return lval ++ .text " :=" ++ .nest 2 (.hardline ++ vdoc)
+    return lval ++ .text " := " ++ vdoc
   | none => return lval
 
 /-- Emit an expression construct, recursing via `walk`. Produces flat Doc for the
@@ -364,6 +389,18 @@ partial def emit
       -- moves (noparse, gate-caught on Control/Fold); a multi-line calc
       -- tail that cannot take the flat-head glue keeps the chain verbatim
       if cur.getKind == `Lean.calc && (bareSrc cur).any (· == '\n') then
+        -- a multi-line CALC tail takes the TRAILING-op break with the calc
+        -- at a LINE-START seam (`Eq.symm <|` then calc at +cont on its own
+        -- line — the mathlib source shape): the calc doc anchors exactly as
+        -- at a `:=` body, steps nest-relative to its own line. Mid-line
+        -- `op calc` moved the step column (noparse, Control/Fold); a head
+        -- that cannot flatten keeps the chain verbatim.
+        if (Lean4Fmt.Doc.flatWidth (lhs ++ tail ++ Doc.line ++ prevOp)).isSome
+            && !(match rhs with | .verbatim _ _ => true | _ => false)
+            && !Lean4Fmt.Doc.hasMidlineReanchor rhs then
+          let cont := (← read).layout.continuationIndent
+          return .flatten (lhs ++ tail ++ .line ++ prevOp)
+            ++ .nest cont (.hardline ++ rhs)
         return (← verbatim stx "chain-calc-tail")
       -- ws-sensitivity (fixed-point class): a multi-line RE-ANCHORING piece
       -- glued mid-chain re-indents its interior by its placement column,

@@ -29,6 +29,10 @@ for out in sorted(res.glob("*.out")):
     nfiles += 1
     att_a += a; att_v += v; pol_t += pol
     gate = re.search(r"\[gate\]: not formatted: gate rejected output \((.*?)\)", etext)
+    # the reparse-fail class has NO parenthesized tag (the standing grep law
+    # — it hid three rejects across the whole campaign scoreboard)
+    if not gate:
+        gate = re.search(r"\[gate\]: not formatted: output (failed to reparse)", etext)
     if gate:
         nrej += 1
         rejects.append((path, gate[1]))
