@@ -357,9 +357,14 @@ partial def emit
           && !(match rhs with | .verbatim _ _ => true | _ => false)
           && !Lean4Fmt.Doc.hasMidlineReanchor rhs then
         return .flatten (lhs ++ tail ++ .line ++ prevOp) ++ .space ++ rhs
-      if rhsDoBy && cur.getKind != ``Lean.Parser.Term.byTactic
-          && cur.getKind != ``Lean.Parser.Term.do then
-        return (← verbatim stx "chain-nlsem-tail")
+      -- a do/by-bearing tail that cannot GLUE falls to the general layout
+      -- (the rounds-1-4 behavior: blocks anchor nest-relative right of any
+      -- reachable column floor) — EXCEPT a CALC tail: its later steps must
+      -- sit at the first step's column, which the mid-line `op calc` glue
+      -- moves (noparse, gate-caught on Control/Fold); a multi-line calc
+      -- tail that cannot take the flat-head glue keeps the chain verbatim
+      if cur.getKind == `Lean.calc && (bareSrc cur).any (· == '\n') then
+        return (← verbatim stx "chain-calc-tail")
       -- ws-sensitivity (fixed-point class): a multi-line RE-ANCHORING piece
       -- glued mid-chain re-indents its interior by its placement column,
       -- which the previous pass just moved — never a fixed point. A base-0

@@ -841,7 +841,11 @@ private def whereFieldDoc?
         Lean4Fmt.Syntax.countLineComments
           ((Lean4Fmt.Syntax.lastTokenTrailing? f).getD "") then
       return none
-    let alts := Lean4Fmt.Emit.matchAltsOf e
+    -- structInstFieldEqns = [binders-null, matchAlts] — matchAltsOf wants
+    -- the matchAlts CHILD (called on the eqns node it found nothing and the
+    -- whole instance bailed as instance-shape: Booleanisation)
+    let altsNode := (e.getArgs.find? (·.getKind == ``Lean.Parser.Term.matchAlts)).getD e
+    let alts := Lean4Fmt.Emit.matchAltsOf altsNode
     if alts.isEmpty then
       return none
     let some pieces ← Lean4Fmt.Emit.armPieces? walk alts Lean4Fmt.Emit.tokenJoinFlat? | return none
