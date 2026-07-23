@@ -61,6 +61,20 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-22 | 249 (10/dir) | 81.1% | 81.1% | 88.0% of code | **92.1%** | 0 (zone only behind a docstring/modifier prefix; reject cleared same-round) |
 | 2026-07-22 | 249 (10/dir) | 81.6% | 81.6% | 88.0% of code | **92.7%** | 0 (wide vertical-structInst fields break in-group + calc bare first step; the `{ base with` traverse-instance shape and the mathlib calc head form) |
 
+## CAMPAIGN CLOSED (2026-07-22, at 92.7)
+
+Closed by priority re-ranking, not exhaustion: the formatter is now a
+daily-drivable mathlib-grade tool — 92.7 shipped-of-portable on the
+wide-249 census, zero gate rejects, home tree 402/0/0 self-enforcing,
+and the failure mode is provably "unformatted", never "damaged". Gates
+3–4 (95 / 98-of-refined) are PARKED with the ranked residue queue
+recorded above and in the memory notes; the census harness is in-tree
+(mathlib-census.sh + census-chunk.sh + mathlib-census.py +
+comment_check.py) and reruns in ~15 min whenever the climb resumes.
+What this campaign leaves behind for the next program: a formatter that
+roundtrips proof code safely, the WsSensitivity law set, and the
+instrument.
+
 Phase 1 closed in three rounds (nine mechanisms; see the round commits):
 the mid-line verbatim drift law (chain/arm/let sites), the align effective
 column, string-aware wrBlock, gate frontend alignment, cdot bullet anchor,
