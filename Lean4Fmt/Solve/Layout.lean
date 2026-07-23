@@ -200,7 +200,7 @@ def whole
     ]
 
 -- the optimum is cost 1 and fits; greedy pays 10 for the same feasibility
-#guard (solve 20 whole).map (·.cost) == some 1
+#guard (solve 20 whole).map Meas.cost == some 1
 #guard (solve 20 whole).map (fun m => decide (m.maxw ≤ 20)) == some true
 #guard (greedy 20 whole).cost == 10
 #guard ((solve 20 whole).getD default).cost < (greedy 20 whole).cost
@@ -257,8 +257,51 @@ def exBs
 
 def exDef : LDoc := defDoc "private" "def" "find_upstream_slot" exBs "Option Nat"
 
-#guard (solve 200 exDef).map (·.cost) == some 0 -- inline wins
-#guard (solve 100 exDef).map (·.cost) == some 2 -- hang forced
+#guard (solve 200 exDef).map Meas.cost == some 0 -- inline wins
+#guard (solve 100 exDef).map Meas.cost == some 2 -- hang forced
 #guard (solve 100 exDef).map (fun m => decide (m.maxw ≤ 100)) == some true -- and it fits
+
+-- ── G-L1: the pruned DP is optimal, and the frontier is sub-exponential ─────
+
+/-- Every layout the tree admits, WITHOUT the Pareto prune — the exhaustive
+    ground truth `solve` must match on cost. -/
+partial def bruteForce : LDoc → List Meas
+  | .text s      => [{ lines := [(0, s)], cost := 0 }]
+  | .cat a b     => crossCat (bruteForce a) (bruteForce b)
+  | .flush a     => (bruteForce a).map flushM
+  | .nest n a    => (bruteForce a).map (nestM n)
+  | .pen c a     => (bruteForce a).map (penM c)
+  | .choice alts => alts.foldr (fun d acc => bruteForce d ++ acc) []
+
+def bruteOpt (W : Nat) (d : LDoc) : Option Meas := bestUnder W (bruteForce d)
+
+/-- A chain of `n` break-or-flat segments (the long-application shape): flat is
+    5 wide and free, broken is narrow and +1. `2^n` raw layouts. -/
+def seg : LDoc := .choice [.pen 0 (.text "xxxxx"), .pen 1 (.cat (.flush (.text "x")) (.text "x"))]
+
+def chain : Nat → LDoc
+  | 0     => .text ""
+  | n + 1 => .cat seg (chain n)
+
+/-- def-sig ladder whose body is a nested chain — def contains body, both
+    branching, composed through the frontier. -/
+def nestedDef
+    (n : Nat)
+    : LDoc :=
+
+  .cat (defDoc "private" "def" "f" ["(a : T)"] "R") (.nest 2 (.cat (.flush (.text "")) (chain n)))
+
+-- optimality: the pruned DP finds the SAME optimal cost as exhaustive search
+#guard (solve 12 (chain 6)).map Meas.cost == (bruteOpt 12 (chain 6)).map Meas.cost
+#guard (solve 20 (chain 8)).map Meas.cost == (bruteOpt 20 (chain 8)).map Meas.cost
+#guard (solve 60 (nestedDef 6)).map Meas.cost == (bruteOpt 60 (nestedDef 6)).map Meas.cost
+#guard (solve 30 (nestedDef 5)).map Meas.cost == (bruteOpt 30 (nestedDef 5)).map Meas.cost
+
+-- tractability: monotone cost ⇒ the prune keeps the frontier sub-exponential
+#guard (bruteForce (chain 8)).length == 256 -- 2^8 raw layouts …
+#guard (frontier (chain 8)).length ≤ 12 -- … collapse to a handful
+#guard (bruteForce (chain 12)).length == 4096 -- 2^12 …
+#guard (frontier (chain 12)).length ≤ 16 -- … still a handful (grows ~n)
+#guard (frontier (nestedDef 6)).length ≤ 12
 
 end Lean4Fmt.Solve
