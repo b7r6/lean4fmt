@@ -107,7 +107,8 @@ def activeMultilineTermKinds
     ``Lean.Parser.Term.let,
     ``Lean.Parser.Term.have,
     ``Lean.Parser.Term.letrec,
-    ``Lean.Parser.Term.match
+    ``Lean.Parser.Term.match,
+    ``Lean.Parser.Term.show
   ]
 
 /-- Every term kind the walker routes to `Term.emit` (binOps ride the

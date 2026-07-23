@@ -407,12 +407,68 @@ partial def emit
         -- ws-sensitivity (fixed-point master class): other content glues
         -- after `(` MID-LINE — a multi-line re-anchoring piece drifts by its
         -- placement (+10/pass on mathlib Induced: a bailed ∘ₗ chain inside a
-        -- paren app-arg). Whole-paren verbatim gets a line-start seam from
-        -- its own placement instead.
+        -- paren app-arg); and even at a seam, a HALF-VERBATIM mixture
+        -- re-anchors its hand-shaped interior columns at the new anchor and
+        -- reads mangled (home Derived.lean, the tuple table). Whole-paren
+        -- verbatim gets a line-start seam from its own placement instead.
         if Lean4Fmt.Doc.hasMultilineReanchor d then
           return (← verbatim stx "paren-multiline-piece")
         return .text "(" ++ d ++ .text ")"
       | none => return .text "()"
+    else if kind == ``Lean.Parser.Term.show then
+      -- `show T from e` / `show T by tacs` — [show, type, fromTerm|byTactic'].
+      -- The type joins FLAT (parse-derived — tokenJoinFlat? refuses comments
+      -- and newline-semantic interiors; multi-line ∀-types bail v1). A by
+      -- rhs GLUES (`show T by` + tactics below at their sequence seams); a
+      -- `from` trails the type with the value width-aware after it (by/do
+      -- values glue the same way). Trivia in the joined zones (kw trailing,
+      -- from trivia, value leading) has no seam — bail.
+      let some ty := args[1]? | return (← verbatim stx)
+      let some rhs := args[2]? | return (← verbatim stx)
+      let kw := (bareSrc args[0]!).trimAscii.toString
+      let kw := if kw.isEmpty then "show" else kw
+      if !(((Lean4Fmt.Syntax.trailing? args[0]!).getD "").trimAscii.toString.isEmpty) then
+        return (← verbatim stx "show-head-comment")
+      let width := (← read).layout.lineWidth
+      let tyD ← (do
+        match Lean4Fmt.Emit.tokenJoinFlat? ty with
+        | some t =>
+          if !t.isEmpty && !t.any (· == '\n') && t.length + 12 ≤ width then
+            pure (some (Doc.text t))
+          else pure none
+        | none => pure (none : Option Doc))
+      let some tyD := tyD | return (← verbatim stx "show-type-shape")
+      if rhs.getKind == `Lean.Parser.Term.byTactic'
+          || rhs.getKind == ``Lean.Parser.Term.byTactic then
+        if !(((Lean4Fmt.Syntax.leading? rhs).getD "").trimAscii.toString.isEmpty) then
+          return (← verbatim stx "show-by-lead-comment")
+        let bd ← walk rhs
+        let layout := .text (kw ++ " ") ++ tyD ++ .text " " ++ bd
+        if Lean4Fmt.Doc.hasMidlineReanchor layout then
+          return (← verbatim stx "show-by-shape")
+        return layout
+      if rhs.getKind == ``Lean.Parser.Term.fromTerm then
+        let ra := rhs.getArgs
+        let fromA := ra[0]?.getD .missing
+        let fromT := (bareSrc fromA).trimAscii.toString
+        let fromT := if fromT.isEmpty then "from" else fromT
+        let v := ra[1]?.getD .missing
+        for t in [(Lean4Fmt.Syntax.leading? fromA).getD "",
+            (Lean4Fmt.Syntax.trailing? fromA).getD "",
+            (Lean4Fmt.Syntax.leading? v).getD ""] do
+          if !t.trimAscii.toString.isEmpty then
+            return (← verbatim stx "show-from-comment")
+        let vd ← walk v
+        let glue := v.getKind == ``Lean.Parser.Term.do
+          || v.getKind == ``Lean.Parser.Term.byTactic
+        let layout : Doc :=
+          if glue then .text (kw ++ " ") ++ tyD ++ .text (" " ++ fromT ++ " ") ++ vd
+          else .group (.text (kw ++ " ") ++ tyD ++ .text (" " ++ fromT)
+            ++ .nest 2 (.line ++ vd))
+        if Lean4Fmt.Doc.hasMidlineReanchor layout then
+          return (← verbatim stx "show-from-shape")
+        return layout
+      return (← verbatim stx "show-rhs-shape")
     else if kind == ``Lean.Parser.Term.proj then
       -- obj "." field   (args[0]=obj, args[1]=".", args[2]=field)
       return (← walk args[0]!) ++ .text "." ++ (← walk (args[2]?.getD .missing))

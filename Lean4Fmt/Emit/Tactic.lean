@@ -286,6 +286,31 @@ private partial def lineWords?
       i := i + 1
     return some out
 
+/-- Find the `using <term>` tail of a simpa-family tactic (a null node
+    `["using"/"using!", term]`, searched shallowly), returning the tactic with
+    the TERM pruned (the `using` atom stays) and the term itself. `none` when
+    no such tail exists. -/
+private partial def pruneUsing?
+                    (s : Lean.Syntax)
+                    : Option (Lean.Syntax × Lean.Syntax) :=
+
+  match s with
+  | .node info k args =>
+    Id.run do
+      for h : i in [0:args.size] do
+        let c := args[i]
+        if c.getKind == `null && c.getArgs.size == 2 then
+          if let .atom _ v := c.getArgs[0]! then
+            if v.startsWith "using" then
+              let term := c.getArgs[1]!
+              let pruned := Lean.Syntax.node info k (args.set! i (Lean.mkNullNode #[c.getArgs[0]!]))
+              return some (pruned, term)
+        match pruneUsing? c with
+        | some (pc, t) => return some (Lean.Syntax.node info k (args.set! i pc), t)
+        | none => pure ()
+      return none
+  | _ => none
+
 /-- Join line words with single spaces. -/
 private def joinWords
             (ws : Array Doc)
@@ -349,8 +374,15 @@ def emit
     if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
     let kwT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
     let tDoc ← walk a[1]!
-    if Lean4Fmt.Doc.hasMultilineVerbatim tDoc then return (← Lean4Fmt.Emit.verbatim stx)
-    return .text kwT ++ .group (.nest 2 (.line ++ tDoc))
+    -- a bare whole-verbatim term gains nothing (and would move the author's
+    -- glued head to an own-line break); an ACTIVE doc whose interior
+    -- verbatims sit at hardline seams re-anchors deterministically — the
+    -- precise hazard is a mid-line glue in the assembled layout
+    let layout : Doc := .text kwT ++ .group (.nest 2 (.line ++ tDoc))
+    if (match tDoc with | .verbatim _ _ => true | _ => false)
+        || Lean4Fmt.Doc.hasMidlineReanchor layout then
+      return (← Lean4Fmt.Emit.verbatim stx)
+    return layout
   else if kind == ``Lean.Parser.Tactic.rwSeq then
     -- ["rw", optConfig, rwRuleSeq ["[", rules, "]"], location?]
     if Lean4Fmt.Syntax.interiorHasLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
@@ -492,6 +524,7 @@ def emit
     return headDoc ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
   else if kind == ``Lean.Parser.Tactic.simp || kind == ``Lean.Parser.Tactic.simpAll
       || kind == `Lean.Parser.Tactic.dsimp || kind == `Lean.Parser.Tactic.simpa
+      || kind == `Lean.Parser.Tactic.simpaUsingBang
       || kind == `Lean.Parser.Tactic.tacticRwa__
       || kind == `Mathlib.Tactic.tacticSimp_rw___ then
     -- simp family + rwa: tokens on one line, bracket lists as width-aware
@@ -500,10 +533,24 @@ def emit
     -- a multi-line tail AFTER the bracket list (`simpa […] using <multi-line
     -- term>`) must not naive-join: the space-join spaced a projection dot
     -- and the reparse minted an anonymous field (gate-caught on mathlib
-    -- Determinant, tokens). Until the tail is walked, such tails ride
-    -- verbatim; a multi-line bracket LIST alone still breaks via commaList.
+    -- Determinant, tokens). The `using` TERM instead WALKS, glued
+    -- exact-style after the joined head (lineWords? on the pruned tactic
+    -- still refuses any OTHER multi-line piece); a bare-verbatim or
+    -- mid-line-hazard term keeps the whole tactic verbatim.
     if ((Lean4Fmt.Emit.bareSrc stx).splitOn "]").getLast!.any (· == '\n') then
-      return (← Lean4Fmt.Emit.verbatim stx)
+      let some (pruned, term) := pruneUsing? stx
+        | return (← Lean4Fmt.Emit.verbatim stx)
+      if !(Lean4Fmt.Emit.bareSrc term).any (· == '\n') then
+        return (← Lean4Fmt.Emit.verbatim stx)
+      let some ws := lineWords? pruned ((← read).breaking.listFill)
+        | return (← Lean4Fmt.Emit.verbatim stx)
+      if ws.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
+      let tDoc ← walk term
+      let layout := joinWords ws ++ .group (.nest 2 (.line ++ tDoc))
+      if (match tDoc with | .verbatim _ _ => true | _ => false)
+          || Lean4Fmt.Doc.hasMidlineReanchor layout then
+        return (← Lean4Fmt.Emit.verbatim stx)
+      return layout
     match lineWords? stx ((← read).breaking.listFill) with
     | some ws => if ws.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
                  else return joinWords ws

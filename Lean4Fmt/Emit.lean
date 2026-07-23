@@ -130,6 +130,7 @@ partial def walkCore
          || kind == ``Lean.Parser.Tactic.simpAll
          || kind == `Lean.Parser.Tactic.dsimp
          || kind == `Lean.Parser.Tactic.simpa
+         || kind == `Lean.Parser.Tactic.simpaUsingBang
          || kind == `Lean.Parser.Tactic.tacticRwa__
          || kind == `Lean.Parser.Tactic.first
          || kind == `Lean.Parser.Tactic.match
