@@ -201,7 +201,13 @@ private def armSeqDoc?
   let some groups := (if conv then convGroups? seq else tacticGroups? seq) | return none
   if groups.size == 1 then
     let lead := (Lean4Fmt.Syntax.leading? groups[0]![0]!).getD ""
-    let plainLead := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
+    -- blank-only intervening lines are LAYOUT (seqGroupsDoc drops them, re-adds
+    -- the style's own break) — they must NOT divert a single clean group off the
+    -- inline path. If they did, the dropped blank flips the flatten decision
+    -- pass-to-pass: break (blank present ⇒ flatWidth none), blank gone, then
+    -- inline — a 2-step convergence the 1-step gate rejects. A COMMENT line is
+    -- content and still forces the structural (broken) placement below.
+    let plainLead := (((lead.splitOn "\n").drop 1).dropLast).all (·.trimAscii.toString.isEmpty)
     let srcInline := !lead.any (· == '\n')
     if plainLead && (!(← read).breaking.preserveLineBreaks || srcInline) then
       let some tDoc ← groupDoc? walk groups[0]! | return none
