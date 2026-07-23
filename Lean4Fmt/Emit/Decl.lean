@@ -19,6 +19,7 @@ import Lean4Fmt.Emit.Tokens
 import Lean4Fmt.Emit.Binders
 import Lean4Fmt.Emit.Command
 import Lean4Fmt.Syntax.Kinds
+import Lean4Fmt.Solve.Layout
 
 namespace Lean4Fmt.Emit.Decl
 
@@ -762,11 +763,15 @@ private def defnDoc
       (fun v => ((Lean4Fmt.Syntax.leading? v).getD "").any (· == '\n'))).getD
       false
   let fitW := Nat.min w (← read).layout.bodyFitWidth
+  -- the whole-decl inline width test, routed through the constraint solver
+  -- when `solveDefs` is on (byte-identical on flat sigs — see `inlineDefFits`)
+  let fits :=
+    if (← read).breaking.solveDefs then Lean4Fmt.Solve.inlineDefFits fitW total else total ≤ fitW
   let inlineOk :=
     if preserveLB then
       noComment && vFlat.isSome && typeOK && !srcValBroken && !alwaysBreak
     else
-      noComment && vFlat.isSome && typeOK && total ≤ fitW && !alwaysBreak
+      noComment && vFlat.isSome && typeOK && fits && !alwaysBreak
   if inlineOk then
     let typeInline : Doc :=
       if sigExact?.isSome then

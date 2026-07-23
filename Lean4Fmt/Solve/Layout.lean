@@ -372,4 +372,29 @@ def fxAll : List DefPieces := [fxFindUpstream, fxFindIdle, fxDial]
 #guard (solve 200 (defLadder fxFindUpstream)).map Meas.cost == some 0
 #guard (solve 100 (defLadder fxFindUpstream)).map Meas.cost == some 2
 
+-- ── G-L3: the live def-path decision (byte-identical wiring) ────────────────
+
+/-- Route a def's INLINE-vs-BREAK decision through the solver: the whole-decl
+    inline rung (sig + body on one line, measured width `total`) against an
+    always-feasible break rung, selected by `bestUnder` — the hard-width filter
+    then the cost argmin, the solver's own selection kernel. Picks inline iff it
+    fits, so on a FLAT sig (feasibility is the whole story, greedy meets the
+    optimum) it reproduces `total ≤ W` exactly — now COMPUTED by the measure
+    algebra, live on the Emit path. The seam G-L4 widens: add the oneLine/fill
+    rungs and real preference weights, and this same `bestUnder` starts choosing
+    among them. -/
+def inlineDefFits
+    (W total : Nat)
+    : Bool :=
+
+  let inlineRung : Meas := { lines := [(total, "")], cost := 0 } -- maxw = total, preferred
+  let breakRung : Meas := { lines := [(0, "")], cost := 2 } -- maxw = 0, always feasible
+  (bestUnder W [inlineRung, breakRung]).map Meas.cost == some 0
+
+-- byte-identical to the `total ≤ width` test it replaces, across the boundary
+#guard inlineDefFits 100 80 == true -- fits → inline
+#guard inlineDefFits 100 100 == true -- exact fit → inline
+#guard inlineDefFits 100 101 == false -- over → break
+#guard (List.range 220).all (fun t => inlineDefFits 100 t == decide (t ≤ 100)) -- ≡ (total ≤ W)
+
 end Lean4Fmt.Solve

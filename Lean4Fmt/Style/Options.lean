@@ -125,6 +125,12 @@ structure Breaking where
       (the mathlib shape); off = the all-or-nothing commaList (one item per
       line when broken). -/
   listFill : Bool := false
+  /-- Route a `def`'s inline-vs-break layout decision through the constraint
+      solver (`Solve.Layout`) — the measure-algebra `bestUnder` (hard-width
+      filter then cost argmin) instead of an ad-hoc width test. Byte-identical
+      on flat sigs today (feasibility is the whole story); the seam the rung
+      ladder + preference weights widen. Off = the classic `total ≤ width`. -/
+  solveDefs : Bool := false
   deriving Repr, Inhabited
 
 structure Alignment where

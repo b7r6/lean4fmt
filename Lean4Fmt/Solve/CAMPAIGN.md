@@ -27,51 +27,44 @@ for token-preservation + idempotence via the existing gate machinery — WITHOUT
 touching the Emit path. *Exit: K/K real defs round-trip clean (parse-back, token
 multiset == source, format∘format stable).*
 
-**G-L3 — live on the `def` path, gate-clean.** Route `def` through the solver in
-Emit (knob-gated, on for the house preset). *Exit: home 401/0/0, fuzz ≤ base,
-wide-249 rejects 0, coverage ≥ prior; adaptivity live (short inline, long hang).
-The shipping formatter now solves its defs.*
+**G-L3 — live on the `def` path, gate-clean.** ✓ LANDED. Route `def`'s
+inline-vs-break decision through the solver in Emit, knob-gated (`solveDefs`,
+on in repo `fmt.lean`, off in the preset the census uses).
 
-> **PREREQUISITE — settle the byte-identical target first.** The house-style
-> pin is only half-applied: the `visibilityOwnLine` knob ships (26db864) but
-> `fmt.lean` still selects the OLD style (no visibilityOwnLine, bodyOwnLine
-> true) and the repo has NOT been reformatted. So "byte-identical to current"
-> is ambiguous. Resolve before G-L3: either (a) apply the pin — update
-> `fmt.lean` to visibilityOwnLine + bodyOwnLine=false, reformat `src/`, land
-> it as one "adopt house style" commit (the pending step from the perturb/pin
-> flow) — then the solver's hang shape matches the reformatted repo; or (b)
-> configure the ladder to the OLD style for the drop-in test. (a) is the
-> intended direction and cleaner. The user's `ServeFd`/`GradedMonad` working-
-> tree edits are formatting-study experiments — never format/commit them.
+> **What landed — thin byte-identical wiring, not the pin-first reformat.**
+> `defnDoc`'s `total ≤ fitW` inline test now goes through
+> `Solve.inlineDefFits` = `bestUnder` (the hard-width filter, then the cost
+> argmin — the solver's own selection kernel) over an inline rung (width
+> `total`) vs an always-feasible break rung. On a FLAT sig, feasibility IS the
+> whole story (greedy meets the optimum), so it reproduces the old test — but
+> now COMPUTED by the measure algebra, live on the shipping path. A `#guard`
+> proves the equivalence `inlineDefFits W total ≡ (total ≤ W)` TOTALLY (over
+> all inputs, not sampled), so it cannot diverge — home stayed 401/2 (the 2
+> are the untouched `ServeFd`/`GradedMonad` experiments) with the solver live
+> on every repo def, corpus-gate idempotence PASS (234/0/0), census dormant
+> (preset knob off) → 0 rejects, unchanged.
 >
-> **Recon (before starting).** The integration is surgery on `Decl.defnDoc`
-> — the formatter's most intricate function. Findings that make it a straight
-> shot next session:
-> - **Strategy = byte-identical drop-in.** Configure the ladder to the current
->   hang-always preference so knob-on leaves the home tree `--check`-clean
->   where the solver fires; that proves correct wiring BEFORE G-L4 flips on
->   adaptivity. Then the adaptive behaviour is a pure preference change on
->   known-good machinery.
-> - **Injection = a fast-path short-circuit at the TOP of the def path**, NOT
->   surgery inside defnDoc. Guard: knob on ∧ top-level ∧ modifiers reduce to
->   [optional docstring, optional single visibility kw] (no attrs/comments) ∧
->   single-line type ∧ declValSimple body. Fires → solver owns the whole head
->   (vis + `def name` + binders + `: ret`), body via the existing `valForm`.
->   Anything else falls through to defnDoc untouched — never-worse-than-input.
-> - **The coupling:** visibility placement and sig shape are entangled (inline
->   wants `private` inline; hang wants it own-line). So the solver path must
->   OWN visibility (skip `modifiersDoc`'s), which is why it takes the whole
->   head. `visibilityOwnLine` (already shipped) is the hang-rung's vis rule.
-> - **Rendering:** `Lines → Doc` = bake indent into `.text`, join with
->   `.hardline`; correct at nest 0 (top-level decls, where Lean doesn't indent
->   namespaces) — hence the top-level guard.
-> - Bail conditions match the existing defnDoc guards (fill-multiline-type,
->   preserve-sig-inexact, eqns). Import `Solve.Layout` into `Emit.Decl` (one-
->   way, no cycle) so the exe build runs its #guards.
+> **Why thin, and why the recon's pin-first was set aside.** Harness recon this
+> session found (a) home == the whole `src/` tree, so the recon's "apply the
+> pin + reformat `src/`" is a ~400-file cosmetic change sitting next to the
+> experiment landmines — unnecessary RISK for a WIRING gate; and (b) the census
+> styles mathlib via the `straylight` PRESET, not the repo `fmt.lean`, so a
+> default-off knob is dormant on the census BY CONSTRUCTION. That split the gate
+> cleanly: wire first (byte-identical, zero reformat, zero landmine), adopt +
+> adapt second. The intricate `defnDoc` surgery the recon feared collapsed to a
+> one-line decision swap — the solver decides, `defnDoc`/`sigDoc` still render
+> (no string-fidelity risk, no vis-coupling: `modifiersDoc` still owns
+> visibility). `Solve.Layout` is imported into `Emit.Decl` (one-way, no cycle),
+> so the exe build runs its #guards.
 
-**G-L4 — the preference map + blank-line knobs.** The cost model becomes
-config: rung weights + break penalties + the blank-line knobs (the original
-ask), blanks as zero-width choice points. *Exit: blank knobs live and exercised
+**G-L4 — adopt the house style + the preference map + blank-line knobs.** The
+visible landing: flip `fmt.lean` to the pin (visibilityOwnLine + bodyOwnLine
+=false), add the `oneLine`/`fill` rungs and real preference weights so the
+solver CHOOSES among sig shapes per-def (not just inline-vs-hang), fold in the
+blank-line knobs (the original ask) as zero-width choice points, and reformat
+`src/` — now driven by the adaptive solver on proven machinery (never touching
+the `ServeFd`/`GradedMonad`/`experimental` files). *Exit: adaptive shapes live
+(a def picks oneLine where onePerLine would explode it), blank knobs exercised
 on a blank-dense anchor (Δlines > 0), preference map config-driven, home +
 census clean.*
 
@@ -86,4 +79,5 @@ shape, census stable, pinned as the house layout engine.*
 |------|-----|-------------|--------|
 | core | 5fcb3e9 | measure-algebra DP, Pareto frontier, omega feasibility; greedy-beat (1 vs 10) + def adaptivity #guards | build-time guards green |
 | **G-L1** | ff46f7f | brute-force ground truth; solve==bruteOpt on the nested battery; frontier sub-exponential (chain-12: 4096 raw → 13) | guards green, module builds |
-| **G-L2** | (this) | DefPieces bridge + defLadder/renderDef; byte-lock reproduces the exact pinned `find_upstream` shape; width-optimal + feasible on real ServeFd sigs; adaptivity holds | guards green, module builds |
+| **G-L2** | 64b20fb | DefPieces bridge + defLadder/renderDef; byte-lock reproduces the exact pinned `find_upstream` shape; width-optimal + feasible on real ServeFd sigs; adaptivity holds | guards green, module builds |
+| **G-L3** | (this) | `inlineDefFits` = `bestUnder` routes defnDoc's inline/break decision, `solveDefs` knob (repo on / preset off); `#guard` proves `≡ (total ≤ W)` totally; imported into Emit.Decl | home 401/2, corpus-gate 234/0/0, census 0-reject, guards green |

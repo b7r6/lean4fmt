@@ -135,6 +135,7 @@ def applyEntry
   | "breaking.ctorsOneLine" => pure { s with breaking.ctorsOneLine := ← asBool e }
   | "breaking.glueFun" => pure { s with breaking.glueFun := ← asBool e }
   | "breaking.listFill" => pure { s with breaking.listFill := ← asBool e }
+  | "breaking.solveDefs" => pure { s with breaking.solveDefs := ← asBool e }
   | "breaking.opBreak" =>
     match OpBreak.ofString? e.val with
     | some v => pure { s with breaking.opBreak := v }
