@@ -767,7 +767,7 @@ def emit
     if !((Lean4Fmt.Syntax.trailing? a[1]!).getD "").trimAscii.toString.isEmpty then
       return (← Lean4Fmt.Emit.verbatim stx)
     let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? a[2]!).getD "")
-      | return (← Lean4Fmt.Emit.verbatim stx)
+        | return (← Lean4Fmt.Emit.verbatim stx)
     return .text (preT ++ " in") ++ sep ++ (← walk a[2]!)
   if kind != ``Lean.Parser.Command.mutual then
     return (← Lean4Fmt.Emit.verbatim stx)
@@ -800,7 +800,7 @@ def emit
       return (← Lean4Fmt.Emit.verbatim stx)
     body := body ++ sep ++ dDoc ++ trailDoc
   let some endSep := leadingSep? ((Lean4Fmt.Syntax.leading? a[2]!).getD "")
-    | return (← Lean4Fmt.Emit.verbatim stx)
+      | return (← Lean4Fmt.Emit.verbatim stx)
   return .text "mutual" ++ .nest 2 body ++ endSep ++ .text "end"
 
 end Lean4Fmt.Emit.Command

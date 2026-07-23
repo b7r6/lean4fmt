@@ -241,8 +241,6 @@ def emit
     if [mutT, cfgT, patT, asgnT].any (fun t => t.any (· == '\n')) || patT.isEmpty
         || asgnT.isEmpty then
       return (← Lean4Fmt.Emit.verbatim stx)
-    if !((Lean4Fmt.Emit.bareSrc a[8]!).trimAscii.toString.isEmpty) then
-      return (← Lean4Fmt.Emit.verbatim stx)
     let vdoc ← walk a[5]!
     if (match vdoc with | .verbatim _ _ => true | _ => false) then
       return (← Lean4Fmt.Emit.verbatim stx)
@@ -257,7 +255,32 @@ def emit
     let valPart : Doc :=
       if glue then .text (head ++ " ") ++ vdoc
       else .text head ++ .group (.nest 2 (.line ++ vdoc))
-    let layout := valPart ++ .nest 4 (.hardline ++ .text "| " ++ eDoc)
+    -- a[8] carries the CONTINUATION of the do block (the let-else scopes the
+    -- rest): emit it through the statement loop at the let's own column
+    let contD : Doc ← do
+      match a[8]!.getArgs[0]? with
+      | some seq =>
+        if (Lean4Fmt.Emit.bareSrc seq).trimAscii.toString.isEmpty then pure Doc.nil
+        else
+          let some ss2 := stmts? seq | return (← Lean4Fmt.Emit.verbatim stx)
+          match ← seqLinesDoc? walk ss2 true with
+          | some body => pure body
+          | none => return (← Lean4Fmt.Emit.verbatim stx)
+      | none => pure Doc.nil
+    -- width decides flat vs broken (the house one-liner
+    -- `let some b := b? | return fallback` stays flat when it fits)
+    let flatTotal : Option Nat := do
+      let wv ← Lean4Fmt.Doc.flatWidth vdoc
+      let we ← Lean4Fmt.Doc.flatWidth eDoc
+      pure (head.length + 1 + wv + 3 + we)
+    let width := (← read).layout.lineWidth
+    let layout :=
+      match flatTotal with
+      | some t =>
+        if t + 4 ≤ width then
+          .text (head ++ " ") ++ .flatten vdoc ++ .text " | " ++ .flatten eDoc ++ contD
+        else valPart ++ .nest 4 (.hardline ++ .text "| " ++ eDoc) ++ contD
+      | none => valPart ++ .nest 4 (.hardline ++ .text "| " ++ eDoc) ++ contD
     if Lean4Fmt.Doc.hasMidlineReanchor layout then
       return (← Lean4Fmt.Emit.verbatim stx)
     return layout

@@ -267,8 +267,12 @@ private partial def lineWords?
           j := j + 1
         let some jc := close | return none
         let some items := listItems? (a.extract (i + 1) jc) | return none
-        out := out.push (if fill then Lean4Fmt.Doc.fillList "[" "]" items
-          else Lean4Fmt.Doc.commaList "[" "]" items)
+        out :=
+          out.push
+            (if fill then
+              Lean4Fmt.Doc.fillList "[" "]" items
+            else
+              Lean4Fmt.Doc.commaList "[" "]" items)
         i := jc + 1
         continue
       let t := (Lean4Fmt.Emit.bareSrc c).trimAscii.toString

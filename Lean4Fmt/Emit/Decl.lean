@@ -683,14 +683,19 @@ private def defnDoc
   let preserve := (← read).spacing.preserveBinders
   let preserveLB := (← read).breaking.preserveLineBreaks
   let sigGap := if ((a[1]?.bind Lean4Fmt.Syntax.trailing?).getD " ").isEmpty then "" else " "
-  let sigExact? : Option String := Id.run do
-    if !preserve then return none
-    let some ss := sigStx | return some ""
-    let t := (bareSrc ss).trimAscii.toString
-    if t.isEmpty then return some ""
-    if t.any (· == '\n') then return none
-    if Lean4Fmt.Syntax.countSubtreeLineComments ss > 0 then return none
-    return some t
+  let sigExact? : Option String :=
+    Id.run do
+      if !preserve then
+        return none
+      let some ss := sigStx | return some ""
+      let t := (bareSrc ss).trimAscii.toString
+      if t.isEmpty then
+        return some ""
+      if t.any (· == '\n') then
+        return none
+      if Lean4Fmt.Syntax.countSubtreeLineComments ss > 0 then
+        return none
+      return some t
   -- preserve + multi-line signature: the author's sig breaks are not held by
   -- the active layout — whole-decl byte-exact
   if preserve && sigExact?.isNone then
@@ -973,8 +978,7 @@ private def whereBodyDoc?
     if !last && trailT.any (· == '\n') then
       return none
     let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-    let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? f).getD "")
-      | return none
+    let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? f).getD "") | return none
     let some d ← whereFieldDoc? walk f | return none
     body := body ++ sep ++ d ++ trailDoc
   -- n == 0 is the EMPTY where (`instance … : T where` — every field
