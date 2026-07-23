@@ -762,13 +762,32 @@ private def whereFieldDoc?
   let rest := fa[1]!.getArgs
   let mut head := lvalT
   let mut fd : Option Lean.Syntax := none
+  let mut eqns : Option Lean.Syntax := none
   for c in rest do
     if c.getKind == ``Lean.Parser.Term.structInstFieldDef then fd := some c
+    else if c.getKind == ``Lean.Parser.Term.structInstFieldEqns then eqns := some c
     else
       let t := Lean4Fmt.Emit.canonTok c
       if t.any (· == '\n') then
         return none
       if !t.isEmpty then head := head ++ " " ++ t
+  if let some e := eqns then
+    -- pattern-matching field (`le_sup_left | lift a, lift b => …` — no
+    -- `:=`, the mathlib instance-shape dominator): the shared arm loop
+    -- lays the alternatives one per line at +2 under the field head
+    if fd.isSome then
+      return none
+    if Lean4Fmt.Syntax.countSubtreeLineComments f >
+        Lean4Fmt.Syntax.countLineComments
+          ((Lean4Fmt.Syntax.lastTokenTrailing? f).getD "") then
+      return none
+    let alts := Lean4Fmt.Emit.matchAltsOf e
+    if alts.isEmpty then
+      return none
+    let some pieces ← Lean4Fmt.Emit.armPieces? walk alts | return none
+    let al := (← read).alignment
+    return some (.text head
+      ++ .nest 2 (Lean4Fmt.Emit.armsAlignedRuns al.matchArms al.maxDelta pieces))
   let some fdef := fd | return none
   let da := fdef.getArgs
   let some v := da[da.size - 1]? | return none

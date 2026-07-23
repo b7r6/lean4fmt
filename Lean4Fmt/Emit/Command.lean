@@ -378,9 +378,12 @@ private def fieldDoc?
         -- (keeps the item grid-able and the passes shape-stable); otherwise
         -- walk it (forall/arrow chains lay out)
         let w := (← read).layout.lineWidth
+        -- the real prefix: indent + mods + name + binders + " : "
+        let prefixLen := 2 + modsT.length + nameT.length
+          + (parts.foldl (fun s p => s + 1 + p.length) 0) + 3
         match Lean4Fmt.Emit.tokenJoinFlat? tyStx with
         | some ft =>
-          if ft.length + 12 ≤ w then pure (some ft)
+          if prefixLen + ft.length ≤ w then pure (some ft)
           else
             let d ← walk tyStx
             if Lean4Fmt.Doc.hasMultilineVerbatim d then return none
@@ -433,7 +436,18 @@ private def fieldDoc?
               | none   => ""))
             ++ dd)
     | none, none => none
-  let docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
+  -- comment LINES between the docstring/modifiers and the field name (the
+  -- mathlib Porting-note zone): full `--` lines re-emitted in order between
+  -- the docstring and the field line; anything else in that zone bails
+  let nameLead := ((Lean4Fmt.Syntax.leading? a[1]!).getD "")
+  let zoneLines :=
+    (((nameLead.splitOn "\n").drop 1).dropLast.map (fun l => l.trimAscii.toString)).filter
+      (fun l => !l.isEmpty)
+  if !zoneLines.all (fun l => l.startsWith "--") then
+    return none
+  let mut docD : Doc := if docT.isEmpty then .nil else .textRaw docT ++ .hardline
+  for l in zoneLines do
+    docD := docD ++ .text l ++ .hardline
   return some (docD, nameSeg, restSeg, line, lineDoc?)
 
 /-- Active layout for a `structure`/`class` declaration (WITHOUT its modifiers —
@@ -507,7 +521,16 @@ def structureDoc?
   let mut items : Array Item := #[]
   for h : i in [0:fields.size] do
     let f := fields[i]
-    if Lean4Fmt.Syntax.interiorHasLineComment f then return none
+    -- interior comments: the docstring→name zone is placeable (fieldDoc?
+    -- re-emits those lines); any OTHER interior comment bails
+    let zoneCnt := Lean4Fmt.Syntax.countLineComments
+      ((Lean4Fmt.Syntax.leading? (f.getArgs[1]?.getD .missing)).getD "")
+    if Lean4Fmt.Syntax.countSubtreeLineComments f >
+        Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? f).getD "")
+          + Lean4Fmt.Syntax.countLineComments
+              ((Lean4Fmt.Syntax.lastTokenTrailing? f).getD "")
+          + zoneCnt then
+      return none
     let trailT := ((Lean4Fmt.Syntax.trailing? f).getD "").trimAscii.toString
     let last := i + 1 == fields.size
     let owned := !last || hasDer
