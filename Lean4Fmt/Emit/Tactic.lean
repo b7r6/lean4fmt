@@ -436,18 +436,22 @@ def emit
       else Lean4Fmt.Doc.commaList "[" "]" ds
     return .text "rw " ++ listD ++ locD
   else if kind == ``Lean.Parser.Tactic.tacticHave__
-      || kind == `Lean.Parser.Tactic.tacticLet__ then
-    -- ["have"/"let", letConfig, letDecl] — the doLet shape minus `mut`; the
-    -- letDecl walks through the existing 5-slot machinery. NO blanket
+      || kind == `Lean.Parser.Tactic.tacticLet__
+      || kind == `Lean.Parser.Tactic.tacticHaveI__
+      || kind == `Lean.Parser.Tactic.tacticLetI__
+      || kind == ``Lean.Parser.Tactic.replace then
+    -- ["have"/"let"/"haveI"/"letI", letConfig, letDecl] — the doLet shape
+    -- minus `mut` (`replace` is the same minus letConfig); the letDecl walks
+    -- through the existing 5-slot machinery. NO blanket
     -- comment bail (the over-guard class): a `:= by` value's interior
     -- comments live at sequence seams the by machinery owns; comment-bearing
     -- HEADS go multi-line under canonTok and bail below; anything unowned
     -- is the comments gate's to catch (fallback, never damage).
-    if a.size != 3 then return (← Lean4Fmt.Emit.verbatim stx)
+    if a.size != 3 && a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
     let kwT := (Lean4Fmt.Emit.bareSrc a[0]!).trimAscii.toString
-    let cfgT := Lean4Fmt.Emit.canonTok a[1]!
+    let cfgT := if a.size == 3 then Lean4Fmt.Emit.canonTok a[1]! else ""
     if cfgT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-    let dDoc ← walk a[2]!
+    let dDoc ← walk a[a.size - 1]!
     -- trust the letDecl path's OWN guards: a glued-by value's interior
     -- verbatims sit at sequence seams (an undispatched multi-line tactic
     -- inside `have h : T := by …` wrongly killed the whole have via the old

@@ -326,28 +326,45 @@ def emit
       -- Algebraize, comments class). Whole-match verbatim keeps it.
       if (((Lean4Fmt.Syntax.leading? alt).getD "").splitOn "/-").length > 1 then
         return (← Lean4Fmt.Emit.verbatim stx "doMatch-arm-block-comment")
+    -- arm-LEADING line comments place via the seam kit (leadingSep? — the
+    -- armPieces? treatment; the Algebraize `-- explains next arm` shape);
+    -- comment accounting: every line comment must sit inside an arm's
+    -- sequence, in an arm's now-placed leading, or in the match's own lead
     let seqCmts := alts.foldl
       (fun n alt => n + Lean4Fmt.Syntax.countSubtreeLineComments (alt.getArgs[3]!)) 0
+    let armLeadCmts := alts.foldl
+      (fun n alt =>
+        n + Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? alt).getD "")) 0
     let ownLead := Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? stx).getD "")
-    if Lean4Fmt.Syntax.countSubtreeLineComments stx != seqCmts + ownLead then
+    if Lean4Fmt.Syntax.countSubtreeLineComments stx != seqCmts + armLeadCmts + ownLead then
       return (← Lean4Fmt.Emit.verbatim stx)
     let mut d : Doc := .text head
     for h : i in [0:alts.size] do
       let aa := alts[i].getArgs
-      let patDoc ← walk aa[1]!
-      if Lean4Fmt.Doc.hasMultilineVerbatim patDoc then return (← Lean4Fmt.Emit.verbatim stx)
+      let mut patDoc ← walk aa[1]!
+      let mut patBroken := false
+      if Lean4Fmt.Doc.hasMultilineVerbatim patDoc then
+        -- the alternative-pattern stack (the ApplyFun `| (A, _)\n| (B, _) =>`
+        -- shape) rebuilds; anything else keeps the whole match verbatim
+        match ← Lean4Fmt.Emit.altPatternStack? aa[1]! Lean4Fmt.Emit.tokenJoinFlat? with
+        | some (pd, broken) =>
+          patDoc := pd
+          patBroken := broken
+        | none => return (← Lean4Fmt.Emit.verbatim stx)
       let some bD ← branchDoc? walk aa[3]! (i + 1 == alts.size)
         | return (← Lean4Fmt.Emit.verbatim stx)
       let armSrc := (Lean4Fmt.Emit.bareSrc alts[i]).trimAscii.toString
       let armD : Doc :=
         if (← read).breaking.preserveLineBreaks && !armSrc.isEmpty
-            && !armSrc.any (· == '\n') then
+            && !armSrc.any (· == '\n') && !patBroken then
           .text armSrc
         else
           let arrowT := (Lean4Fmt.Emit.bareSrc (aa[2]?.getD .missing)).trimAscii.toString
           let arrowT := if arrowT.isEmpty then "=>" else arrowT
           .text "| " ++ patDoc ++ .text (" " ++ arrowT) ++ bD
-      d := d ++ .hardline ++ armD
+      let some sep := Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? alts[i]).getD "")
+        | return (← Lean4Fmt.Emit.verbatim stx)
+      d := d ++ sep ++ armD
     return d
   else if kind == ``Lean.Parser.Term.doFor || kind == `Lean.Parser.Term.doWhile
       || kind == `Lean.Parser.Term.doUnless then

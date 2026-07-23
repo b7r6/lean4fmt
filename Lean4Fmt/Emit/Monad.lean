@@ -264,21 +264,89 @@ def matchAltsOf
         if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
     return alts
 
+/-- The ALTERNATIVE-pattern stack rebuild (`| p₁\n| p₂\n| p₃ => body` — the
+    Abel shape): split the arm's pattern null on its top-level `|` atoms,
+    each alternative JOINS flat (parse-derived — `joinFlat?` refuses comments
+    and newline-semantic interiors); whole set flat when the joined spelling
+    fits (flatten-first), else one alternative per line at the arm's own `|`
+    column (hardline = the arm's seam, mathlib's stack). Returns the pattern
+    doc plus whether it broke (a broken set is grid-ineligible); `none` when
+    the set is not this shape (the caller keeps its verbatim fallback). Pops
+    the pattern's stale opt-out entry on success (the walk-interception
+    rule). -/
+def altPatternStack?
+    (patStx : Lean.Syntax)
+    (joinFlat? : Lean.Syntax → Option String)
+    : EmitM (Option (Doc × Bool)) := do
+
+  let width := (← read).layout.lineWidth
+  let flushG :=
+    fun (g : Array Lean.Syntax) =>
+      Id.run do
+        if g.isEmpty then
+          return none
+        match joinFlat? (Lean.mkNullNode g) with
+        | some t =>
+          if t.isEmpty || t.any (· == '\n') then
+            return none
+          return some t
+        | none => return (none : Option String)
+  let mut groups : Array String := #[]
+  let mut curG : Array Lean.Syntax := #[]
+  let mut ok := true
+  for c in patStx.getArgs do
+    match c with
+    | .atom _ "|" =>
+      -- a comment riding the separator's trivia has no seam here
+      if !(((Lean4Fmt.Syntax.leading? c).getD "").trimAscii.toString.isEmpty
+          && ((Lean4Fmt.Syntax.trailing? c).getD "").trimAscii.toString.isEmpty) then
+        ok := false
+      match flushG curG with
+      | some t => groups := groups.push t
+      | none => ok := false
+      curG := #[]
+    | _ => curG := curG.push c
+  match flushG curG with
+  | some t => groups := groups.push t
+  | none => ok := false
+  if !ok || groups.size < 2 then
+    return none
+  if groups.any (fun g => g.length + 8 > width) then
+    return none
+  let result ← do
+    let joined := " | ".intercalate groups.toList
+    if joined.length + 8 ≤ width then
+      pure ((Doc.text joined), false)
+    else
+      let mut pd : Doc := .text groups[0]!
+      for g in groups.toList.drop 1 do
+        pd := pd ++ .hardline ++ .text ("| " ++ g)
+      pure (pd, true)
+  -- the initial walk logged the pattern null's opt-out, but the rebuilt
+  -- set ships — pop the stale entry
+  let pos := (patStx.getPos?.map (·.byteIdx)).getD 0
+  modify fun ds =>
+    if ds.size > 0 && ds[ds.size - 1]!.pos == pos && ds[ds.size - 1]!.rule == "verbatim" then
+      ds.pop
+    else
+      ds
+  return some result
+
 /-- THE shared arm loop: the `ArmPiece`s of a `| pat => body` arm set —
     `Term.match` arms and the Decl `declValEqns` value are the same shape, and
     this is their one implementation (they drifted as copies once: the
     arrow-spelling fix landed asymmetrically). Per arm: the leading places via
     `leadingSep?`; the arrow spelling comes from SOURCE (`=>` vs mathlib's `↦`
     — the gate's token check rightly refuses a silent rewrite); a `do` body
-    glues to the arrow (its statements bring their own hardline), as does a
-    `by` body carrying a multi-line verbatim (members sit at sequence seams —
-    the poison-relaxation invariant); anything else is width-aware after the
-    arrow. Preserve mode keeps single-line arms byte-exact (hand-padded arrow
-    columns survive). Grid rows only for inline-capable `=>` arms without
-    trailing comments — the aligned grid pads a hardcoded `=>` column, so a
-    `↦` arm opts out. `none` when any arm is unportable (an unowned interior
-    comment, an unownable leading, a mid-set multi-line trailing): the CALLER
-    falls back to its own verbatim span (whole-match / whole-decl). -/
+    glues to the arrow (its statements bring their own hardline), as does any
+    `by` body (`=> by` + tactics below is the canonical arm shape); anything
+    else is width-aware after the arrow. Preserve mode keeps single-line arms
+    byte-exact (hand-padded arrow columns survive). Grid rows only for
+    inline-capable `=>` arms without trailing comments — the aligned grid
+    pads a hardcoded `=>` column, so a `↦` arm opts out. `none` when any arm
+    is unportable (an unowned interior comment, an unownable leading, a
+    mid-set multi-line trailing): the CALLER falls back to its own verbatim
+    span (whole-match / whole-decl). -/
 def armPieces?
     (walk : Walk)
     (alts : Array Lean.Syntax)
@@ -305,57 +373,15 @@ def armPieces?
     -- ws-sensitivity (fixed-point class): a multi-line re-anchoring PATTERN
     -- glued after "| " re-indents by its placement column, which the previous
     -- pass just moved (gate-caught on mathlib Applicative + List/Basic,
-    -- +2/pass). The ALTERNATIVE-pattern stack (`| p₁\n| p₂\n| p₃ => body` —
-    -- the Abel shape) is portable though: split on the top-level `|` atoms,
-    -- each alternative JOINS flat (parse-derived — tokenJoinFlat? refuses
-    -- comments and newline-semantic interiors); whole set flat when the
-    -- joined spelling fits (flatten-first), else one alternative per line at
-    -- the arm's own `|` column (hardline = the arm's seam, mathlib's stack).
-    -- Anything else stays the caller's to verbatim, as before.
+    -- +2/pass). The ALTERNATIVE-pattern stack (the Abel shape) is portable
+    -- though — see altPatternStack?. Anything else stays the caller's to
+    -- verbatim, as before.
     if Lean4Fmt.Doc.hasMultilineReanchor patDoc then
-      let width := (← read).layout.lineWidth
-      let flushG := fun (g : Array Lean.Syntax) => Id.run do
-        if g.isEmpty then return none
-        match joinFlat? (Lean.mkNullNode g) with
-        | some t =>
-          if t.isEmpty || t.any (· == '\n') then return none
-          return some t
-        | none => return (none : Option String)
-      let mut groups : Array String := #[]
-      let mut curG : Array Lean.Syntax := #[]
-      let mut ok := true
-      for c in patStx.getArgs do
-        match c with
-        | .atom _ "|" =>
-          -- a comment riding the separator's trivia has no seam here
-          if !(((Lean4Fmt.Syntax.leading? c).getD "").trimAscii.toString.isEmpty
-              && ((Lean4Fmt.Syntax.trailing? c).getD "").trimAscii.toString.isEmpty) then
-            ok := false
-          match flushG curG with
-          | some t => groups := groups.push t
-          | none => ok := false
-          curG := #[]
-        | _ => curG := curG.push c
-      match flushG curG with
-      | some t => groups := groups.push t
-      | none => ok := false
-      if !ok || groups.size < 2 then return none
-      if groups.any (fun g => g.length + 8 > width) then return none
-      let joined := " | ".intercalate groups.toList
-      if joined.length + 8 ≤ width then
-        patDoc := .text joined
-      else
-        let mut pd : Doc := .text groups[0]!
-        for g in groups.toList.drop 1 do
-          pd := pd ++ .hardline ++ .text ("| " ++ g)
+      match ← altPatternStack? patStx joinFlat? with
+      | some (pd, broken) =>
         patDoc := pd
-        patBroken := true
-      -- the initial walk logged the pattern null's opt-out, but the rebuilt
-      -- set ships — pop the stale entry (the walk-interception rule)
-      let pos := (patStx.getPos?.map (·.byteIdx)).getD 0
-      modify fun ds =>
-        if ds.size > 0 && ds[ds.size - 1]!.pos == pos
-            && ds[ds.size - 1]!.rule == "verbatim" then ds.pop else ds
+        patBroken := broken
+      | none => return none
     let arrowT := (bareSrc (aa[2]?.getD .missing)).trimAscii.toString
     let arrowT := if arrowT.isEmpty then "=>" else arrowT
     let body := aa[aa.size-1]?.getD .missing

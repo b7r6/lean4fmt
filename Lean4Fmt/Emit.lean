@@ -95,6 +95,9 @@ partial def walkCore
          || kind == ``Lean.Parser.Tactic.induction
          || kind == ``Lean.Parser.Tactic.cases
          || kind == ``Lean.Parser.Tactic.tacticHave__
+         || kind == `Lean.Parser.Tactic.tacticHaveI__
+         || kind == `Lean.Parser.Tactic.tacticLetI__
+         || kind == ``Lean.Parser.Tactic.replace
          || kind == `Lean.cdot
          || kind == ``Lean.Parser.Tactic.tacticRfl
          || kind == ``Lean.Parser.Tactic.omega
