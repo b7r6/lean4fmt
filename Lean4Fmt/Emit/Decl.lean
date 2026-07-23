@@ -61,7 +61,11 @@ private def modifiersDoc
       -- otherwise, the ElementaryMaps law). Unownable shapes bailed in
       -- modifiersCommentHazard before we got here.
       let sepOf : String → Option Doc :=
-        fun l => if Lean4Fmt.Syntax.hasLineComment l then Lean4Fmt.Doc.leadingSep? l else none
+        fun l =>
+          if Lean4Fmt.Syntax.hasLineComment l || (l.splitOn "/-").length > 1 then
+            Lean4Fmt.Doc.leadingSep? l
+          else
+            none
       let attrSep : Option Doc :=
         if !docText.isEmpty && !attrText.isEmpty then
           sepOf ((margs[1]?.bind Lean4Fmt.Syntax.leading?).getD "")
@@ -1235,18 +1239,24 @@ private def modifiersCommentHazard
     do
       -- an ownable full-line comment run in a LATER piece's leading is NOT a
       -- hazard anymore — modifiersDoc places it at the own-line seam
-      -- (leadingSep?); comments in a piece's TEXT, its same-line trailing,
-      -- or an unownable leading shape keep the whole-declaration bail
+      -- (leadingSep?); comments in a piece's INTERIOR trivia or same-line
+      -- trailing, or an unownable leading shape, keep the bail. Detection is
+      -- COUNT-based over TRIVIA, never a naive substring test on token text:
+      -- `@[to_additive /-- doc -/]` carries `--` inside a docstring ARGUMENT
+      -- (token content, not a comment) — the naive test sent every such
+      -- decl verbatim (round-6 census regression, 13 files dropped)
+      let hasCommentContent :=
+        fun (l : String) => Lean4Fmt.Syntax.hasLineComment l || (l.splitOn "/-").length > 1
       let unownable :=
-        fun (l : String) => Lean4Fmt.Syntax.hasLineComment l && (Lean4Fmt.Doc.leadingSep? l).isNone
+        fun (l : String) => hasCommentContent l && (Lean4Fmt.Doc.leadingSep? l).isNone
       let mut seenTokens := false
       for c in m.getArgs do
         if seenTokens then
-          if Lean4Fmt.Syntax.hasLineComment (bareSrc c) then
+          let lead := (Lean4Fmt.Syntax.leading? c).getD ""
+          let leadC := Lean4Fmt.Syntax.countLineComments lead
+          if Lean4Fmt.Syntax.countSubtreeLineComments c > leadC then
             return true
-          if Lean4Fmt.Syntax.hasLineComment ((Lean4Fmt.Syntax.trailing? c).getD "") then
-            return true
-          if unownable ((Lean4Fmt.Syntax.leading? c).getD "") then
+          if unownable lead then
             return true
         else if !(bareSrc c).isEmpty then
           seenTokens := true

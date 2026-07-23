@@ -646,17 +646,19 @@ def emit
     -- blank); the FIRST piece's leading is the command's outer leading —
     -- Module's to place. Unownable shapes keep the whole command verbatim.
     let headLead := (Lean4Fmt.Syntax.leading? (Lean.mkNullNode (a.extract i (n - 1)))).getD ""
+    let hasCmt : String → Bool :=
+      fun l => Lean4Fmt.Syntax.hasLineComment l || (l.splitOn "/-").length > 1
     let sepOf : String → Lean4Fmt.Emit.EmitM Doc := fun l => do
-      if Lean4Fmt.Syntax.hasLineComment l then
+      if hasCmt l then
         match Lean4Fmt.Emit.leadingSep? l with
         | some d => pure d
         | none => pure Doc.hardline   -- unreachable: guarded below
       else pure Doc.hardline
     for h : j in [1:pieces.size] do
-      if Lean4Fmt.Syntax.hasLineComment (pieces[j].2)
+      if hasCmt (pieces[j].2)
           && (Lean4Fmt.Emit.leadingSep? (pieces[j].2)).isNone then
         return (← Lean4Fmt.Emit.verbatim stx)
-    if !pieces.isEmpty && Lean4Fmt.Syntax.hasLineComment headLead
+    if !pieces.isEmpty && hasCmt headLead
         && (Lean4Fmt.Emit.leadingSep? headLead).isNone then
       return (← Lean4Fmt.Emit.verbatim stx)
     let mut prefixDoc : Doc := .nil

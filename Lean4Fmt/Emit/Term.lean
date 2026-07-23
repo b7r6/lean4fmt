@@ -130,6 +130,37 @@ private partial def containsDoBy
       || s.getKind == `Lean.Parser.Term.byTactic'
       || s.getArgs.any containsDoBy
 
+/-- A chain TAIL that is SAFE to glue after the flat head: a by/do block, or
+    a spine of app/fun/show ENDING in one — the glued doc's only hardlines
+    are the block's members, which anchor nest-relative below the line. A
+    container with its OWN column discipline (calc: later steps must sit at
+    the first step's column, which rides the glued line) re-associates on
+    reparse (gate-caught on OmegaLimit: `<| calc` glued flat, the step list
+    ended early — tokens). -/
+private partial def tailGlueSafe
+                    (s : Lean.Syntax)
+                    : Bool :=
+
+  let k := s.getKind
+  if k == ``Lean.Parser.Term.byTactic || k == `Lean.Parser.Term.byTactic'
+      || k == ``Lean.Parser.Term.do then
+    true
+  else if k == ``Lean.Parser.Term.app then
+    ((s.getArgs[1]?.bind (·.getArgs.back?)).map tailGlueSafe).getD false
+  else if k == ``Lean.Parser.Term.fun then
+    match s.getArgs[1]? with
+    | some bf => ((bf.getArgs.back?).map tailGlueSafe).getD false
+    | none    => false
+  else if k == ``Lean.Parser.Term.show then
+    ((s.getArgs.back?).map
+      (fun r =>
+        r.getKind == `Lean.Parser.Term.byTactic' || r.getKind == ``Lean.Parser.Term.byTactic
+            || (r.getKind == ``Lean.Parser.Term.fromTerm
+                && ((r.getArgs.back?).map tailGlueSafe).getD false))).getD
+      false
+  else
+    false
+
 /-- Whether the subtree contains a COMMA-form structInst — the one doc shape
     whose broken layout carries FIRST-LINE-ANCHORED interior columns (later
     fields must sit colGe the first field, which rides the `{ ` line). Glued
@@ -320,7 +351,7 @@ partial def emit
         | some w => w + 12 ≤ chainWidth
         | none => false
       if (cur.getKind == ``Lean.Parser.Term.byTactic || cur.getKind == ``Lean.Parser.Term.do
-            || (rhsDoBy && headFits))
+            || (rhsDoBy && headFits && tailGlueSafe cur))
           && (Lean4Fmt.Doc.flatWidth lhs).isSome && (Lean4Fmt.Doc.flatWidth op).isSome
           && (Lean4Fmt.Doc.flatWidth tail).isSome
           && !(match rhs with | .verbatim _ _ => true | _ => false)
