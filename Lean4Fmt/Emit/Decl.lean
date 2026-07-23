@@ -37,6 +37,7 @@ private def modifiersDoc
             (attrsOwnLine : Bool)
             (m : Lean.Syntax)
             (kwLead : String := "")
+            (visOwnLine : Bool := false)
             : Doc × Nat :=
 
   Id.run
@@ -93,7 +94,9 @@ private def modifiersDoc
         | none, some b   => some b
         | none, none     => none
       if attrsOwnLine then
-        -- doc (own line) · attributes (own line) · visibility (inline)
+        -- doc (own line) · attributes (own line) · visibility (inline; or its
+        -- OWN line under visOwnLine — the keyword then drops to column 0 and
+        -- the returned width is 0, so onePerLine binders hang at a uniform +4)
         let mut out : Doc := .nil
         let mut needNl := false
         if !docText.isEmpty then
@@ -103,6 +106,11 @@ private def modifiersDoc
           if needNl then out := out ++ (attrSep.getD Doc.hardline)
           out := out ++ .text attrText
           needNl := true
+        if visOwnLine && !restParts.isEmpty then
+          -- visibility (`private`/`protected`/…) on its own line above the
+          -- keyword; restSep owns the seam before it, kwSep the one after
+          if needNl then out := out ++ (restSep.getD Doc.hardline)
+          return (out ++ .text restStr ++ (kwSep.getD Doc.hardline), 0)
         if needNl then out := out ++ (preKw.getD Doc.hardline)
         return (out ++ restDoc, restW)
       else
@@ -1325,6 +1333,7 @@ def emit
         (fun c => if (bareSrc c).isEmpty then none else Lean4Fmt.Syntax.leading? c)
       ((afterAttr?.getD ((Lean4Fmt.Syntax.leading? defn).getD ""))).any (· == '\n')
     else attrsOwnLineKnob
+  let visOwnLine := (← read).breaking.visibilityOwnLine && !preserveLB
   let dargs := defn.getArgs
   let valKind := dargs[3]?.map (·.getKind)
   -- mathlib's `lemma`: [declModifiers, group[atom lemma, declId, declSig,
@@ -1341,7 +1350,7 @@ def emit
     match ← instanceDoc? walk defn with
     | some d =>
       let (modsDoc, _) := match a[0]? with
-        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
+        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "") visOwnLine
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx "instance-shape")
@@ -1363,7 +1372,7 @@ def emit
     match inner? with
     | some d =>
       let (modsDoc, _) := match a[0]? with
-        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
+        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "") visOwnLine
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx "structure-shape")
@@ -1379,7 +1388,7 @@ def emit
                   | none => exampleSpanDoc? defn) with
     | some d =>
       let (modsDoc, _) := match a[0]? with
-        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
+        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "") visOwnLine
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx "example-shape")
@@ -1390,7 +1399,7 @@ def emit
     match ← defWhereDoc? walk defn with
     | some d =>
       let (modsDoc, _) := match a[0]? with
-        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
+        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "") visOwnLine
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx "defwhere-shape")
@@ -1433,14 +1442,14 @@ def emit
       match Lean4Fmt.Emit.tokenJoin? defn with
       | some t' =>
         let (modsDoc, _) := match a[0]? with
-          | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
+          | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "") visOwnLine
           | none => (.nil, 0)
         return modsDoc ++ .text t'
       | none => return (← verbatim stx "join-fail")
     match ← sigOnlyDoc? with
     | some d =>
       let (modsDoc, _) := match a[0]? with
-        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
+        | some m => modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "") visOwnLine
         | none => (.nil, 0)
       return modsDoc ++ d
     | none => return (← verbatim stx "unported-value-multiline")     -- multi-line tail: reproduce
@@ -1459,7 +1468,7 @@ def emit
         if mSrc.any (· == '\n') then (Doc.verbatim mSrc 0 ++ sepD, 0)
         else (Doc.text mSrc ++ sepD,
               if kwGap.any (· == '\n') then 0 else mSrc.length + 1)
-      else modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "")
+      else modifiersDoc attrsOwnLine m ((Lean4Fmt.Syntax.leading? defn).getD "") visOwnLine
     | none => (.nil, 0)
   return modsDoc ++ (← defnDoc walk modsWidth defn)
 

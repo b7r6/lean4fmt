@@ -124,6 +124,7 @@ def applyEntry
     | some v => pure { s with breaking.binders := v }
     | none => throw s!"line {e.line}: `{e.key}` expects oneLine/onePerLine/fill"
   | "breaking.attributesOwnLine" => pure { s with breaking.attributesOwnLine := ← asBool e }
+  | "breaking.visibilityOwnLine" => pure { s with breaking.visibilityOwnLine := ← asBool e }
   | "breaking.bodyOwnLine" => pure { s with breaking.bodyOwnLine := ← asBool e }
   | "breaking.bodyAlwaysBreak" => pure { s with breaking.bodyAlwaysBreak := ← asBool e }
   | "breaking.preserveLineBreaks" => pure { s with breaking.preserveLineBreaks := ← asBool e }

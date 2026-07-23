@@ -89,10 +89,15 @@ structure Layout where
   deriving Repr, Inhabited
 
 structure Breaking where
-  colon : ColonPlacement := .breakAfter
-  binders : BinderLayout := .oneLine
-  attributesOwnLine : Bool := false -- `@[…]` on its own line above the keyword
-  bodyOwnLine : Bool := false -- broken decls: `:=` ends the sig, blank, body at indent
+  colon             : ColonPlacement := .breakAfter
+  binders           : BinderLayout := .oneLine
+  attributesOwnLine : Bool := false                 -- `@[…]` on its own line above the keyword
+  /-- `private`/`protected`/`noncomputable`/… on their OWN line above the
+      keyword. The keyword then starts at column 0, so `onePerLine` binders
+      (aligned under the name) hang at a uniform +4 instead of deep under
+      `private def `. Requires `attributesOwnLine`. -/
+  visibilityOwnLine : Bool := false
+  bodyOwnLine     : Bool := false -- broken decls: `:=` ends the sig, blank, body at indent
   bodyAlwaysBreak : Bool := false -- body on its own line even when it fits inline (purtell)
   /-- Author line breaks are load-bearing: a construct written multi-line
       stays multi-line (no width-collapse); single-line stays byte-exact. -/
