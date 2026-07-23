@@ -48,4 +48,5 @@ shape, census stable, pinned as the house layout engine.*
 | gate | rev | what landed | checks |
 |------|-----|-------------|--------|
 | core | 5fcb3e9 | measure-algebra DP, Pareto frontier, omega feasibility; greedy-beat (1 vs 10) + def adaptivity #guards | build-time guards green |
-| **G-L1** | (this) | brute-force ground truth; solve==bruteOpt on the nested battery; frontier sub-exponential (chain-12: 4096 raw → 13) | guards green, module builds |
+| **G-L1** | ff46f7f | brute-force ground truth; solve==bruteOpt on the nested battery; frontier sub-exponential (chain-12: 4096 raw → 13) | guards green, module builds |
+| **G-L2** | (this) | DefPieces bridge + defLadder/renderDef; byte-lock reproduces the exact pinned `find_upstream` shape; width-optimal + feasible on real ServeFd sigs; adaptivity holds | guards green, module builds |

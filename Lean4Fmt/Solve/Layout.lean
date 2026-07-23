@@ -304,4 +304,72 @@ def nestedDef
 #guard (frontier (chain 12)).length ≤ 16 -- … still a handful (grows ~n)
 #guard (frontier (nestedDef 6)).length ≤ 12
 
+-- ── G-L2: the def bridge, validated on real ServeFd signatures ──────────────
+
+/-- The pieces Emit extracts from a `def`'s declModifiers/declId/declSig — the
+    bridge's input contract (Emit canonTok's the Syntax into these strings). -/
+structure DefPieces where
+  vis     : String := ""
+  kw      : String := "def"
+  name    : String
+  binders : List String := []
+  ret     : String
+
+/-- The rung ladder for a def signature: inline and hang, with preference
+    weights. (Weights become config in G-L4; here inline-when-it-fits.) -/
+def defLadder
+    (p : DefPieces)
+    : LDoc :=
+
+  .choice
+    [
+      .pen 0 (defInline p.vis p.kw p.name p.binders p.ret),
+      .pen 2 (defHang p.vis p.kw p.name p.binders p.ret)
+    ]
+
+def renderDef
+    (W : Nat)
+    (p : DefPieces)
+    : String :=
+
+  renderMeas ((solve W (defLadder p)).getD default)
+
+def fxFindUpstream
+    : DefPieces :=
+
+  { vis     := "private",
+    name    := "find_upstream_slot",
+    binders := ["(pool : Array upstream_slot)", "(slot_predicate : pooled_upstream_state → Bool)"],
+    ret     := "Option Nat" }
+
+def fxFindIdle
+    : DefPieces :=
+
+  { vis     := "private",
+    name    := "find_idle_upstream_slot",
+    binders := ["(pool : Array upstream_slot)"],
+    ret     := "Option Nat" }
+
+def fxDial
+    : DefPieces :=
+
+  { vis     := "private",
+    name    := "dial_upstream_slot",
+    binders := ["(loop : Loop)", "(pool : Array upstream_slot)", "(idx : Nat)", "(port : UInt16)"],
+    ret     := "IO (Array upstream_slot)" }
+
+def fxAll : List DefPieces := [fxFindUpstream, fxFindIdle, fxDial]
+
+-- byte-lock: at the house width, the bridge reproduces the EXACT pinned shape
+#guard renderDef 100 fxFindUpstream == "private\ndef find_upstream_slot\n    (pool : Array upstream_slot)\n    (slot_predicate : pooled_upstream_state → Bool)\n    : Option Nat :="
+
+-- width-optimal (== brute force) and feasible on every real sig at width 100
+#guard fxAll.all (fun p => (solve 100 (defLadder p)).map Meas.cost == (bruteOpt 100 (defLadder p)).map Meas.cost)
+
+#guard fxAll.all (fun p => decide (((solve 100 (defLadder p)).getD default).maxw ≤ 100))
+
+-- adaptivity on the real sig: inline with room (W=200), hang without (W=100)
+#guard (solve 200 (defLadder fxFindUpstream)).map Meas.cost == some 0
+#guard (solve 100 (defLadder fxFindUpstream)).map Meas.cost == some 2
+
 end Lean4Fmt.Solve
