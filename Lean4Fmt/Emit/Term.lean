@@ -206,7 +206,9 @@ private def chainOwnLine
             : Bool :=
 
   (v.getKind == ``Lean.Parser.Term.let || v.getKind == ``Lean.Parser.Term.letrec
-      || v.getKind == ``Lean.Parser.Term.have)
+      || v.getKind == ``Lean.Parser.Term.have
+      || v.getKind == ``Lean.Parser.Term.letI
+      || v.getKind == ``Lean.Parser.Term.haveI)
       && (Lean4Fmt.Doc.flatWidth vdoc).isNone
 
 /-- A single `structInstField` = [structInstLVal, «rest»]. The LVal (field name /
@@ -767,7 +769,8 @@ partial def emit
         .text "if " ++ cond ++ .text " then"
           ++ .nest 2 (.line ++ thenB)
           ++ .line ++ elseTail)
-    else if kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.have then
+    else if kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.have
+        || kind == ``Lean.Parser.Term.letI || kind == ``Lean.Parser.Term.haveI then
       -- The CHAIN arm: unroll `let a := x; let b := y; body` into a vertical
       -- sequence of binding lines + the final body, each at the SAME indent
       -- (Lean let-chains don't nest). The loop OWNS the inter-binding trivia
@@ -781,8 +784,13 @@ partial def emit
       let mut steps := 0
       -- have chains like let (same shape: [kw, letConfig, letDecl, …, body])
       -- and the two INTERLEAVE (`have h := …` then `let x := …`)
+      -- letI/haveI are the same 5-slot chain shape (the mathlib
+      -- local-instance idiom — Order/Basic's letI ladders) and interleave
+      -- with let/have freely
       while (cur.getKind == ``Lean.Parser.Term.let
-          || cur.getKind == ``Lean.Parser.Term.have) && steps < 10000 do
+          || cur.getKind == ``Lean.Parser.Term.have
+          || cur.getKind == ``Lean.Parser.Term.letI
+          || cur.getKind == ``Lean.Parser.Term.haveI) && steps < 10000 do
         steps := steps + 1
         let a := cur.getArgs
         if a.size < 5 then return (← verbatim stx)

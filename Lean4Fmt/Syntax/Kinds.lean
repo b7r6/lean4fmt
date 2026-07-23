@@ -106,6 +106,8 @@ def activeMultilineTermKinds
     ``Lean.Parser.Term.paren,
     ``Lean.Parser.Term.let,
     ``Lean.Parser.Term.have,
+    ``Lean.Parser.Term.letI,
+    ``Lean.Parser.Term.haveI,
     ``Lean.Parser.Term.letrec,
     ``Lean.Parser.Term.match,
     ``Lean.Parser.Term.show
@@ -160,6 +162,7 @@ def ownsSeams
     : Bool :=
 
   kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.have
+    || kind == ``Lean.Parser.Term.letI || kind == ``Lean.Parser.Term.haveI
     || kind == ``Lean.Parser.Term.match
       || kind == ``Lean.Parser.Term.anonymousCtor
       || kind == ``Lean.Parser.Term.structInst

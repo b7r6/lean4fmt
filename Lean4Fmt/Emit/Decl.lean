@@ -519,6 +519,8 @@ private def valForm
       -- other kind gets the seam-kit prefix (idempotence sweep verifies)
       let selfLead :=
         v.getKind == ``Lean.Parser.Term.let || v.getKind == ``Lean.Parser.Term.have
+            || v.getKind == ``Lean.Parser.Term.letI
+            || v.getKind == ``Lean.Parser.Term.haveI
             || v.getKind == ``Lean.Parser.Term.letrec
       let vdoc ← (do
         if leadCmts > 0 && !selfLead then
