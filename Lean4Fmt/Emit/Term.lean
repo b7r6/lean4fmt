@@ -498,11 +498,10 @@ partial def emit
           -- is nest-relative (by-glue hardlines, fresh-line app groups) and
           -- both re-anchors deterministically AND lands strictly deeper
           -- than the field column (outer colGe holds).
-          match Lean4Fmt.Doc.flatWidth fDoc with
-          | none =>
-            if containsCommaStructInst f then return (← verbatim stx)
-          | some w =>
-            if w + 8 > (← read).layout.lineWidth then return (← verbatim stx)
+          -- a field too wide to fit flat BREAKS inside its own group (the
+          -- same nest-relative colGe argument as the hardline case); only
+          -- the comma-form hazard is real either way
+          if containsCommaStructInst f then return (← verbatim stx)
           if (match fDoc with | .verbatim _ _ => true | _ => false)
               || Lean4Fmt.Doc.hasMidlineReanchor fDoc then
             return (← verbatim stx)
