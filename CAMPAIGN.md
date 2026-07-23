@@ -60,6 +60,8 @@ gate-reject classes, and the porting queue ranked by bytes with bail reasons.
 | 2026-07-22 | 249 (10/dir) | 81.1% | 80.7% | 88.0% of code | 91.7 | 1 comments (structure Porting-note zone + eqns-form where-fields; the no-prefix zone double-emitted — ElementaryMaps) |
 | 2026-07-22 | 249 (10/dir) | 81.1% | 81.1% | 88.0% of code | **92.1%** | 0 (zone only behind a docstring/modifier prefix; reject cleared same-round) |
 | 2026-07-22 | 249 (10/dir) | 81.6% | 81.6% | 88.0% of code | **92.7%** | 0 (wide vertical-structInst fields break in-group + calc bare first step; the `{ base with` traverse-instance shape and the mathlib calc head form) |
+| 2026-07-23 | 249 (10/dir) | 81.6% | 81.6% | 88.0% of code | **92.7%** (+0.07) | 0 (gate-3 round 1: alternative-pattern stacks via the shared arm loop + chain layout-level hasMidlineReanchor; Abel 75.6→81.2) |
+| 2026-07-23 | 249 (10/dir) | 82.0% | 82.0% | 88.0% of code | **93.2%** | 0 (gate-3 round 2: Term.show port + simpa `using`-tail walk via pruneUsing? + exact/apply/refine layout hazard; paren general-content relaxation attempted and reverted — the half-verbatim mangle class) |
 
 ## CAMPAIGN CLOSED (2026-07-22, at 92.7)
 
