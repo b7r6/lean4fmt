@@ -120,6 +120,32 @@ failures) = 0, experiments untouched.*
 | **G-L7.4f** (field-declId capture) | ee879d4 | struct fields into the resolved `defs` (`struct_field_fulls`, emitted as `F` def-only) + an identity-aware, namespace-BLIND target-taken guard in `plan_hybrid` — skip `S → t` if any OTHER decl already spells `t` (the token rewrite is global, so the new `t` shadows it cross-namespace: `Lang` atop `target_def.lang`) | type↔field class SKIPs, reported; two new `#guard`s; guards green |
 | **G-L7.4g** (pass-2 consistency) | ee879d4 | orchestrator exits nonzero on any pass-2 SKIP under `--resolve` — a half-rename reverts whole rather than leaning on the next build | 0 pass-2 SKIPs on core/build (the `--elab off` drop proved unneeded — CLI/Main parses cheap; abort is the rollout fail-safe) |
 | **G-L7.4h** (THE REAL BANK) | 1f873b1 | `core/build` snaked under `--resolve` with f+g in — 29 renames / 10 skips over 12 files | `lake -R build` GREEN (73 jobs) where the token approach went red; rejects 0; committed |
+| **G-L7.4i** (deterministic resolver + authorize/collide split) | 0adc64d | def set harvested from ONE elaboration (`env.constants.map₂`, was a 2nd flaky parse); split into `defs` (declId reals — authorize) vs `exists` (all local consts incl. generated — collide) so generated projections (`extends` `toParent`) never rename but still block | non-determinism gone (5/5, 3/3); `TrustStateWithPolicy.toTrustState` no longer mis-renamed; dead `resolve_rewrite_file`/`struct_field_fulls` removed |
+| **G-L7.4j** (codegen — first CROSS-PACKAGE bank) | c300cc9 | codegen snaked AND build's use-sites of codegen's renamed decls rewritten in one pass (`Top` → `top`, build's `: Top` → `: top`, 16 build files) — the "A renames, B follows" path core/build's self-contained pass never tested | 33 renames / 27 skips / 106 files, deterministic 3/3; `lake -R build` GREEN codegen (133) + core/build (73) |
+
+## The frontier finding (2026-07-24, cross-package + the determinism trap)
+
+The user opened the frontier past the leaf: **codegen**, imported only by build.
+Two things surfaced, both caught by the floor, both now closed:
+
+- **Non-determinism (the important one).** Two identical codegen runs gave 61 vs
+  56 renames — sometimes a type snaked onto an unseen term (`Attr` → `attr` atop
+  `def attr`, "already declared"). The resolve worker did TWO elaborations
+  (`resolve_idents` + a second `parse_full?` with elab fallback, for fields);
+  when the heavy second one raced/crashed, the worker's buffered stdout — a
+  decl's DEF line among it — was dropped, so the global def set was intermittently
+  incomplete and a collision went unseen. Fixed by harvesting the def set from
+  the SAME elaboration (`env.constants.map₂`). **A flaky def set is worse than a
+  wrong one — it passes review once and breaks later; determinism is a
+  correctness property here, not a nicety.**
+- **Authorize ≠ collide.** `map₂` is complete but includes GENERATED consts
+  (`extends` `toParent`, recursors, match arms). Feeding those to the rename
+  gate renamed tokens with no source spelling. Split into `defs` (declId reals,
+  may rename) vs `exists` (all consts, collision-only). Generated names now block
+  targets without ever being renamed.
+- **The farm needs clean oleans.** Resolution reads BUILT oleans; a stale/partial
+  build (e.g. from a reverted experiment) skews the plan. Build the package clean
+  before renaming. (Surfaced as a phantom 0-vs-3 that vanished after a clean build.)
 
 ## The dogfood finding (2026-07-24, the empirical basis for G-L7.1's exemption)
 
