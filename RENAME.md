@@ -114,9 +114,12 @@ failures) = 0, experiments untouched.*
 | **G-L7.3** (house rollout) | PENDING | snake the domain tree — needs name-resolution rename (see status) | — |
 | **G-L7.4b** (resolver foundation) | a6b65b3 | `Session.resolve_idents` — elaborate w/ info trees, harvest `(range, resolvedFullName)` from TermInfo/FieldInfo; `--resolve-dump` probe | resolves bare-ident + qualified refs; root cause found |
 | **G-L7.4a** (the olean farm) | d1c5aa3 | `build_olean_farm` — merged symlink farm (one `Continuity/` root, first on path) fixes findOLean's root-namespace mis-resolution | proof: `DischargeProof` in env, 26 Trust refs (was 0), full elaboration restored |
-| **G-L7.4c** (resolver complete) | — | dot-projection case in `resolve_idents` (`p.isPure` → owning field const) | `p.isPure` resolves; no unresolved non-local ident |
-| **G-L7.4d** (resolved rewrite) | — | `--resolve`: identity map (full names), rewrite iff resolved-in-set | cross-package fixture: local renames, imported use byte-exact, reparses |
-| **G-L7.4e** (THE BANK) | — | `core/build` under `--resolve` | `lake -R build` GREEN where token went red; rejects 0; committed |
+| **G-L7.4c** (resolver complete) | 93a24d2 | dot-projection case in `resolve_idents` (`p.isPure` → owning field const) | `p.isPure` resolves; no unresolved non-local ident |
+| **G-L7.4d** (resolved rewrite) | 324c68f | `--resolve`: identity map (full names), rewrite iff resolved-in-set | cross-package fixture: local renames, imported use byte-exact, reparses |
+| **G-L7.4e** (the hybrid: resolution decides, token acts) | 9c1d054 | `plan_hybrid` — a simple name renames iff every occurrence resolves to ONE defined full name (ambiguous cross-package spellings left byte-exact); token rewrite acts (catches binder types); sanity gate filters generated consts | 35 correct renames on core/build, cross-package `isPure` disambiguated; four `#guard`s; **BANK still red — two named edge cases** |
+| **G-L7.4f** (field-declId capture) | ee879d4 | struct fields into the resolved `defs` (`struct_field_fulls`, emitted as `F` def-only) + an identity-aware, namespace-BLIND target-taken guard in `plan_hybrid` — skip `S → t` if any OTHER decl already spells `t` (the token rewrite is global, so the new `t` shadows it cross-namespace: `Lang` atop `target_def.lang`) | type↔field class SKIPs, reported; two new `#guard`s; guards green |
+| **G-L7.4g** (pass-2 consistency) | ee879d4 | orchestrator exits nonzero on any pass-2 SKIP under `--resolve` — a half-rename reverts whole rather than leaning on the next build | 0 pass-2 SKIPs on core/build (the `--elab off` drop proved unneeded — CLI/Main parses cheap; abort is the rollout fail-safe) |
+| **G-L7.4h** (THE REAL BANK) | 1f873b1 | `core/build` snaked under `--resolve` with f+g in — 29 renames / 10 skips over 12 files | `lake -R build` GREEN (73 jobs) where the token approach went red; rejects 0; committed |
 
 ## The dogfood finding (2026-07-24, the empirical basis for G-L7.1's exemption)
 
@@ -253,6 +256,61 @@ goes GREEN where the token rename went red. Iterate any residual. *Exit:
 `core/build` snake-ified by resolution, `lake -R build` green, rejects 0,
 committed. THE BANK — a domain package renamed correctly by name resolution,
 floor-validated; the token approach's cross-package + macro classes both retired.*
+
+## G-L7.4 closing gates — the two edge cases to the bank (set 2026-07-24)
+
+G-L7.4e shipped as the **hybrid** (`9c1d054`): resolution DECIDES which simple
+names are safe, a token rewrite ACTS (so binder-type positions the InfoTree
+doesn't record are still caught). 35 correct renames on `core/build`, the
+cross-package `isPure` disambiguated. But the BANK stayed red: two bounded,
+named edge cases, each traced to one code site. Three monotone gates close them.
+
+Standing checks unchanged: the BUILD is the floor; second floor is
+resolution-completeness (no unresolved non-local ident); census-dormant, home
+401/0/0, self-host (`#guard`s green), token-aware.
+
+**G-L7.4f — field-declId capture (the type↔field collision). ✓ `ee879d4`.**
+`plan_hybrid`'s `collides` only guarded source-vs-source (two safe names → one
+target). It never checked target-vs-EXISTING, and struct fields never reach
+`defs` on the resolve path (`resolve_idents` tags `isDef` only for
+`Command.declId`; a field is a `structExplicitBinder`, no declId → the field is
+absent). So `Lang → lang` landed atop the `lang` FIELD of `target_def` and the
+build broke. The floor named it exactly: `List lang` where `lang : Build.lang`
+of sort Type is a TERM, not a type — the field/param `lang` shadows the renamed
+type. Crucially the type and field sit in DIFFERENT namespaces (`…Build.Lang`
+vs `…Build.target_def.lang`), so a same-namespace check would miss it. *Fix:*
+the resolve decls-worker emits struct-field FULL names (`struct_field_fulls`,
+syntactic, tagged `F` = def-only); `plan_hybrid` gains an identity-aware,
+namespace-BLIND target-taken guard — skip `S → t` iff any OTHER def (`d ≠ S`'s
+full) spells `t` as its last component. Namespace-blind is right BECAUSE the
+token rewrite is global-by-simple-name: renaming `Lang→lang` moves `Lang`
+everywhere, so a colliding `lang` in ANY namespace is a hazard. (The earlier
+namespace/occSimples attempts over-blocked to zero because they counted a name's
+own occurrences; keying strictly on `d ≠ sFull` fixes that — 29 renames stand.)
+*Banked: on core/build the `Lang`/`Cpu`/`Gpu`/`Vendor`/`Visibility`/
+`Parametric`/`Faithful` names that clash with a field/term are SKIP + reported;
+two new `#guard`s (field-taken skip + its no-collision converse).*
+
+**G-L7.4g — pass-2 consistency (the fail-safe). ✓ `ee879d4`.** Pass-1 resolve
+ELABORATES every file; a pass-2 cheap-parse SKIP would rewrite a file's deps but
+not the file — a half-rename, previously only printed. *Fix:* the orchestrator
+exits nonzero on any pass-2 SKIP under `--resolve`, so the driver reverts the
+set whole. The anticipated `--elab off` drop proved UNNEEDED — `CLI/Main` parses
+cheap and rewrote consistently (6 idents), so core/build hits 0 pass-2 skips.
+The abort is the rollout fail-safe, not a core/build blocker. *Banked: 0 pass-2
+SKIPs on core/build; abort wired for the multi-workspace rollout.*
+
+**G-L7.4h — THE REAL BANK: `core/build` under `--resolve`. ✓ `1f873b1`.** With
+f+g in, the resolution rename ran on the package the token approach broke: 29
+renames / 10 skips over 12 files, resolved by decl IDENTITY. `isPure`
+disambiguates (build's own renames, trust's `DischargeProof.isPure` projection
+byte-exact); the `Lang`-class type↔field clashes skip; types snake with their
+binder-type positions following (`TargetKind`, `SmArch`, `SourcePath`, …).
+core/build is a leaf (nothing imports `Continuity.Build.*`/`Continuity.CLI`;
+aleph's same-named `TargetDef` is its own sibling), so the rename is fully
+contained. **`lake -R build` GREEN (73 jobs), rejects 0, committed** — THE BANK.
+A domain package renamed correctly by name resolution, floor-validated; the
+token approach's cross-package, type↔field, and pass-2 classes all retired.
 
 Beyond the bank (not gates): fold the farm into the SHARED env path (fixes
 multi-workspace FORMATTING + `--stats`, which hit the same silent drop invisibly
