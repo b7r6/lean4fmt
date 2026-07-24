@@ -163,9 +163,6 @@ opaque run_stats (files : List String) (width : Option Nat) (preset : String) (e
 
 -- ── the rename apply (G-L7.1): parse-based, token-aware identifier rewrite ────
 
-/-- Last dotted component of a name (`Foo.bar` → `bar`). -/
-def last_comp (s : String) : String := (s.splitOn ".").getLastD s
-
 /-- The naming axis a declaration node's KIND falls on, or `none` (example, or a
     command that declares no renamable name). -/
 def axis_of_kind (k : Lean.Name) : Option Lean4Fmt.Rename.axis :=
@@ -188,7 +185,7 @@ def decl_name_of? (defn : Lean.Syntax) : Option String := do
   let idTok ← (Lean4Fmt.Emit.leaf_tokens declId).find? (·.isIdent)
   let src := Lean4Fmt.Emit.bare_src idTok
   if src.isEmpty then none
-  else some (last_comp src)
+  else some (Rename.last_comp src)
 
 /-- The field names of a structure declaration (first ident of each
     `structSimpleBinder`). Fields are the `terms` axis (schema: "def / abbrev /
@@ -201,7 +198,7 @@ def struct_field_names : Lean.Syntax → List String
     let here : List String :=
       if k == ``Lean.Parser.Command.structSimpleBinder then
         match (Lean4Fmt.Emit.leaf_tokens (.node .none k args)).find? (·.isIdent) with
-        | some id => [last_comp (Lean4Fmt.Emit.bare_src id)]
+        | some id => [Rename.last_comp (Lean4Fmt.Emit.bare_src id)]
         | none    => []
       else
         []
@@ -293,14 +290,6 @@ def axis_of_tag : String → Option Lean4Fmt.Rename.axis
   | "term" => some .term
   | _      => none
 
-/-- Prepend a prebuilt farm dir to the search path — the orchestrator builds the
-    farm ONCE and hands each worker its path via `--farm`, so no per-subprocess
-    rebuild. -/
-def apply_farm (farm : Option String) : IO Unit :=
-  match farm with
-  | some f => Lean.searchPathRef.modify (fun sp => (⟨f⟩ : System.FilePath) :: sp)
-  | none   => pure ()
-
 /-- Worker (`--rename-decls`): parse the file under its OWN env and print
     `NAME<TAB>AXIS` for every renamable declaration to stdout. The orchestrator
     spawns one process per file, so each gets a clean single `importModules` —
@@ -313,7 +302,7 @@ def run_rename_decls_impl
     (farmDir : Option String)
     (elabFallback : Bool)
     : IO Unit := do
-  apply_farm farmDir
+  Frontend.apply_farm farmDir
   let paths := files.toArray.map System.FilePath.mk
   let env ← Frontend.batch_env paths
   let out ← IO.getStdout
@@ -327,13 +316,11 @@ def run_rename_decls_impl
       let (occ, locals) ← Frontend.Session.resolve_idents env p.toString contents
       for (_, _, nm, isDef) in occ do
         let full := nm.toString
-        let lastC := (full.splitOn ".").getLastD full
         let d := if isDef then "D" else "U"
-        out.putStrLn s!"{lastC}\t{full}\t{d}"
+        out.putStrLn s!"{Rename.last_comp full}\t{full}\t{d}"
       for nm in locals do
         let full := nm.toString
-        let lastC := (full.splitOn ".").getLastD full
-        out.putStrLn s!"{lastC}\t{full}\tF"
+        out.putStrLn s!"{Rename.last_comp full}\t{full}\tF"
     else
       match ← Frontend.parse_full? env p.toString contents elabFallback with
       | some stx =>
@@ -388,7 +375,7 @@ def run_rename_rewrite_impl
     (farmDir : Option String)
     (elabFallback : Bool)
     : IO Unit := do
-  apply_farm farmDir
+  Frontend.apply_farm farmDir
   let err ← IO.getStderr
   match mapFile with
   | none => err.putStrLn "rename-rewrite: --map <file> required"
@@ -410,45 +397,6 @@ def run_rename_rewrite_impl
 @[implemented_by run_rename_rewrite_impl]
 opaque run_rename_rewrite (files : List String) (mapFile : Option String) (resolve : Bool) (farmDir : Option String) (elabFallback : Bool) : IO Unit
 
-/-- The module symbol table (G-L7.4): a MERGED SYMLINK FARM of every package's
-    built oleans, put FIRST on the search path. `findOLean` resolves a module by
-    its ROOT namespace (`Continuity`) to the first search dir that has that root,
-    and does NOT check the full olean exists — so a multi-dir path can't
-    disambiguate a root split across packages (codec's `Continuity/` wins for
-    `Continuity.Trust.Discharge`, whose olean it doesn't own → `imports_env`
-    silently drops it, and the parse batch threw on Box). Merging all lib dirs
-    into ONE `Continuity/` root (via `cp -rsn` recursive symlinks — the trick
-    corpus-gate.sh / lean4fmt.sh use) makes every module resolve to its true
-    owner. Repo root = nearest `.git` ancestor of the first input. -/
-unsafe
-def make_olean_farm (files : List String) : IO (Option String) := do
-  let some f0 := files.head? | return none
-  let p0 ← try IO.FS.realPath ⟨f0⟩ catch _ => pure ⟨f0⟩
-  let mut dir? := p0.parent
-  let mut root? : Option System.FilePath := none
-  let mut steps := 0
-  while h : dir?.isSome ∧ steps < 64 do
-    let dir := dir?.get h.1
-    if ← (dir / ".git").pathExists then
-      root? := some dir
-      dir? := none
-    else dir? := dir.parent
-    steps := steps + 1
-  let some root := root? | return none
-  let dirs ← try
-      let r ← IO.Process.output
-        { cmd := "find",
-          args := #[root.toString, "-type", "d", "-path", "*/.lake/build/lib/lean", "-prune"] }
-      pure ((r.stdout.splitOn "\n").filter (fun s => !s.isEmpty))
-    catch _ => pure ([] : List String)
-  if dirs.isEmpty then
-    return none
-  let farm := (← IO.Process.run { cmd := "mktemp", args := #["-d"] }).trim
-  for d in dirs do
-    try let _ ← IO.Process.output { cmd := "cp", args := #["-rsn", s!"{d}/.", s!"{farm}/"] }
-    catch _ => pure ()
-  Lean4Fmt.Log.log .debug s!"olean farm: {farm} ({dirs.length} lib dirs merged)"
-  return some farm
 
 /-- G-L7.4 probe (`--resolve-dump`): elaborate the file(s) and print each resolved
     ident occurrence as `start-stop<TAB>fullName`. Validates that the InfoTree
@@ -456,7 +404,7 @@ def make_olean_farm (files : List String) : IO (Option String) := do
 unsafe
 def run_resolve_dump_impl (files : List String) : IO Unit := do
   let paths := files.toArray.map System.FilePath.mk
-  apply_farm (← make_olean_farm files)
+  Frontend.apply_farm (← Frontend.make_olean_farm files)
   let env ← Frontend.batch_env paths
   let out ← IO.getStdout
   for p in paths do
@@ -489,7 +437,7 @@ def run_rename_apply_impl
   let modules := files.filterMap (fun f => (System.FilePath.mk f).fileStem)
   let jobs := (((← IO.getEnv "LEAN4FMT_JOBS").bind (·.toNat?)).getD 8).max 1
   -- resolution: build the olean farm ONCE, hand each worker its path via --farm
-  let farm ← if resolve then make_olean_farm files else pure none
+  let farm ← if resolve then Frontend.make_olean_farm files else pure none
   let extra :=
     (if elabFallback then #[] else #["--elab", "off"])
         ++ (if resolve then

@@ -13,6 +13,7 @@
 
 import Lean
 import Lean4Fmt.Frontend.Gate
+import Lean4Fmt.Log
 
 namespace Lean4Fmt.Frontend
 
@@ -70,6 +71,54 @@ def batch_env (paths : Array System.FilePath) : IO Environment := do
   for p in paths do
     all := all ++ (← file_imports p)
   imports_env all
+
+/-- Prepend a prebuilt farm dir to the search path. Built ONCE per invocation and
+    shared (in-process, or handed to a worker via `--farm`), so no rebuild. -/
+def apply_farm (farm : Option String) : IO Unit :=
+  match farm with
+  | some f => Lean.searchPathRef.modify (fun sp => (⟨f⟩ : System.FilePath) :: sp)
+  | none   => pure ()
+
+/-- The module symbol table: a MERGED SYMLINK FARM of every package's built
+    oleans, put FIRST on the search path — the correct multi-workspace resolution
+    that both the rename and (the zero-config) formatting want. `findOLean`
+    resolves a module by its ROOT namespace (`Continuity`) to the first search dir
+    that has that root, and does NOT check the full olean exists — so a multi-dir
+    path can't disambiguate a root split across packages (codec's `Continuity/`
+    wins for `Continuity.Trust.Discharge`, whose olean it doesn't own →
+    `imports_env` silently drops it, and the parse batch threw on Box). Merging all
+    lib dirs into ONE `Continuity/` root (`cp -rsn` recursive symlinks — the trick
+    corpus-gate.sh / lean4fmt.sh use) makes every module resolve to its true owner.
+    Repo root = nearest `.git` ancestor of the first input. -/
+unsafe
+def make_olean_farm (files : List String) : IO (Option String) := do
+  let some f0 := files.head? | return none
+  let p0 ← try IO.FS.realPath ⟨f0⟩ catch _ => pure ⟨f0⟩
+  let mut dir? := p0.parent
+  let mut root? : Option System.FilePath := none
+  let mut steps := 0
+  while h : dir?.isSome ∧ steps < 64 do
+    let dir := dir?.get h.1
+    if ← (dir / ".git").pathExists then
+      root? := some dir
+      dir? := none
+    else dir? := dir.parent
+    steps := steps + 1
+  let some root := root? | return none
+  let dirs ← try
+      let r ← IO.Process.output
+        { cmd := "find",
+          args := #[root.toString, "-type", "d", "-path", "*/.lake/build/lib/lean", "-prune"] }
+      pure ((r.stdout.splitOn "\n").filter (fun s => !s.isEmpty))
+    catch _ => pure ([] : List String)
+  if dirs.isEmpty then
+    return none
+  let farm := (← IO.Process.run { cmd := "mktemp", args := #["-d"] }).trim
+  for d in dirs do
+    try let _ ← IO.Process.output { cmd := "cp", args := #["-rsn", s!"{d}/.", s!"{farm}/"] }
+    catch _ => pure ()
+  Lean4Fmt.Log.log .debug s!"olean farm: {farm} ({dirs.length} lib dirs merged)"
+  return some farm
 
 /-- Coverage stats for one file under `env` (DESIGN_V2 §15): the
     active/verbatim/trivia byte attribution of its produced doc plus the

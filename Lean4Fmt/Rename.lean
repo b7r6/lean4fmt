@@ -24,6 +24,10 @@ namespace Lean4Fmt.Rename
 
 open Lean4Fmt.Casing
 
+/-- Last dotted component of a name (`Foo.bar` → `bar`). The one spelling shared
+    by the plan, the rewrite, and the driver — a name's simple form. -/
+def last_comp (s : String) : String := (s.splitOn ".").getLastD s
+
 /-- Which naming AXIS a declaration falls on — the map from decl kind to the
     `Naming` policy field. -/
 inductive axis
@@ -144,7 +148,7 @@ def resolved_rewrite (map : List (String × String)) (tokenText full : String) :
   -- DecidableEq` item to `…ctorIdx`, an anonymous `⟨…⟩` to `…mk` — and rewriting
   -- those corrupts. If the token's tail doesn't match the const's, it isn't a
   -- real spelled reference; leave it byte-exact.
-  if (tokenText.splitOn ".").getLastD tokenText != (full.splitOn ".").getLastD full then none
+  if last_comp tokenText != last_comp full then none
   else
     let newFull := rename_full map full
     if newFull == full then none
@@ -224,7 +228,6 @@ def plan_hybrid
           match fullsOf s with
           | [full] => if defSet.contains full then some (s, full, convert c s) else none
           | _      => none)
-  let lastOf := fun (d : String) => (d.splitOn ".").getLastD d
   -- two distinct safe sources snaking to one target collide (both skipped)
   let collides := fun (t : String) => (rows.filter (fun (_, _, x) => x == t)).length > 1
   -- TARGET-TAKEN (the type↔field guard): a rename `S → t` is unsafe if some OTHER
@@ -233,7 +236,7 @@ def plan_hybrid
   -- `lang` FIELD of `target_def`, or `Attr → attr` atop `def attr` (DIFFERENT
   -- namespaces), so the check is identity-aware but namespace-BLIND. Checked against
   -- `existSet` (ALL local consts) so a clash with a non-renamable name still blocks.
-  let taken := fun (sFull t : String) => existSet.any (fun d => d != sFull && lastOf d == t)
+  let taken := fun (sFull t : String) => existSet.any (fun d => d != sFull && last_comp d == t)
   let changed := rows.filter (fun (s, _, t) => s != t)
   let ok := fun (sFull t : String) => !keywords.contains t && !collides t && !taken sFull t
   (
