@@ -319,12 +319,53 @@ def run_rename_rewrite_impl
 @[implemented_by run_rename_rewrite_impl]
 opaque run_rename_rewrite (files : List String) (mapFile : Option String) (elabFallback : Bool) : IO Unit
 
+/-- The module symbol table (G-L7.4): a MERGED SYMLINK FARM of every package's
+    built oleans, put FIRST on the search path. `findOLean` resolves a module by
+    its ROOT namespace (`Continuity`) to the first search dir that has that root,
+    and does NOT check the full olean exists — so a multi-dir path can't
+    disambiguate a root split across packages (codec's `Continuity/` wins for
+    `Continuity.Trust.Discharge`, whose olean it doesn't own → `imports_env`
+    silently drops it, and the parse batch threw on Box). Merging all lib dirs
+    into ONE `Continuity/` root (via `cp -rsn` recursive symlinks — the trick
+    corpus-gate.sh / lean4fmt.sh use) makes every module resolve to its true
+    owner. Repo root = nearest `.git` ancestor of the first input. -/
+unsafe
+def build_olean_farm (files : List String) : IO Unit := do
+  let some f0 := files.head? | return
+  let p0 ← try IO.FS.realPath ⟨f0⟩ catch _ => pure ⟨f0⟩
+  let mut dir? := p0.parent
+  let mut root? : Option System.FilePath := none
+  let mut steps := 0
+  while h : dir?.isSome ∧ steps < 64 do
+    let dir := dir?.get h.1
+    if ← (dir / ".git").pathExists then
+      root? := some dir
+      dir? := none
+    else dir? := dir.parent
+    steps := steps + 1
+  let some root := root? | return
+  let dirs ← try
+      let r ← IO.Process.output
+        { cmd := "find",
+          args := #[root.toString, "-type", "d", "-path", "*/.lake/build/lib/lean", "-prune"] }
+      pure ((r.stdout.splitOn "\n").filter (fun s => !s.isEmpty))
+    catch _ => pure ([] : List String)
+  if dirs.isEmpty then
+    return
+  let farm := (← IO.Process.run { cmd := "mktemp", args := #["-d"] }).trim
+  for d in dirs do
+    try let _ ← IO.Process.output { cmd := "cp", args := #["-rsn", s!"{d}/.", s!"{farm}/"] }
+    catch _ => pure ()
+  Lean.searchPathRef.modify (fun sp => (⟨farm⟩ : System.FilePath) :: sp)
+  Lean4Fmt.Log.log .debug s!"olean farm: {farm} ({dirs.length} lib dirs merged)"
+
 /-- G-L7.4 probe (`--resolve-dump`): elaborate the file(s) and print each resolved
     ident occurrence as `start-stop<TAB>fullName`. Validates that the InfoTree
     disambiguation works before the token map is swapped for it. -/
 unsafe
 def run_resolve_dump_impl (files : List String) : IO Unit := do
   let paths := files.toArray.map System.FilePath.mk
+  build_olean_farm files
   let env ← Frontend.batch_env paths
   let out ← IO.getStdout
   for p in paths do
