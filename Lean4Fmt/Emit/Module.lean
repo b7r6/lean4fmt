@@ -25,7 +25,7 @@ open Lean Lean4Fmt.Doc
     trailing, likewise. `none` (verbatim) on a `module`/`prelude` marker, a
     multi-line import span, or a seamless comment. -/
 private
-def headerDoc? (h : Lean.Syntax) : Option Doc :=
+def header_doc? (h : Lean.Syntax) : Option Doc :=
   Id.run
     do
       if h.getKind != ``Lean.Parser.Module.header then
@@ -33,9 +33,9 @@ def headerDoc? (h : Lean.Syntax) : Option Doc :=
       let a := h.getArgs
       if a.size != 3 then
         return none
-      if !((a[0]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString.isEmpty then
+      if !((a[0]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString.isEmpty then
         return none
-      if !((a[1]?.map Lean4Fmt.Emit.bareSrc).getD "").trimAscii.toString.isEmpty then
+      if !((a[1]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString.isEmpty then
         return none
       let imps := (a[2]?.map (·.getArgs)).getD #[]
       if imps.isEmpty then
@@ -43,7 +43,7 @@ def headerDoc? (h : Lean.Syntax) : Option Doc :=
       let mut acc : Doc := .nil
       for i in [0:imps.size] do
         let imp := imps[i]!
-        let t := (Lean4Fmt.Emit.bareSrc imp).trimAscii.toString
+        let t := (Lean4Fmt.Emit.bare_src imp).trimAscii.toString
         if t.isEmpty || t.any (· == '\n') then
           return none
         let last := i + 1 == imps.size
@@ -53,7 +53,7 @@ def headerDoc? (h : Lean.Syntax) : Option Doc :=
         let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
         let sep : Doc ← do
           if i == 0 then pure Doc.nil   -- head leading = the file banner, placed by `unit`
-          else match Lean4Fmt.Emit.leadingSep? ((Lean4Fmt.Syntax.leading? imp).getD "") with
+          else match Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? imp).getD "") with
             | some s => pure s
             | none => return none
         acc := acc ++ sep ++ .text t ++ trailDoc
@@ -66,7 +66,7 @@ def headerDoc? (h : Lean.Syntax) : Option Doc :=
     clamp to policy). `none` when the trivia has a shape no seam owns
     (a same-line head segment with content). -/
 private
-def moduleTrivia? (lead : String) (atFileStart : Bool) : Option Doc :=
+def module_trivia? (lead : String) (atFileStart : Bool) : Option Doc :=
   Id.run
     do
       let ls := lead.splitOn "\n"
@@ -139,8 +139,8 @@ def moduleTrivia? (lead : String) (atFileStart : Bool) : Option Doc :=
 /-- Drop the leftmost separator of a seam doc (the file head has no previous
     line — a leading hardline/blank would open the file with a stray newline). -/
 private partial
-def dropLeadingSep : Doc → Doc
-  | .cat a b  => .cat (dropLeadingSep a) b
+def drop_leading_sep : Doc → Doc
+  | .cat a b  => .cat (drop_leading_sep a) b
   | .hardline => .nil
   | .blank _  => .nil
   | d         => d
@@ -157,7 +157,7 @@ def dropLeadingSep : Doc → Doc
     byte-exact: gaps carrying comments (banners, section markers), same-line
     gaps, and gaps between single-line forms (runs of one-line defs keep their
     hand grouping). `.preserve` keeps every gap byte-exact. -/
-def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
+def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
   let style ← read
   let args := stx.getArgs
   -- multi-line form ⇢ participates in the imposed top-level rhythm. Decided
@@ -166,13 +166,13 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
   -- second pass disagrees with the first): flatWidth is exact (T2), so
   -- "fits the line width" is precisely "renders single-line" at indent 0.
   let multi (body : Doc) : Bool :=
-    match Lean4Fmt.Doc.flatWidth body with
+    match Lean4Fmt.Doc.flat_width body with
     | some w => w > style.layout.lineWidth
     | none   => true
   -- normalizable gap: whitespace-only, has a newline, a multi-line neighbor
   let gapOk (p c : Lean.Syntax) (pBody cBody : Doc) : Bool :=
     Id.run do
-      if style.blankLines.policy != Lean4Fmt.Style.BlankPolicy.normalize then
+      if style.blankLines.policy != Lean4Fmt.Style.blank_policy.normalize then
         return false
       let gap := ((Lean4Fmt.Syntax.trailing? p).getD "") ++ ((Lean4Fmt.Syntax.leading? c).getD "")
       let nls := (gap.toList.filter (· == '\n')).length
@@ -181,8 +181,8 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
   -- prepending a virtual newline makes the seam kit treat every banner line
   -- as a full line; the artificial first separator is dropped
   let fileHead (lead : String) : Doc :=
-    if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize then
-      match moduleTrivia? lead (atFileStart := true) with
+    if style.blankLines.policy == Lean4Fmt.Style.blank_policy.normalize then
+      match module_trivia? lead (atFileStart := true) with
       | some d => d
       | none   => .textRaw lead
     else
@@ -192,12 +192,12 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
   let mut pendTrail : Doc := .nil
   match args[0]? with
   | some h =>
-    let body ← match headerDoc? h with
+    let body ← match header_doc? h with
       | some d => pure d
       | none => walk h
     acc := fileHead ((Lean4Fmt.Syntax.leading? h).getD "") ++ body
     prev := some (h, body)
-    pendTrail := Lean4Fmt.Emit.trailingRaw h
+    pendTrail := Lean4Fmt.Emit.trailing_raw h
   | none => pure ()
   let cmds := (args[1]?.map (·.getArgs)).getD #[]
   for c in cmds do
@@ -208,7 +208,7 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
       -- stays with the normal EOF canonicalization below.
       let lead := (Lean4Fmt.Syntax.leading? c).getD ""
       if !lead.toList.all (·.isWhitespace) then
-        acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leadingRaw c
+        acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leading_raw c
         pendTrail := .nil
         prev := none
       continue
@@ -217,7 +217,7 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
     | some (p, pBody) =>
       -- an EMPTY previous form (an importless header) means the "gap" is the
       -- file head — route it there (its first segment starts at byte 0)
-      if (Lean4Fmt.Emit.bareSrc p).isEmpty
+      if (Lean4Fmt.Emit.bare_src p).isEmpty
           && ((Lean4Fmt.Syntax.trailing? p).getD "").isEmpty then
         acc := acc ++ fileHead ((Lean4Fmt.Syntax.leading? c).getD "") ++ body
       else if gapOk p c pBody body then
@@ -229,7 +229,7 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
         let trailS := (Lean4Fmt.Syntax.trailing? p).getD ""
         let leadS := (Lean4Fmt.Syntax.leading? c).getD ""
         let gap := trailS ++ leadS
-        let normalize := style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize
+        let normalize := style.blankLines.policy == Lean4Fmt.Style.blank_policy.normalize
         if normalize && gap.toList.all (·.isWhitespace)
             && (gap.toList.filter (· == '\n')).length == 1 then
           acc := acc ++ .hardline ++ body
@@ -244,23 +244,23 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
             if trailS.any (· == '\n') then return none
             if trailT.startsWith "/-" && !trailT.startsWith "/--" then
               return none   -- same-line block comment: opaque
-            let some sep := moduleTrivia? leadS (atFileStart := false)
+            let some sep := module_trivia? leadS (atFileStart := false)
               | return none
             let trailD : Doc := if trailT.isEmpty then .nil else .text (" " ++ trailT)
             return some (trailD ++ sep)
           match gapDoc? with
           | some g => acc := acc ++ g ++ body
-          | none => acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leadingRaw c ++ body
+          | none => acc := acc ++ pendTrail ++ Lean4Fmt.Emit.leading_raw c ++ body
     | none => acc := acc ++ fileHead ((Lean4Fmt.Syntax.leading? c).getD "") ++ body
     prev := some (c, body)
-    pendTrail := Lean4Fmt.Emit.trailingRaw c
+    pendTrail := Lean4Fmt.Emit.trailing_raw c
   -- the FINAL trailing (EOF region): whitespace-only canonicalizes to nothing
   -- (the renderer supplies the final newline); comments stay byte-exact
   let finalWs :=
     match prev with
     | some (p, _) => (((Lean4Fmt.Syntax.trailing? p).getD "").toList.all (·.isWhitespace))
     | none        => false
-  if style.blankLines.policy == Lean4Fmt.Style.BlankPolicy.normalize && finalWs then
+  if style.blankLines.policy == Lean4Fmt.Style.blank_policy.normalize && finalWs then
     return acc
   return acc ++ pendTrail
 

@@ -11,17 +11,17 @@
 
 namespace Lean4Fmt.Cli
 
-inductive Mode
-  | format     -- print to stdout (default)
-  | check      -- exit 1 if any file would change
-  | write      -- overwrite in place
-  | stats      -- coverage accounting: active/verbatim/trivia bytes per file + total
-  | renamePlan -- read `NAME AXIS` lines on stdin, print the casing rename plan
+inductive mode
+  | format      -- print to stdout (default)
+  | check       -- exit 1 if any file would change
+  | write       -- overwrite in place
+  | stats       -- coverage accounting: active/verbatim/trivia bytes per file + total
+  | renamePlan  -- read `NAME AXIS` lines on stdin, print the casing rename plan
   | renameApply -- parse the given files, apply the casing rename plan IN PLACE
   deriving Repr, Inhabited, BEq
 
 structure Options where
-  mode   : Mode := .format
+  mode   : mode := .format
   preset : String := "straylight"
   width  : Option Nat := none     -- explicit --width overrides the preset
   /-- Fall back to the interleaved elaborating frontend when the cheap parse

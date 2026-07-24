@@ -18,14 +18,14 @@ import Lean4Fmt.Doc.Core
 namespace Lean4Fmt.Doc
 
 /-- Non-whitespace characters of a char list, in order. -/
-def nonWsL (cs : List Char) : List Char := cs.filter (fun c => !c.isWhitespace)
+def non_ws_l (cs : List Char) : List Char := cs.filter (fun c => !c.isWhitespace)
 
 /-- Non-whitespace characters of a string, in order. -/
-def nonWs (s : String) : List Char := nonWsL s.toList
+def non_ws (s : String) : List Char := non_ws_l s.toList
 
 /-- Drop trailing whitespace (the char-list twin of `trimAsciiEnd`, owned here
     so the Proofs module can reason about it by induction). -/
-def trimEndWs (cs : List Char) : List Char := (cs.reverse.dropWhile Char.isWhitespace).reverse
+def trim_end_ws (cs : List Char) : List Char := (cs.reverse.dropWhile Char.isWhitespace).reverse
 
 mutual
 
@@ -36,13 +36,13 @@ mutual
     when the grid's content provably equals it. -/
   def content : Doc → List Char
     | .nil | .line | .softline | .hardline | .blank _ | .pad _ => []
-    | .text s => nonWs s
-    | .textRaw s => nonWs s
-    | .verbatim s _ => nonWs s
+    | .text s => non_ws s
+    | .textRaw s => non_ws s
+    | .verbatim s _ => non_ws s
     | .cat a b => content a ++ content b
     | .group d | .nest _ d | .align d | .flatten d => content d
-    | .alignTable spec rows => contentRows (nonWs spec.sep) rows
-    | .alignOr _ _ fb => content fb
+    | .alignTable spec rows => contentRows (non_ws spec.sep) rows
+    | .align_or _ _ fb => content fb
     | .fillSep items => contentList items
 
   def contentList : List Doc → List Char

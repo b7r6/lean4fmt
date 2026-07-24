@@ -22,26 +22,27 @@ import Lean4Fmt.Doc.Render
 namespace Lean4Fmt.Doc
 
 /-- A whitespace-only trivia line (spaces/tabs — a blank line or pure indent). -/
-def wsLine (l : List Char) : Bool := l.all (fun c => c == ' ' || c == '\t')
+def ws_line (l : List Char) : Bool := l.all (fun c => c == ' ' || c == '\t')
 
 /-- The separator for a run of `blanks` blank lines (none → plain newline). -/
-def seamSep (blanks : Nat) : Doc := if blanks > 0 then .blank blanks else .hardline
+def seam_sep (blanks : Nat) : Doc := if blanks > 0 then .blank blanks else .hardline
 
 /-- Emit the interior full lines of a leading trivia: blank lines accumulate
     into `.blank` requests; each comment line rides `.textRaw`, dedented by
     `base` (spaces only — `dedent`'s guard) and trailing-trimmed. -/
-def seamLines (base : Nat) : Nat → List (List Char) → Doc
-  | blanks, [] => seamSep blanks
+def seam_lines (base : Nat) : Nat → List (List Char) → Doc
+  | blanks, [] => seam_sep blanks
   | blanks, l :: ls =>
-    if wsLine l then
-      seamLines base (blanks + 1) ls
+    if ws_line l then
+      seam_lines base (blanks + 1) ls
     else
-      seamSep blanks ++ .textRaw (String.ofList (trimEndWs (dedent base l))) ++ seamLines base 0 ls
+      seam_sep blanks ++ .textRaw (String.ofList (trim_end_ws (dedent base l)))
+          ++ seam_lines base 0 ls
 
 /-- The dedent column of a seam run: the minimum space-indent over its comment
     lines (relative offsets between comments survive the re-anchoring). -/
-def seamBase (full : List (List Char)) : Nat :=
-  (full.filter (fun l => !wsLine l)).foldl
+def seam_base (full : List (List Char)) : Nat :=
+  (full.filter (fun l => !ws_line l)).foldl
     (fun m l => Nat.min m (l.takeWhile (· == ' ')).length)
     1000000
 
@@ -56,16 +57,16 @@ def seamBase (full : List (List Char)) : Nat :=
     content (e.g. a block comment on the form's line), there is no seam that
     owns it and the answer is `none` — the caller goes verbatim. Pure
     single-newline trivia degenerates to the plain `.hardline` separator. -/
-def leadingSep? (lead : String) : Option Doc :=
-  if !wsLine ((splitLines lead.toList).headD []) then
+def leading_sep? (lead : String) : Option Doc :=
+  if !ws_line ((split_lines lead.toList).headD []) then
     none
-  else if !wsLine ((splitLines lead.toList).getLastD []) then
+  else if !ws_line ((split_lines lead.toList).getLastD []) then
     none
   else
     some
-      (seamLines
-        (seamBase (((splitLines lead.toList).drop 1).dropLast))
+      (seam_lines
+        (seam_base (((split_lines lead.toList).drop 1).dropLast))
         0
-        (((splitLines lead.toList).drop 1).dropLast))
+        (((split_lines lead.toList).drop 1).dropLast))
 
 end Lean4Fmt.Doc

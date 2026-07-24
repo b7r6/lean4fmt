@@ -23,12 +23,12 @@ open Lean
 open Lean4Fmt
 
 unsafe
-def initEnvImpl : IO Unit := do
+def init_env_impl : IO Unit := do
   initSearchPath (← findSysroot)
   enableInitializersExecution -- required before importing modules with syntax extensions
 
-@[implemented_by initEnvImpl]
-opaque initEnv : IO Unit
+@[implemented_by init_env_impl]
+opaque init_env : IO Unit
 
 /-- Lake workspace discovery (milestone 2): walk up from each input to a
     lakefile; one `lake env printenv LEAN_PATH` per distinct workspace root
@@ -37,7 +37,7 @@ opaque initEnv : IO Unit
     to the search path (an explicit LEAN_PATH keeps first-match priority),
     and a missing or failing `lake` is a silent skip, never an error. -/
 unsafe
-def addLakePathsImpl (files : List String) : IO Unit := do
+def add_lake_paths_impl (files : List String) : IO Unit := do
 
   -- an explicit LEAN_PATH is the caller taking control (corpus-gate's farm,
   -- batch loops): skip the ~1.6s/root lake startup — discovery is the
@@ -73,14 +73,14 @@ def addLakePathsImpl (files : List String) : IO Unit := do
     catch e =>
       Lean4Fmt.Log.log .debug s!"lake env unavailable at {root}: {e}"
 
-@[implemented_by addLakePathsImpl]
-opaque addLakePaths (files : List String) : IO Unit
+@[implemented_by add_lake_paths_impl]
+opaque add_lake_paths (files : List String) : IO Unit
 
 /-- Resolve style, expand inputs (files/dirs) to the file set, and run all jobs
     through the scheduler seam (`Driver.runAll`). Behind an opaque boundary so the
     non-`unsafe` `main` can invoke the unsafe frontend. -/
 unsafe
-def runJobsImpl
+def run_jobs_impl
     (files : List String)
     (width : Option Nat)
     (preset : String)
@@ -88,8 +88,8 @@ def runJobsImpl
     (retry : Bool)
     (logLevel : String)
     (lakeEnv : Bool)
-    : IO (Array Driver.Result) := do
-  let base := (Style.byName? preset).getD Style.straylight
+    : IO (Array Driver.result) := do
+  let base := (Style.by_name? preset).getD Style.straylight
   let style :=
     match width with
     | some w => { base with layout := { base.layout with lineWidth := w } }
@@ -106,37 +106,37 @@ def runJobsImpl
           -- (or matches an explicit --lake off)
           ++ (if lakeEnv then #[] else #["--lake", "off"])))
     else pure none
-  Driver.runAll style expanded elabFallback retryCfg
+  Driver.run_all style expanded elabFallback retryCfg
 
-@[implemented_by runJobsImpl]
-opaque runJobs (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool) (logLevel : String) (lakeEnv : Bool) :
-    IO (Array Driver.Result)
+@[implemented_by run_jobs_impl]
+opaque run_jobs (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool) (logLevel : String) (lakeEnv : Bool) :
+    IO (Array Driver.result)
 
 /-- Coverage accounting (`--stats`, DESIGN_V2 §15): per-file
     active/verbatim/trivia byte rows plus the aggregate. Files the shared env
     cannot parse retry as one-file `--stats` subprocesses (own env); a file
     nothing can parse counts fully verbatim — passthrough is what it gets. -/
 unsafe
-def runStatsImpl
+def run_stats_impl
     (files : List String)
     (width : Option Nat)
     (preset : String)
     (elabFallback : Bool)
     (retry : Bool)
     : IO (Array (Nat × Nat × Nat × Nat × String)) := do
-  let base := (Style.byName? preset).getD Style.straylight
+  let base := (Style.by_name? preset).getD Style.straylight
   let style :=
     match width with
     | some w => { base with layout := { base.layout with lineWidth := w } }
     | none   => base
   let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
-  let env ← Frontend.batchEnv expanded
+  let env ← Frontend.batch_env expanded
   let exe ← IO.appPath
   let mut rows : Array (Nat × Nat × Nat × Nat × String) := #[]
   for p in expanded do
     let contents ← IO.FS.readFile p
-    let style ← Driver.styleFor style p
-    match ← Frontend.statsFor env p.toString contents style elabFallback with
+    let style ← Driver.style_for style p
+    match ← Frontend.stats_for env p.toString contents style elabFallback with
     | some (a, v, t, pol) => rows := rows.push (a, v, t, pol, p.toString)
     | none =>
       let sub? ← do
@@ -157,48 +157,53 @@ def runStatsImpl
       | none => rows := rows.push (0, contents.utf8ByteSize, 0, 0, p.toString)
   return rows
 
-@[implemented_by runStatsImpl]
-opaque runStats (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool) :
+@[implemented_by run_stats_impl]
+opaque run_stats (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool) :
     IO (Array (Nat × Nat × Nat × Nat × String))
 
 -- ── the rename apply (G-L7.1): parse-based, token-aware identifier rewrite ────
 
 /-- Last dotted component of a name (`Foo.bar` → `bar`). -/
-def lastComp (s : String) : String := (s.splitOn ".").getLastD s
+def last_comp (s : String) : String := (s.splitOn ".").getLastD s
 
 /-- The naming axis a declaration node's KIND falls on, or `none` (example, or a
     command that declares no renamable name). -/
-def axisOfKind (k : Lean.Name) : Option Lean4Fmt.Rename.Axis :=
+def axis_of_kind (k : Lean.Name) : Option Lean4Fmt.Rename.axis :=
   if k == ``Lean.Parser.Command.definition || k == ``Lean.Parser.Command.abbrev
-      || k == ``Lean.Parser.Command.opaque || k == ``Lean.Parser.Command.instance then
+      || k == ``Lean.Parser.Command.opaque
+      || k == ``Lean.Parser.Command.instance then
     some .term
   else if k == ``Lean.Parser.Command.theorem || k == ``Lean.Parser.Command.axiom then
     some .thm
   else if k == ``Lean.Parser.Command.structure || k == ``Lean.Parser.Command.inductive then
     some .typ
-  else none
+  else
+    none
 
 /-- The declared simple-name of a definition node: the first ident of its
     `declId` child, last dotted component. `none` for anonymous decls (an
     unnamed instance) or a node with no declId. -/
-def declNameOf? (defn : Lean.Syntax) : Option String := do
+def decl_name_of? (defn : Lean.Syntax) : Option String := do
   let declId ← defn.getArgs.find? (·.getKind == ``Lean.Parser.Command.declId)
-  let idTok ← (Lean4Fmt.Emit.leafTokens declId).find? (·.isIdent)
-  let src := Lean4Fmt.Emit.bareSrc idTok
-  if src.isEmpty then none else some (lastComp src)
+  let idTok ← (Lean4Fmt.Emit.leaf_tokens declId).find? (·.isIdent)
+  let src := Lean4Fmt.Emit.bare_src idTok
+  if src.isEmpty then none
+  else some (last_comp src)
 
 /-- Every renamable top-level declaration of a parsed module as `(simple-name,
     axis)`. Namespaced decls are siblings (namespace/end are their own
     commands), so a flat command walk sees them all. -/
-def declsOf (stx : Lean.Syntax) : List (String × Lean4Fmt.Rename.Axis) :=
+def decls_of (stx : Lean.Syntax) : List (String × Lean4Fmt.Rename.axis) :=
   let cmds := ((stx.getArgs[1]?).map (·.getArgs)).getD #[]
-  cmds.toList.filterMap (fun c =>
-    if c.getKind == ``Lean.Parser.Command.declaration then
-      c.getArgs.findSome? (fun defn =>
-        match axisOfKind defn.getKind with
-        | some ax => (declNameOf? defn).map (fun nm => (nm, ax))
-        | none    => none)
-    else none)
+  cmds.toList.filterMap
+    (fun c =>
+      if c.getKind == ``Lean.Parser.Command.declaration then
+        c.getArgs.findSome?
+          (fun defn => match axis_of_kind defn.getKind with
+            | some ax => (decl_name_of? defn).map (fun nm => (nm, ax))
+            | none    => none)
+      else
+        none)
 
 /-- G-L7.1 apply: parse every file under one batch env, collect the decl set
     across the WHOLE input (so collisions are global), build the plan (preset
@@ -208,32 +213,38 @@ def declsOf (stx : Lean.Syntax) : List (String × Lean4Fmt.Rename.Axis) :=
     they ride byte-exact). The build is the floor; a bad rename is a failed
     make, not corrupted source. -/
 unsafe
-def runRenameApplyImpl (files : List String) (preset : String) (elabFallback : Bool) : IO Unit := do
+def run_rename_apply_impl
+    (files : List String)
+    (preset : String)
+    (elabFallback : Bool)
+    : IO Unit := do
   let paths := files.toArray.map System.FilePath.mk
-  let env ← Frontend.batchEnv paths
-  let naming := ((Lean4Fmt.Style.byName? preset).getD Lean4Fmt.Style.straylight).naming
+  let env ← Frontend.batch_env paths
+  let naming := ((Lean4Fmt.Style.by_name? preset).getD Lean4Fmt.Style.straylight).naming
   let modules := files.filterMap (fun f => (System.FilePath.mk f).fileStem)
   let err ← IO.getStderr
-  let mut allDecls : List (String × Lean4Fmt.Rename.Axis) := []
+  let mut allDecls : List (String × Lean4Fmt.Rename.axis) := []
   let mut parsed : Array (System.FilePath × String × Lean.Syntax) := #[]
   for p in paths do
     let contents ← IO.FS.readFile p
-    match ← Frontend.parseFull? env p.toString contents elabFallback with
+    match ← Frontend.parse_full? env p.toString contents elabFallback with
     | some stx =>
-      allDecls := allDecls ++ declsOf stx
+      allDecls := allDecls ++ decls_of stx
       parsed := parsed.push (p, contents, stx)
     | none => err.putStrLn s!"rename: SKIP (no parse) {p}"
-  let plan := Lean4Fmt.Rename.buildPlan naming modules allDecls
+  let plan := Lean4Fmt.Rename.build_plan naming modules allDecls
   let map := plan.renames
   err.putStrLn
     s!"// rename apply (preset {preset}): {map.length} renames, {plan.skipped.length} skipped over {parsed.size} files"
+  for (nm, tgt) in plan.skipped do
+    err.putStrLn s!"//   SKIP {nm} → {tgt}  (collision / keyword / module-basename)"
   for (p, contents, stx) in parsed do
-    let idents := (Lean4Fmt.Emit.leafTokens stx).filter (·.isIdent)
+    let idents := (Lean4Fmt.Emit.leaf_tokens stx).filter (·.isIdent)
     let mut edits : Array (Nat × Nat × String) := #[]
     for id in idents do
       match id.getSubstring? false false with
       | some ss =>
-        match Lean4Fmt.Rename.identReplacement map ss.toString with
+        match Lean4Fmt.Rename.ident_replacement map ss.toString with
         | some newText => edits := edits.push (ss.startPos.byteIdx, ss.stopPos.byteIdx, newText)
         | none => pure ()
       | none => pure ()
@@ -246,17 +257,17 @@ def runRenameApplyImpl (files : List String) (preset : String) (elabFallback : B
     IO.FS.writeFile p (String.fromUTF8! ba)
     err.putStrLn s!"rename: {p} ({edits.size} idents)"
 
-@[implemented_by runRenameApplyImpl]
-opaque runRenameApply (files : List String) (preset : String) (elabFallback : Bool) : IO Unit
+@[implemented_by run_rename_apply_impl]
+opaque run_rename_apply (files : List String) (preset : String) (elabFallback : Bool) : IO Unit
 
 def main (argv : List String) : IO Unit := do
   let o := Cli.parse argv
   if o.mode == .renamePlan then
     -- read `NAME AXIS` lines on stdin (AXIS ∈ ns|typ|thm|term), apply the preset's
     -- naming policy through the verified plan builder, print renames + skips.
-    let naming := ((Lean4Fmt.Style.byName? o.preset).getD Lean4Fmt.Style.straylight).naming
+    let naming := ((Lean4Fmt.Style.by_name? o.preset).getD Lean4Fmt.Style.straylight).naming
     let input ← (← IO.getStdin).readToEnd
-    let decls : List (String × Lean4Fmt.Rename.Axis) :=
+    let decls : List (String × Lean4Fmt.Rename.axis) :=
       input.splitOn "\n"
         |>.filterMap
           (fun line =>
@@ -269,7 +280,7 @@ def main (argv : List String) : IO Unit := do
               | "term" => some (nm, .term)
               | _ => none
             | _ => none)
-    let plan := Lean4Fmt.Rename.buildPlan naming [] decls
+    let plan := Lean4Fmt.Rename.build_plan naming [] decls
     IO.println
       s!"// rename plan (preset {o.preset}): {plan.renames.length} rename, {plan.skipped.length} skip"
     for (nm, tgt) in plan.renames do
@@ -281,17 +292,17 @@ def main (argv : List String) : IO Unit := do
     (← IO.getStderr).putStrLn Cli.usage
     IO.Process.exit 1
 
-  initEnv
-  Lean4Fmt.Log.setLevel (Lean4Fmt.Log.Level.ofString o.logLevel)
-  if o.lakeEnv then addLakePaths o.files
+  init_env
+  Lean4Fmt.Log.set_level (Lean4Fmt.Log.level.of_string o.logLevel)
+  if o.lakeEnv then add_lake_paths o.files
   let err ← IO.getStderr
 
   if o.mode == .renameApply then
-    runRenameApply o.files o.preset o.elabFallback
+    run_rename_apply o.files o.preset o.elabFallback
     return
 
   if o.mode == .stats then
-    let rows ← runStats o.files o.width o.preset o.elabFallback o.retry
+    let rows ← run_stats o.files o.width o.preset o.elabFallback o.retry
     let mut ta := 0
     let mut tv := 0
     let mut tt := 0
@@ -315,12 +326,12 @@ def main (argv : List String) : IO Unit := do
       s!"// ceiling: portable {pct portable code} of code; active-of-portable {pct ta portable}"
     return
 
-  let results ← runJobs o.files o.width o.preset o.elabFallback o.retry o.logLevel o.lakeEnv
+  let results ← run_jobs o.files o.width o.preset o.elabFallback o.retry o.logLevel o.lakeEnv
 
   let mut failed := false
   for r in results do
     for d in r.diagnostics do
-      let lvl : Lean4Fmt.Log.Level :=
+      let lvl : Lean4Fmt.Log.level :=
         match d.severity with
         | .debug   => .debug
         | .info    => .info

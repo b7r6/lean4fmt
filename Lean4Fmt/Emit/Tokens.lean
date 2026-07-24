@@ -22,19 +22,19 @@ namespace Lean4Fmt.Emit
 
 /-- The leaf tokens of a subtree, in order (atoms + idents with source bytes). -/
 partial
-def leafTokens (stx : Lean.Syntax) (acc : Array Lean.Syntax := #[]) : Array Lean.Syntax :=
+def leaf_tokens (stx : Lean.Syntax) (acc : Array Lean.Syntax := #[]) : Array Lean.Syntax :=
   match stx with
   | .atom ..       => acc.push stx
   | .ident ..      => acc.push stx
-  | .node _ _ args => args.foldl (fun a c => leafTokens c a) acc
+  | .node _ _ args => args.foldl (fun a c => leaf_tokens c a) acc
   | .missing       => acc
 
 /-- Any `choice` node in the subtree (ambiguous parse: children are ALL the
     alternatives — flattening would duplicate tokens). -/
 partial
-def hasChoice (stx : Lean.Syntax) : Bool :=
+def has_choice (stx : Lean.Syntax) : Bool :=
   match stx with
-  | .node _ k args => k == Lean.choiceKind || args.any hasChoice
+  | .node _ k args => k == Lean.choiceKind || args.any has_choice
   | _              => false
 
 /-- v2 pair rule: `some true` = one space, `some false` = glued, `none` =
@@ -44,7 +44,7 @@ def hasChoice (stx : Lean.Syntax) : Bool :=
     would catch it as a per-file fallback — correctness holds, coverage pays).
     clang-format is the shape of the eventual full table. -/
 private
-def gapRule (prev next : String) : Option Bool :=
+def gap_rule (prev next : String) : Option Bool :=
   let identLike (t : String) :=
     t.toList.all fun c => c.isAlphanum || c == '_' || c == '\'' || c == '.' || c.toNat > 127
   if prev == "(" || prev == "⟨" || prev == "‹" || prev == "⦃" || prev == "¬" then
@@ -61,18 +61,18 @@ def gapRule (prev next : String) : Option Bool :=
     canonical gaps (pair-rule table, else ws-gap → one space / zero gap →
     glued). `none` when a token is multi-line, a gap carries non-whitespace
     (an inline block comment), or there are no tokens. -/
-def tokenJoin? (stx : Lean.Syntax) : Option String :=
+def token_join? (stx : Lean.Syntax) : Option String :=
   Id.run
     do
-      if hasChoice stx then
+      if has_choice stx then
         return none
       -- quotation/template content (pin): inter-token spacing may be semantic
       -- to the quoted DSL — never respace
-      if Lean4Fmt.Syntax.hasQuotationKind stx then
+      if Lean4Fmt.Syntax.has_quotation_kind stx then
         return none
-      if Lean4Fmt.Syntax.hasTemplateOpener (bareSrc stx) then
+      if Lean4Fmt.Syntax.has_template_opener (bare_src stx) then
         return none
-      let ls := leafTokens stx
+      let ls := leaf_tokens stx
       if ls.isEmpty then
         return none
       let mut out := ""
@@ -82,7 +82,7 @@ def tokenJoin? (stx : Lean.Syntax) : Option String :=
       -- space) — folded into the next real gap, else `(· + ·)` would relex-glue
       let mut skipGap := ""
       for l in ls do
-        let t := bareSrc l
+        let t := bare_src l
         if t.isEmpty then
           skipGap :=
             skipGap ++ (Lean4Fmt.Syntax.leading? l).getD "" ++ (Lean4Fmt.Syntax.trailing? l).getD ""
@@ -106,7 +106,7 @@ def tokenJoin? (stx : Lean.Syntax) : Option String :=
           if gap.any (· == '\n') then
             return none -- not single-line
           let sep :=
-            match gapRule (bareSrc p) t with
+            match gap_rule (bare_src p) t with
             | some true  => " "
             | some false => ""
             | none       => if gap.isEmpty then "" else " "
@@ -125,14 +125,14 @@ def tokenJoin? (stx : Lean.Syntax) : Option String :=
     tactics joined into an application). Single-line ones are safe: their
     interior is already one line and the join preserves it. -/
 partial
-def hasNewlineSemantic (s : Lean.Syntax) : Bool :=
+def has_newline_semantic (s : Lean.Syntax) : Bool :=
   ((s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
       || s.getKind == `Lean.Parser.Term.byTactic'
       || s.getKind == ``Lean.Parser.Term.let
       || s.getKind == ``Lean.Parser.Term.letrec
       || s.getKind == ``Lean.Parser.Term.structInst)
-      && (bareSrc s).any (· == '\n'))
-      || s.getArgs.any hasNewlineSemantic
+      && (bare_src s).any (· == '\n'))
+      || s.getArgs.any has_newline_semantic
 
 /-- Canonical FLATTENED token text: like `tokenJoin?` but newline gaps become
     single spaces — the canonical one-line spelling of a multi-line construct.
@@ -141,25 +141,25 @@ def hasNewlineSemantic (s : Lean.Syntax) : Bool :=
     newline-semantic construct (no one-line spelling EXISTS — see
     `hasNewlineSemantic`; the flatten-side head-ws law, enforced at the one
     owner instead of per call site). -/
-def tokenJoinFlat? (stx : Lean.Syntax) : Option String :=
+def token_join_flat? (stx : Lean.Syntax) : Option String :=
   Id.run
     do
-      if hasChoice stx then
+      if has_choice stx then
         return none
-      if hasNewlineSemantic stx then
+      if has_newline_semantic stx then
         return none
-      if Lean4Fmt.Syntax.hasQuotationKind stx then
+      if Lean4Fmt.Syntax.has_quotation_kind stx then
         return none
-      if Lean4Fmt.Syntax.hasTemplateOpener (bareSrc stx) then
+      if Lean4Fmt.Syntax.has_template_opener (bare_src stx) then
         return none
-      let ls := leafTokens stx
+      let ls := leaf_tokens stx
       if ls.isEmpty then
         return none
       let mut out := ""
       let mut prev : Option Lean.Syntax := none
       let mut skipGap := "" -- trivia from skipped empty leaves (see tokenJoin?)
       for l in ls do
-        let t := bareSrc l
+        let t := bare_src l
         if t.isEmpty then
           skipGap :=
             skipGap ++ (Lean4Fmt.Syntax.leading? l).getD "" ++ (Lean4Fmt.Syntax.trailing? l).getD ""
@@ -177,7 +177,7 @@ def tokenJoinFlat? (stx : Lean.Syntax) : Option String :=
           if !gap.toList.all (·.isWhitespace) then
             return none
           let sep :=
-            match gapRule (bareSrc p) t with
+            match gap_rule (bare_src p) t with
             | some true  => " "
             | some false => ""
             | none       => if gap.isEmpty then "" else " "
@@ -193,14 +193,14 @@ def tokenJoinFlat? (stx : Lean.Syntax) : Option String :=
     synthetic-info gaps) still ws-canonicalizes LEXICALLY (canonVerbatimWs):
     token bytes survive, interior space runs do not — so even the fallback is
     not an origin carrier. -/
-def canonTok (stx : Lean.Syntax) : String :=
-  match tokenJoin? stx with
+def canon_tok (stx : Lean.Syntax) : String :=
+  match token_join? stx with
   | some t => t
   | none =>
     -- piecewise ws-canon: quotation terms/commands byte-exact (pin),
     -- templates via canonVerbatimWs' own template mode, the rest collapses.
     -- NOTE the trim: bareSrc has no leading trivia, so start trim is a no-op
     -- and end trim only drops trailing ws — the piecewise offsets stay valid.
-    canonWsPiecewise stx ((bareSrc stx).trimAscii.toString)
+    canon_ws_piecewise stx ((bare_src stx).trimAscii.toString)
 
 end Lean4Fmt.Emit

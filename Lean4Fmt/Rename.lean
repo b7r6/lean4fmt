@@ -26,14 +26,14 @@ open Lean4Fmt.Casing
 
 /-- Which naming AXIS a declaration falls on — the map from decl kind to the
     `Naming` policy field. -/
-inductive Axis
+inductive axis
   | ns   -- namespace / module
   | typ  -- structure / inductive / class
   | thm  -- theorem / lemma / axiom (Prop-valued)
   | term -- def / abbrev / instance / field
   deriving Repr, Inhabited, BEq
 
-def axisCase (n : Lean4Fmt.Style.Naming) : Axis → Case
+def axis_case (n : Lean4Fmt.Style.Naming) : axis → Case
   | .ns   => n.namespaces
   | .typ  => n.types
   | .thm  => n.theorems
@@ -48,7 +48,7 @@ def keywords : List String :=
     "from", "at", "show", "have", "suffices", "calc", "return", "for", "while", "try", "catch",
     "extends", "renaming", "hiding", "attribute", "macro", "syntax", "notation", "elab", "set"]
 
-structure Plan where
+structure plan where
   renames : List (String × String) := [] -- name → target: APPLY these
   skipped : List (String × String) := [] -- name → target: LEAVE (collision / keyword)
   deriving Repr, Inhabited
@@ -58,11 +58,14 @@ structure Plan where
     also rewrite the module reference in `import`/`open`/`namespace` (the
     `Options → options` / `bad import` class the dogfood surfaced). These are the
     house style's "local exemptions", reported as skipped, not silent. -/
-def buildPlan (policy : Lean4Fmt.Style.Naming) (modules : List String)
-    (decls : List (String × Axis)) : Plan :=
+def build_plan
+    (policy : Lean4Fmt.Style.Naming)
+    (modules : List String)
+    (decls : List (String × axis))
+    : plan :=
 
   -- target for EVERY declared name (no-change ones included, so collisions see them)
-  let targets := decls.map (fun (nm, ax) => (nm, convert (axisCase policy ax) nm))
+  let targets := decls.map (fun (nm, ax) => (nm, convert (axis_case policy ax) nm))
   -- dedup by source name (each name declared once)
   let byName := targets.foldl (fun acc p => if acc.any (·.1 == p.1) then acc else acc ++ [p]) []
   let tgtCount := fun t => (byName.filter (·.2 == t)).length
@@ -78,7 +81,7 @@ def buildPlan (policy : Lean4Fmt.Style.Naming) (modules : List String)
     moves (the caller leaves the token byte-exact). This runs over every `.ident`
     leaf on the apply path — matching ANY dotted component catches use-sites
     regardless of qualification; the build is the floor for the rare over-match. -/
-def identReplacement (map : List (String × String)) (name : String) : Option String :=
+def ident_replacement (map : List (String × String)) (name : String) : Option String :=
   let parts := (name.splitOn ".").map (fun p => ((map.find? (·.1 == p)).map (·.2)).getD p)
   let joined := String.intercalate "." parts
   if joined == name then none else some joined
@@ -86,33 +89,34 @@ def identReplacement (map : List (String × String)) (name : String) : Option St
 -- ── #guard-locked: the plan's exclusions + the ident rewrite ─────────────────
 
 private
-def snakeAll : Lean4Fmt.Style.Naming :=
+def snake_all : Lean4Fmt.Style.Naming :=
   { namespaces := .upperCamel, types := .snake, theorems := .snake, terms := .snake }
 
 -- clean case: distinct camel terms → distinct snake targets, all applied
-#guard (buildPlan snakeAll [] [("catLines", .term), ("sigOneLineFits", .term)]).renames
+#guard (build_plan snake_all [] [("catLines", .term), ("sigOneLineFits", .term)]).renames
     == [("catLines", "cat_lines"), ("sigOneLineFits", "sig_one_line_fits")]
 
 -- keyword exclusion: `Case → case` is a keyword — skipped, `Meas → meas` applied
-#guard (buildPlan snakeAll [] [("Meas", .typ), ("Case", .typ)]).renames == [("Meas", "meas")]
-#guard (buildPlan snakeAll [] [("Case", .typ)]).skipped == [("Case", "case")]
+#guard (build_plan snake_all [] [("Meas", .typ), ("Case", .typ)]).renames == [("Meas", "meas")]
+#guard (build_plan snake_all [] [("Case", .typ)]).skipped == [("Case", "case")]
 
 -- collision vs an EXISTING name: `fooBar → foo_bar` would clash the declared
 -- `foo_bar`, so it is skipped (not silently merged), and `foo_bar` doesn't move
-#guard (buildPlan snakeAll [] [("fooBar", .term), ("foo_bar", .term)]).renames == []
-#guard (buildPlan snakeAll [] [("fooBar", .term), ("foo_bar", .term)]).skipped == [("fooBar", "foo_bar")]
+#guard (build_plan snake_all [] [("fooBar", .term), ("foo_bar", .term)]).renames == []
+
+#guard (build_plan snake_all [] [("fooBar", .term), ("foo_bar", .term)]).skipped == [("fooBar", "foo_bar")]
 
 -- MODULE-BASENAME exemption: `Options` is a module basename → skipped even though
 -- `Options → options` is otherwise clean (the dogfood's bad-import class)
-#guard (buildPlan snakeAll ["Options"] [("Options", .typ)]).renames == []
-#guard (buildPlan snakeAll ["Options"] [("Options", .typ)]).skipped == [("Options", "options")]
+#guard (build_plan snake_all ["Options"] [("Options", .typ)]).renames == []
+#guard (build_plan snake_all ["Options"] [("Options", .typ)]).skipped == [("Options", "options")]
 
 -- namespaces stay UpperCamel under this policy: no change, no rename
-#guard (buildPlan snakeAll [] [("Freeside", .ns)]).renames == []
+#guard (build_plan snake_all [] [("Freeside", .ns)]).renames == []
 
 -- identReplacement: dotted component rewrite; `none` when nothing moves
-#guard Lean4Fmt.Rename.identReplacement [("bar", "baz")] "Foo.bar" == some "Foo.baz"
-#guard Lean4Fmt.Rename.identReplacement [("bar", "baz")] "bar" == some "baz"
-#guard Lean4Fmt.Rename.identReplacement [("bar", "baz")] "Foo.qux" == none
+#guard Lean4Fmt.Rename.ident_replacement [("bar", "baz")] "Foo.bar" == some "Foo.baz"
+#guard Lean4Fmt.Rename.ident_replacement [("bar", "baz")] "bar" == some "baz"
+#guard Lean4Fmt.Rename.ident_replacement [("bar", "baz")] "Foo.qux" == none
 
 end Lean4Fmt.Rename

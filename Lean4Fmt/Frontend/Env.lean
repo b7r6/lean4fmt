@@ -22,7 +22,7 @@ open Lean
     header doesn't parse — the caller's job will diagnose). Header parsing is
     cheap text work; no environment is needed. -/
 unsafe
-def fileImports (path : System.FilePath) : IO (Array Import) := do
+def file_imports (path : System.FilePath) : IO (Array Import) := do
   try
     let contents ← IO.FS.readFile path
     let ictx := Parser.mkInputContext contents path.toString
@@ -37,7 +37,7 @@ def fileImports (path : System.FilePath) : IO (Array Import) := do
     end-of-process teardown of a region that lives for the whole invocation
     anyway. -/
 unsafe
-def importsEnv (imports : Array Import) : IO Environment := do
+def imports_env (imports : Array Import) : IO Environment := do
   let mut seen : NameSet := {}
   let mut resolved : Array Import := #[]
   for imp in imports do
@@ -52,7 +52,7 @@ def importsEnv (imports : Array Import) : IO Environment := do
   importModules resolved {} (trustLevel := 1024) (leakEnv := true) (loadExts := true)
 
 /-- A stable cache key for an import set (sorted, deduped module names). -/
-def importsKey (imports : Array Import) : String :=
+def imports_key (imports : Array Import) : String :=
   String.intercalate ";" (((imports.map (·.module.toString)).qsort (· < ·)).toList)
 
 /-- One environment for a whole batch: union every file's header imports and
@@ -65,11 +65,11 @@ def importsKey (imports : Array Import) : String :=
     file's own import set (`importsEnv`, cached by `importsKey`), so the union
     stays the fast path and conflicts cost only their own files. -/
 unsafe
-def batchEnv (paths : Array System.FilePath) : IO Environment := do
+def batch_env (paths : Array System.FilePath) : IO Environment := do
   let mut all : Array Import := #[]
   for p in paths do
-    all := all ++ (← fileImports p)
-  importsEnv all
+    all := all ++ (← file_imports p)
+  imports_env all
 
 /-- Coverage stats for one file under `env` (DESIGN_V2 §15): the
     active/verbatim/trivia byte attribution of its produced doc plus the
@@ -78,17 +78,17 @@ def batchEnv (paths : Array System.FilePath) : IO Environment := do
     when the file doesn't parse under this env (caller decides: count it fully
     verbatim, or retry under the file's own env in a subprocess). -/
 unsafe
-def statsFor
+def stats_for
     (env : Environment)
     (path contents : String)
     (style : Lean4Fmt.Style.Style)
     (elabFallback : Bool := true)
     : IO (Option (Nat × Nat × Nat × Nat)) := do
-  match ← parseFull? env path contents elabFallback with
+  match ← parse_full? env path contents elabFallback with
   | none => pure none
   | some stx =>
     let (doc, _) := Lean4Fmt.Emit.run style stx.updateLeading
     let (a, v, t) := Lean4Fmt.Doc.stats doc
-    pure (some (a, v, t, Lean4Fmt.Syntax.policyContentBytes stx))
+    pure (some (a, v, t, Lean4Fmt.Syntax.policy_content_bytes stx))
 
 end Lean4Fmt.Frontend

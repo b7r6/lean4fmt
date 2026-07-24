@@ -10,7 +10,7 @@
 
 namespace Lean4Fmt.Rules
 
-inductive Severity where
+inductive severity where
   | debug
   | info
   | warning
@@ -18,7 +18,7 @@ inductive Severity where
   deriving Repr, Inhabited, BEq
 
 structure Diagnostic where
-  severity : Severity
+  severity : severity
   pos      : Nat := 0
   rule     : String := ""
   message  : String

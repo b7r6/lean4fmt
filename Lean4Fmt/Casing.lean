@@ -29,7 +29,7 @@ inductive Case
   | preserve
   deriving Repr, Inhabited, BEq
 
-def Case.ofString? : String → Option Case
+def Case.of_string? : String → Option Case
   | "snake"      => some .snake
   | "camel"      => some .camel
   | "upperCamel" => some .upperCamel
@@ -47,7 +47,7 @@ def cap (s : String) : String :=
 /-- Split one `_`-free piece on lower/digit → Upper boundaries; each word
     lowercased. An all-caps acronym run stays ONE word (the documented limit). -/
 private
-def splitPiece (s : String) : List String :=
+def split_piece (s : String) : List String :=
   let (cur, acc) :=
     s.toList.foldl
       (fun (st : List Char × List String) c =>
@@ -59,10 +59,10 @@ def splitPiece (s : String) : List String :=
 
 /-- Split an identifier into lowercased words, honoring BOTH snake_case (split on
     `_`) and camel/UpperCamel (split on case boundaries). -/
-def splitWords (s : String) : List String := (s.splitOn "_").flatMap splitPiece |>.filter (· ≠ "")
+def split_words (s : String) : List String := (s.splitOn "_").flatMap split_piece |>.filter (· ≠ "")
 
 /-- Join words in the target case. -/
-def toCase (c : Case) (ws : List String) : String :=
+def to_case (c : Case) (ws : List String) : String :=
   match c with
   | .snake => String.intercalate "_" ws
   | .camel =>
@@ -83,7 +83,7 @@ def convert (c : Case) (s : String) : String :=
     let rest := cs.drop lead.length
     let trail := (rest.reverse.takeWhile (· == '\'')).reverse
     let core := (rest.reverse.drop trail.length).reverse
-    String.ofList lead ++ toCase c (splitWords (String.ofList core)) ++ String.ofList trail
+    String.ofList lead ++ to_case c (split_words (String.ofList core)) ++ String.ofList trail
 
 -- ── the round-trips, #guard-locked ──────────────────────────────────────────
 

@@ -15,6 +15,6 @@ import Lean4Fmt.Style
 namespace Lean4Fmt.Config
 
 /-- Load a config file to a `StylePatch`. SCAFFOLD (no-op patch). -/
-def load (_path : System.FilePath) : IO Lean4Fmt.Style.StylePatch := pure {}
+def load (_path : System.FilePath) : IO Lean4Fmt.Style.style_patch := pure {}
 
 end Lean4Fmt.Config

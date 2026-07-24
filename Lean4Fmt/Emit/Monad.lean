@@ -26,17 +26,17 @@ namespace Lean4Fmt.Emit
 
 open Lean Lean4Fmt.Doc Lean4Fmt.Style
 
-abbrev EmitM := ReaderT Style (StateM (Array Rules.Diagnostic))
+abbrev emit_m := ReaderT Style (StateM (Array Rules.Diagnostic))
 
-def style : EmitM Style := read
-def emitDiag (d : Rules.Diagnostic) : EmitM Unit := modify (·.push d)
+def style : emit_m Style := read
+def emit_diag (d : Rules.Diagnostic) : emit_m Unit := modify (·.push d)
 
 /-- The open-recursion walker type: category emitters receive `walk` so they can
     recurse into children without cross-module mutual recursion. -/
-abbrev Walk := Lean.Syntax → EmitM Doc
+abbrev Walk := Lean.Syntax → emit_m Doc
 
 /-- Bare source of a form (no leading/trailing trivia). -/
-def bareSrc (stx : Lean.Syntax) : String :=
+def bare_src (stx : Lean.Syntax) : String :=
   (stx.getSubstring? false false).map (·.toString) |>.getD ""
 
 /-- `canonVerbatimWs` applied PIECEWISE around embedded quotation TERMS: the
@@ -47,13 +47,13 @@ def bareSrc (stx : Lean.Syntax) : String :=
     `skipBytes` shifts the range base when `s` is a SUFFIX of the node's bare
     source (spanBodyBlank hands us the tail lines). Whole-node fallbacks: no
     substring/position info, or range geometry that doesn't land inside `s`. -/
-def canonWsPiecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) : String :=
+def canon_ws_piecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) : String :=
   Id.run
     do
-      if Lean4Fmt.Syntax.hasQuotationCommand stx then
+      if Lean4Fmt.Syntax.has_quotation_command stx then
         return s
-      let some ranges := Lean4Fmt.Syntax.quotTermRanges? stx | return s
-      if ranges.isEmpty then return Lean4Fmt.Doc.canonVerbatimWs s
+      let some ranges := Lean4Fmt.Syntax.quot_term_ranges? stx | return s
+      if ranges.isEmpty then return Lean4Fmt.Doc.canon_verbatim_ws s
       let some sub := stx.getSubstring? false false | return s
       let base := sub.startPos.byteIdx + skipBytes
       let bytes := s.toUTF8
@@ -70,21 +70,21 @@ def canonWsPiecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) : S
         if b ≤ a || a < cur || b > send then return s   -- geometry surprise: content-safe
         match piece? cur a, piece? a b with
         | some code, some quot =>
-          out := out ++ Lean4Fmt.Doc.canonVerbatimWs code ++ quot
+          out := out ++ Lean4Fmt.Doc.canon_verbatim_ws code ++ quot
           cur := b
         | _, _ => return s
       match piece? cur send with
-      | some tail => return out ++ Lean4Fmt.Doc.canonVerbatimWs tail
+      | some tail => return out ++ Lean4Fmt.Doc.canon_verbatim_ws tail
       | none => return s
 
 /-- The opt-out trail entry (debug level): names the kind and position.
     `verbatim` emits it; PROBE constructions (docs built speculatively and
     possibly discarded) use `verbatimQuiet` and log at their decision site —
     the trail reports what is EMITTED, not what was considered. -/
-def logOptOut (stx : Lean.Syntax) (why : String := "") : EmitM Unit :=
+def log_opt_out (stx : Lean.Syntax) (why : String := "") : emit_m Unit :=
   let pos := (stx.getPos?.map (·.byteIdx)).getD 0
   let len := ((stx.getTailPos?.map (·.byteIdx)).getD pos) - pos
-  emitDiag
+  emit_diag
     { severity := .debug,
       pos := pos,
       rule := "verbatim",
@@ -97,7 +97,7 @@ def logOptOut (stx : Lean.Syntax) (why : String := "") : EmitM Unit :=
     trivia) — the renderer dedents continuations by that, so the block re-anchors
     correctly at whatever column it is placed (the composition seam, §0.3).
     This variant is TRAIL-QUIET — for speculative doc construction. -/
-def verbatimQuiet (stx : Lean.Syntax) : EmitM Doc := do
+def verbatim_quiet (stx : Lean.Syntax) : emit_m Doc := do
   let lead := (Lean4Fmt.Syntax.leading? stx).getD ""
   let base :=
     if lead.any (· == '\n') then
@@ -113,8 +113,8 @@ def verbatimQuiet (stx : Lean.Syntax) : EmitM Doc := do
   -- subtrees ride whole-node byte-exact, embedded quotation TERMS byte-exact
   -- by range, templates via canonVerbatimWs' own template mode — everything
   -- else collapses
-  let canon := fun (t : String) => if preserve then t else canonWsPiecewise stx t
-  let s := bareSrc stx
+  let canon := fun (t : String) => if preserve then t else canon_ws_piecewise stx t
+  let s := bare_src stx
   if s.isEmpty then
     match stx.reprint with
     | some r => pure (.verbatim (canon r) base)
@@ -122,14 +122,14 @@ def verbatimQuiet (stx : Lean.Syntax) : EmitM Doc := do
   else pure (.verbatim (canon s) base)
 
 /-- Opaque reproduction WITH the opt-out trail entry — the safe default. -/
-def verbatim (stx : Lean.Syntax) (why : String := "") : EmitM Doc := do
-  if !(bareSrc stx).isEmpty then   -- an empty node emits nothing: not an opt-out
-    logOptOut stx why
-  verbatimQuiet stx
+def verbatim (stx : Lean.Syntax) (why : String := "") : emit_m Doc := do
+  if !(bare_src stx).isEmpty then   -- an empty node emits nothing: not an opt-out
+    log_opt_out stx why
+  verbatim_quiet stx
 
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
-def passthrough (stx : Lean.Syntax) : EmitM Doc := do
-  emitDiag
+def passthrough (stx : Lean.Syntax) : emit_m Doc := do
+  emit_diag
     { severity := .debug,
       pos      := (stx.getPos?.map (·.byteIdx)).getD 0,
       rule     := "passthrough",
@@ -148,7 +148,7 @@ def passthrough (stx : Lean.Syntax) : EmitM Doc := do
     trivia degenerates to the plain `.hardline` separator. `none` when the head
     segment carries content (a comment the previous line's trailing did not
     capture — no seam for it; the caller goes verbatim). -/
-def leadingSep? (lead : String) : Option Doc := Lean4Fmt.Doc.leadingSep? lead
+def leading_sep? (lead : String) : Option Doc := Lean4Fmt.Doc.leading_sep? lead
 
 /-- §7 matchArms: the aligned form `| pat => body` with the arrow column padded
     across a whole arm set — offered via `alignOr`, so the delta guardrail and
@@ -156,26 +156,26 @@ def leadingSep? (lead : String) : Option Doc := Lean4Fmt.Doc.leadingSep? lead
     layout. Only when EVERY arm has a flattenable pattern and an inline-capable
     body (a broken body opts the whole set out — mixed grids read worse than no
     grid). -/
-def armsAligned
-    (mode : Lean4Fmt.Style.AlignMode)
+def arms_aligned
+    (mode : Lean4Fmt.Style.align_mode)
     (maxDelta : Nat)
     (arms : Array (Doc × Option Doc))
     (fallback : Doc)
     : Doc :=
   Id.run do
-    if mode == Lean4Fmt.Style.AlignMode.never || arms.size < 2 then
+    if mode == Lean4Fmt.Style.align_mode.never || arms.size < 2 then
       return fallback
     let mut rows : List (List Doc) := []
     for (p, b?) in arms do
       let some b := b? | return fallback
-      if (Lean4Fmt.Doc.flatWidth p).isNone || (Lean4Fmt.Doc.flatWidth b).isNone then
+      if (Lean4Fmt.Doc.flat_width p).isNone || (Lean4Fmt.Doc.flat_width b).isNone then
         return fallback
       rows := rows ++ [[Doc.text "| " ++ p, Doc.text "=>", b]]
-    let cap := if mode == Lean4Fmt.Style.AlignMode.always then 1000000 else maxDelta
-    return Doc.alignOr { sep := " ", maxDelta := cap } rows fallback
+    let cap := if mode == Lean4Fmt.Style.align_mode.always then 1000000 else maxDelta
+    return Doc.align_or { sep := " ", maxDelta := cap } rows fallback
 
 /-- One arm of a comment-interleaved arm set, for the RUN-aligned layout. -/
-structure ArmPiece where
+structure arm_piece where
   /-- Structural leading (comments/blank requests) — positions the arm. -/
   sep : Doc
   /-- The sep is a bare newline: this arm may JOIN the run in progress. -/
@@ -195,14 +195,14 @@ structure ArmPiece where
     sectioned table (`-- ── ints ──` between arm groups) keep its grids
     instead of falling to plain arms because the set as a whole is
     seam-bearing. -/
-def armsAlignedRuns
-    (mode : Lean4Fmt.Style.AlignMode)
+def arms_aligned_runs
+    (mode : Lean4Fmt.Style.align_mode)
     (maxDelta : Nat)
-    (pieces : Array ArmPiece)
+    (pieces : Array arm_piece)
     : Doc :=
   Id.run do
     let flush :=
-      fun (out sectLead : Doc) (sect : Array ArmPiece) =>
+      fun (out sectLead : Doc) (sect : Array arm_piece) =>
         Id.run do
           if sect.isEmpty then
             return out
@@ -215,10 +215,10 @@ def armsAlignedRuns
             match p.gridRow with
             | some r => rows := rows.push r
             | none => allGrid := false
-          let body := if allGrid then armsAligned mode maxDelta rows plainJ else plainJ
+          let body := if allGrid then arms_aligned mode maxDelta rows plainJ else plainJ
           return out ++ sectLead ++ body
     let mut out : Doc := .nil
-    let mut sect : Array ArmPiece := #[]
+    let mut sect : Array arm_piece := #[]
     let mut sectLead : Doc := .nil
     for p in pieces do
       if p.plain && !sect.isEmpty then sect := sect.push p
@@ -229,7 +229,7 @@ def armsAlignedRuns
     return flush out sectLead sect
 
 /-- The `matchAlt` nodes of a `matchAlts` node (groups flattened). -/
-def matchAltsOf (altsNode : Lean.Syntax) : Array Lean.Syntax :=
+def match_alts_of (altsNode : Lean.Syntax) : Array Lean.Syntax :=
   Id.run do
     let mut alts : Array Lean.Syntax := #[]
     for g in altsNode.getArgs do
@@ -247,10 +247,10 @@ def matchAltsOf (altsNode : Lean.Syntax) : Array Lean.Syntax :=
     the set is not this shape (the caller keeps its verbatim fallback). Pops
     the pattern's stale opt-out entry on success (the walk-interception
     rule). -/
-def altPatternStack?
+def alt_pattern_stack?
     (patStx : Lean.Syntax)
     (joinFlat? : Lean.Syntax → Option String)
-    : EmitM (Option (Doc × Bool)) := do
+    : emit_m (Option (Doc × Bool)) := do
   let width := (← read).layout.lineWidth
   let flushG :=
     fun (g : Array Lean.Syntax) =>
@@ -319,18 +319,18 @@ def altPatternStack?
     is unportable (an unowned interior comment, an unownable leading, a
     mid-set multi-line trailing): the CALLER falls back to its own verbatim
     span (whole-match / whole-decl). -/
-def armPieces?
+def arm_pieces?
     (walk : Walk)
     (alts : Array Lean.Syntax)
     (joinFlat? : Lean.Syntax → Option String := fun _ => none)
-    : EmitM (Option (Array ArmPiece)) := do
-  let mut pieces : Array ArmPiece := #[]
+    : emit_m (Option (Array arm_piece)) := do
+  let mut pieces : Array arm_piece := #[]
   for h : i in [0:alts.size] do
     let alt := alts[i]
-    if Lean4Fmt.Syntax.hasUnownedInteriorComment alt then
+    if Lean4Fmt.Syntax.has_unowned_interior_comment alt then
       return none
     let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
-    let some sep := leadingSep? lead | return none
+    let some sep := leading_sep? lead | return none
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
     let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
     let last := i + 1 == alts.size
@@ -348,12 +348,12 @@ def armPieces?
     -- though — see altPatternStack?. Anything else stays the caller's to
     -- verbatim, as before.
     if Lean4Fmt.Doc.hasMultilineReanchor patDoc then
-      match ← altPatternStack? patStx joinFlat? with
+      match ← alt_pattern_stack? patStx joinFlat? with
       | some (pd, broken) =>
         patDoc := pd
         patBroken := broken
       | none => return none
-    let arrowT := (bareSrc (aa[2]?.getD .missing)).trimAscii.toString
+    let arrowT := (bare_src (aa[2]?.getD .missing)).trimAscii.toString
     let arrowT := if arrowT.isEmpty then "=>" else arrowT
     let body := aa[aa.size-1]?.getD .missing
     let bodyDoc ← walk body
@@ -373,7 +373,7 @@ def armPieces?
         if srcBroken then Doc.nest 2 (Doc.hardline ++ bodyDoc)
         else Doc.text " " ++ bodyDoc
       else .group (.nest 2 (.line ++ bodyDoc))
-    let armSrc := (bareSrc alt).trimAscii.toString
+    let armSrc := (bare_src alt).trimAscii.toString
     let armDoc :=
       if preserveLB && !armSrc.isEmpty && !armSrc.any (· == '\n') then
         Doc.text armSrc
@@ -387,10 +387,10 @@ def armPieces?
   return some pieces
 
 /-- The leading trivia (comments + blank lines) before a form, as literal text. -/
-def leadingRaw (stx : Lean.Syntax) : Doc := .textRaw (Lean4Fmt.Syntax.leading? stx |>.getD "")
+def leading_raw (stx : Lean.Syntax) : Doc := .textRaw (Lean4Fmt.Syntax.leading? stx |>.getD "")
 
 /-- The trailing trivia after a form, as literal text. `leadingRaw next` +
     `trailingRaw prev` partition the inter-form gap exactly. -/
-def trailingRaw (stx : Lean.Syntax) : Doc := .textRaw (Lean4Fmt.Syntax.trailing? stx |>.getD "")
+def trailing_raw (stx : Lean.Syntax) : Doc := .textRaw (Lean4Fmt.Syntax.trailing? stx |>.getD "")
 
 end Lean4Fmt.Emit

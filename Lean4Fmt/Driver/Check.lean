@@ -15,8 +15,8 @@ namespace Lean4Fmt.Driver
 
 /-- `true` iff the file is already in formatted form. -/
 unsafe
-def isFormatted (path : String) (width : Nat := 100) : IO Bool := do
-  let (out, _) ← formatFile path width
+def is_formatted (path : String) (width : Nat := 100) : IO Bool := do
+  let (out, _) ← format_file path width
   let orig ← IO.FS.readFile path
   return out == orig
 

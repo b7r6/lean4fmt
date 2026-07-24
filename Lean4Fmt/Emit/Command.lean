@@ -27,20 +27,20 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
     piece or a structural surprise — the caller reproduces the whole
     declaration. -/
 private
-def ctorDoc?
+def ctor_doc?
     (walk : Lean4Fmt.Emit.Walk)
     (c : Lean.Syntax)
     (preserve : Bool)
-    : Lean4Fmt.Emit.EmitM (Option (Doc × String × Option Doc)) := do
+    : Lean4Fmt.Emit.emit_m (Option (Doc × String × Option Doc)) := do
   let ctor := c
   if c.getKind != ``Lean.Parser.Command.ctor then
     return none
   let a := c.getArgs
   if a.size != 5 then
     return none
-  let docT := (bareSrc a[0]!).trimAscii.toString
-  let modsT := (bareSrc a[2]!).trimAscii.toString
-  let nameT := (bareSrc a[3]!).trimAscii.toString
+  let docT := (bare_src a[0]!).trimAscii.toString
+  let modsT := (bare_src a[2]!).trimAscii.toString
+  let nameT := (bare_src a[3]!).trimAscii.toString
   if nameT.isEmpty || nameT.any (· == '\n') || modsT.any (· == '\n') then
     return none
   let sig := a[4]!.getArgs
@@ -48,10 +48,10 @@ def ctorDoc?
   let mut fillDocs : Array Doc := #[]
   let mut needFill := false
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
-    let t := Lean4Fmt.Emit.canonTok b
+    let t := Lean4Fmt.Emit.canon_tok b
     if t.any (· == '\n') then
       -- multi-line param: flatten it; the LINE goes to fill mode
-      match Lean4Fmt.Emit.tokenJoinFlat? b with
+      match Lean4Fmt.Emit.token_join_flat? b with
       | some ft =>
         needFill := true
         parts := parts.push ft
@@ -73,11 +73,11 @@ def ctorDoc?
     match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
     | [ts] =>
       let tyStx := (ts.getArgs[1]?).getD .missing
-      let t := Lean4Fmt.Emit.canonTok tyStx
+      let t := Lean4Fmt.Emit.canon_tok tyStx
       if t.isEmpty then return none
       let w := (← read).layout.lineWidth
       let flat? : Option String :=
-        if t.any (· == '\n') then Lean4Fmt.Emit.tokenJoinFlat? tyStx else some t
+        if t.any (· == '\n') then Lean4Fmt.Emit.token_join_flat? tyStx else some t
       match flat? with
       | some ft =>
         if prefixLen + 3 + ft.length + 4 ≤ w then pure (some ft)
@@ -100,7 +100,7 @@ def ctorDoc?
         | some t => " : " ++ t
         | none   => "")
   -- exact tail: the ctor bytes AFTER the doc comment (docD carries the doc)
-  let exact := (Lean4Fmt.Emit.bareSrc (Lean.mkNullNode (a.extract 1 a.size))).trimAscii.toString
+  let exact := (Lean4Fmt.Emit.bare_src (Lean.mkNullNode (a.extract 1 a.size))).trimAscii.toString
   let line := if preserve && !exact.isEmpty && !exact.any (· == '\n') then "| " ++ exact else joined
   -- a ctor whose joined line cannot fit gets FILL mode: params packed and
   -- wrapped at the continuation (deterministic; grid-ineligible)
@@ -141,7 +141,7 @@ def ctorDoc?
     prefix (doc comment lines), the single-line content, and its trailing
     comment (empty when none / not owned). -/
 private
-structure Item where
+structure item where
   sep       : Doc
   plainSep  : Bool
   prefixDoc : Doc
@@ -167,28 +167,28 @@ structure Item where
     emits everything plain. -/
 private
 def assemble
-    (trailMode : Lean4Fmt.Style.AlignMode)
-    (colMode : Lean4Fmt.Style.AlignMode)
+    (trailMode : Lean4Fmt.Style.align_mode)
+    (colMode : Lean4Fmt.Style.align_mode)
     (maxDelta : Nat)
-    (items : Array Item)
+    (items : Array item)
     : Doc :=
   Id.run
     do
-      let trailOn := trailMode != Lean4Fmt.Style.AlignMode.never
-      let colOn := colMode != Lean4Fmt.Style.AlignMode.never
+      let trailOn := trailMode != Lean4Fmt.Style.align_mode.never
+      let colOn := colMode != Lean4Fmt.Style.align_mode.never
       let cap :=
-        if trailMode == Lean4Fmt.Style.AlignMode.always
-            || colMode == Lean4Fmt.Style.AlignMode.always then
+        if trailMode == Lean4Fmt.Style.align_mode.always
+            || colMode == Lean4Fmt.Style.align_mode.always then
           1000000
         else
           maxDelta
-      let plain (o : Doc) (it : Item) : Doc :=
+      let plain (o : Doc) (it : item) : Doc :=
         o ++ it.sep ++ it.prefixDoc
             ++ (match it.lineDoc with
             | some d => d
             | none   => .text it.line)
             ++ (if it.trailT.isEmpty then Doc.nil else .text (" " ++ it.trailT))
-      let flush (o : Doc) (run : Array Item) : Doc := Id.run do
+      let flush (o : Doc) (run : Array item) : Doc := Id.run do
         if run.size < 2 then
           -- short runs emit plainly, WITH their separators
           let mut o := o
@@ -218,15 +218,15 @@ def assemble
               if it.trailT.isEmpty then [Doc.text it.line]
               else [Doc.text it.line, Doc.text it.trailT])
           return o ++ run[0]!.sep
-            ++ Doc.alignOr { sep := " ", maxDelta := cap } rows fallback
+            ++ Doc.align_or { sep := " ", maxDelta := cap } rows fallback
         return o ++ fallback -- unreachable (size < 2 returned above)
       -- run eligibility: plain separator, no doc-comment prefix, and — when only
       -- trailing alignment is on — a trailing comment to align
-      let eligible (it : Item) : Bool :=
+      let eligible (it : item) : Bool :=
         it.plainSep && !it.hasPrefix
             && ((colOn && !it.nameSeg.isEmpty) || (trailOn && !it.trailT.isEmpty))
       let mut out : Doc := .nil
-      let mut run : Array Item := #[]
+      let mut run : Array item := #[]
       for it in items do
         if eligible it then run := run.push it
         else
@@ -238,30 +238,30 @@ def assemble
 /-- Active layout for a `where`-style `inductive` body (the declaration node
     WITHOUT its modifiers — `Decl.emit` places those). `none` when this layout
     can't hold the input faithfully. -/
-def inductiveDoc?
+def inductive_doc?
     (walk : Lean4Fmt.Emit.Walk)
     (defn : Lean.Syntax)
-    (alignMode : Lean4Fmt.Style.AlignMode)
+    (alignMode : Lean4Fmt.Style.align_mode)
     (alignDelta : Nat)
     (preserve : Bool := false)
-    : Lean4Fmt.Emit.EmitM (Option Doc) := do
+    : Lean4Fmt.Emit.emit_m (Option Doc) := do
   let a := defn.getArgs
   if a.size != 7 then
     return none
   -- head: `inductive Name <binders> (: τ)? where` — one line, token-for-token
-  let idT := (bareSrc a[1]!).trimAscii.toString
+  let idT := (bare_src a[1]!).trimAscii.toString
   if idT.isEmpty || idT.any (· == '\n') then
     return none
   let sig := a[2]!.getArgs
   let mut head := "inductive " ++ idT
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
-    let t := Lean4Fmt.Emit.canonTok b
+    let t := Lean4Fmt.Emit.canon_tok b
     if t.any (· == '\n') then
       return none
     head := head ++ " " ++ t
   match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
   | [ts] =>
-    let t := Lean4Fmt.Emit.canonTok ((ts.getArgs[1]?).getD .missing)
+    let t := Lean4Fmt.Emit.canon_tok ((ts.getArgs[1]?).getD .missing)
     if t.isEmpty || t.any (· == '\n') then
       return none
     head := head ++ " : " ++ t
@@ -269,10 +269,10 @@ def inductiveDoc?
   | _ => return none
   -- `where` optional (the headless `inductive X | ctor …` form is the same
   -- ctor loop); old `:=`-style bodies and computed fields stay verbatim
-  let whereT := ((a[3]?.map bareSrc).getD "").trimAscii.toString
+  let whereT := ((a[3]?.map bare_src).getD "").trimAscii.toString
   if whereT != "where" && !whereT.isEmpty then
     return none
-  if !((a[5]?.map bareSrc).getD "").trimAscii.toString.isEmpty then
+  if !((a[5]?.map bare_src).getD "").trimAscii.toString.isEmpty then
     return none
   -- a comment on the `where` line itself has no home in the layout
   if whereT == "where"
@@ -289,17 +289,17 @@ def inductiveDoc?
     return none
   -- deriving (its leading trivia placed structurally, so blank groups before
   -- it survive), token-for-token
-  let derT := (a[6]?.map Lean4Fmt.Emit.canonTok).getD ""
+  let derT := (a[6]?.map Lean4Fmt.Emit.canon_tok).getD ""
   if derT.any (· == '\n') then
     return none
   let hasDer := !derT.isEmpty
   let some derSep :=
-    (if hasDer then leadingSep? ((Lean4Fmt.Syntax.leading? a[6]!).getD "") else some Doc.nil)
+    (if hasDer then leading_sep? ((Lean4Fmt.Syntax.leading? a[6]!).getD "") else some Doc.nil)
     | return none
-  let mut items : Array Item := #[]
+  let mut items : Array item := #[]
   for h : i in [0:ctors.size] do
     let c := ctors[i]
-    if Lean4Fmt.Syntax.interiorHasLineComment c then return none
+    if Lean4Fmt.Syntax.interior_has_line_comment c then return none
     let trailT := ((Lean4Fmt.Syntax.trailing? c).getD "").trimAscii.toString
     let last := i + 1 == ctors.size
     -- the LAST ctor's trailing belongs to the enclosing seam (Module) — unless
@@ -307,9 +307,9 @@ def inductiveDoc?
     let owned := !last || hasDer
     if owned && trailT.any (· == '\n') then return none
     let lead := (Lean4Fmt.Syntax.leading? c).getD ""
-    let some sep := leadingSep? lead | return none
+    let some sep := leading_sep? lead | return none
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
-    let some (docD, line, lineDoc?) ← ctorDoc? walk c preserve | return none
+    let some (docD, line, lineDoc?) ← ctor_doc? walk c preserve | return none
     -- preserve: the trailing comment's hand padding is part of the line
     let rawTrail := (((Lean4Fmt.Syntax.trailing? c).getD "").trimAsciiEnd).toString
     let (line, trailT) :=
@@ -338,31 +338,31 @@ def inductiveDoc?
     a parenthesized field group (`structExplicitBinder`), or a structural
     surprise. -/
 private
-def fieldDoc?
+def field_doc?
     (walk : Lean4Fmt.Emit.Walk)
     (f : Lean.Syntax)
     (preserve : Bool)
-    : Lean4Fmt.Emit.EmitM (Option (Doc × String × String × String × Option Doc)) := do
+    : Lean4Fmt.Emit.emit_m (Option (Doc × String × String × String × Option Doc)) := do
   if f.getKind != ``Lean.Parser.Command.structSimpleBinder then
     return none
   let a := f.getArgs
   if a.size != 4 then
     return none
   let margs := (a[0]?.map (·.getArgs)).getD #[]
-  let docT := ((margs[0]?.map bareSrc).getD "").trimAscii.toString
+  let docT := ((margs[0]?.map bare_src).getD "").trimAscii.toString
   let mut modsT := ""
   for m in margs.toList.drop 1 do
-    let t := (bareSrc m).trimAscii.toString
+    let t := (bare_src m).trimAscii.toString
     if t.any (· == '\n') then
       return none
     if !t.isEmpty then modsT := modsT ++ t ++ " "
-  let nameT := (bareSrc a[1]!).trimAscii.toString
+  let nameT := (bare_src a[1]!).trimAscii.toString
   if nameT.isEmpty || nameT.any (· == '\n') then
     return none
   let sig := a[2]!.getArgs
   let mut parts : Array String := #[]
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
-    let t := Lean4Fmt.Emit.canonTok b
+    let t := Lean4Fmt.Emit.canon_tok b
     if t.any (· == '\n') then
       return none
     parts := parts.push t
@@ -371,7 +371,7 @@ def fieldDoc?
     match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
     | [ts] =>
       let tyStx := (ts.getArgs[1]?).getD .missing
-      let t := Lean4Fmt.Emit.canonTok tyStx
+      let t := Lean4Fmt.Emit.canon_tok tyStx
       if t.isEmpty then return none
       if t.any (· == '\n') then
         -- multi-line field TYPE: FLATTEN when the one-line spelling fits
@@ -381,7 +381,7 @@ def fieldDoc?
         -- the real prefix: indent + mods + name + binders + " : "
         let prefixLen := 2 + modsT.length + nameT.length
           + (parts.foldl (fun s p => s + 1 + p.length) 0) + 3
-        match Lean4Fmt.Emit.tokenJoinFlat? tyStx with
+        match Lean4Fmt.Emit.token_join_flat? tyStx with
         | some ft =>
           if prefixLen + ft.length ≤ w then pure (some ft)
           else
@@ -397,7 +397,7 @@ def fieldDoc?
       else pure (some t)
     | [] => pure (none : Option String)
     | _ => return none
-  let defT := ((a[3]?.map bareSrc).getD "").trimAscii.toString
+  let defT := ((a[3]?.map bare_src).getD "").trimAscii.toString
   let mut defDoc? : Option Doc := none
   if defT.any (· == '\n') then
     -- multi-line DEFAULT (class-field `:= by exact …` — the structure-shape
@@ -421,7 +421,7 @@ def fieldDoc?
         ++ (if defTFlat.isEmpty then "" else (if tyT.isSome then " " else "") ++ defTFlat)
   let joined := nameSeg ++ (if restSeg.isEmpty then "" else " " ++ restSeg)
   -- exact tail: the field bytes from the name onward (doc rides docD)
-  let exact := (Lean4Fmt.Emit.bareSrc (Lean.mkNullNode (a.extract 1 a.size))).trimAscii.toString
+  let exact := (Lean4Fmt.Emit.bare_src (Lean.mkNullNode (a.extract 1 a.size))).trimAscii.toString
   let line :=
     if preserve && modsT.isEmpty && !exact.isEmpty && !exact.any (· == '\n') then exact else joined
   let lineDoc? :=
@@ -461,49 +461,49 @@ def fieldDoc?
     at +2 via the seam-owning item loop, `deriving` at +2 below. `none` when
     this layout can't hold the input (an explicit `mk ::`, parenthesized field
     groups, comments in seamless zones, multi-line pieces). -/
-def structureDoc?
+def structure_doc?
     (walk : Lean4Fmt.Emit.Walk)
     (defn : Lean.Syntax)
-    (alignMode : Lean4Fmt.Style.AlignMode)
-    (fieldColMode : Lean4Fmt.Style.AlignMode)
+    (alignMode : Lean4Fmt.Style.align_mode)
+    (fieldColMode : Lean4Fmt.Style.align_mode)
     (alignDelta : Nat)
     (preserve : Bool := false)
-    : Lean4Fmt.Emit.EmitM (Option Doc) := do
+    : Lean4Fmt.Emit.emit_m (Option Doc) := do
   let a := defn.getArgs
   if a.size != 6 then
     return none
-  let kwT := (bareSrc a[0]!).trimAscii.toString
+  let kwT := (bare_src a[0]!).trimAscii.toString
   if kwT.isEmpty || kwT.any (· == '\n') then
     return none
-  let idT := (bareSrc a[1]!).trimAscii.toString
+  let idT := (bare_src a[1]!).trimAscii.toString
   if idT.isEmpty || idT.any (· == '\n') then
     return none
   let sig := a[2]!.getArgs
   let mut head := kwT ++ " " ++ idT
   for b in ((sig[0]?).map (·.getArgs)).getD #[] do
-    let t := Lean4Fmt.Emit.canonTok b
+    let t := Lean4Fmt.Emit.canon_tok b
     if t.any (· == '\n') then
       return none
     head := head ++ " " ++ t
   match ((sig[1]?).map (·.getArgs)).getD #[] |>.toList with
   | [ts] =>
-    let t := (bareSrc ((ts.getArgs[1]?).getD .missing)).trimAscii.toString
+    let t := (bare_src ((ts.getArgs[1]?).getD .missing)).trimAscii.toString
     if t.isEmpty || t.any (· == '\n') then
       return none
     head := head ++ " : " ++ t
   | [] => pure ()
   | _ => return none
-  let extT := ((a[3]?.map bareSrc).getD "").trimAscii.toString
+  let extT := ((a[3]?.map bare_src).getD "").trimAscii.toString
   if extT.any (· == '\n') then
     return none
   if !extT.isEmpty then head := head ++ " " ++ extT
   -- deriving, shared with the fieldless form
-  let derT := (a[5]?.map Lean4Fmt.Emit.canonTok).getD ""
+  let derT := (a[5]?.map Lean4Fmt.Emit.canon_tok).getD ""
   if derT.any (· == '\n') then
     return none
   let hasDer := !derT.isEmpty
   let some derSep :=
-    (if hasDer then leadingSep? ((Lean4Fmt.Syntax.leading? a[5]!).getD "") else some Doc.nil)
+    (if hasDer then leading_sep? ((Lean4Fmt.Syntax.leading? a[5]!).getD "") else some Doc.nil)
     | return none
   let derD : Doc := if hasDer then derSep ++ .text derT else .nil
   -- the where-block: ["where", mk?, structFields] — absent for a fieldless
@@ -512,8 +512,8 @@ def structureDoc?
   if wargs.isEmpty then
     return some (.text head ++ .nest 2 derD)
   if wargs.size != 3 then return none
-  if ((wargs[0]?.map bareSrc).getD "").trimAscii.toString != "where" then return none
-  if !((wargs[1]?.map bareSrc).getD "").trimAscii.toString.isEmpty then return none
+  if ((wargs[0]?.map bare_src).getD "").trimAscii.toString != "where" then return none
+  if !((wargs[1]?.map bare_src).getD "").trimAscii.toString.isEmpty then return none
   if !((Lean4Fmt.Syntax.trailing? wargs[0]!).getD "").trimAscii.toString.isEmpty then return none
   head := head ++ " where"
   let fields := ((wargs[2]?.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
@@ -522,20 +522,20 @@ def structureDoc?
   -- comment/blank lines placed structurally, same-line trailing comments
   -- re-appended; the LAST field's trailing belongs to the enclosing seam
   -- unless `deriving` follows)
-  let mut items : Array Item := #[]
+  let mut items : Array item := #[]
   for h : i in [0:fields.size] do
     let f := fields[i]
     -- interior comments: the docstring→name zone is placeable (fieldDoc?
     -- re-emits those lines — only behind a docstring/modifier prefix, see
     -- there); any OTHER interior comment bails
     let zoneCnt :=
-      if ((f.getArgs[0]?.map (bareSrc ·)).getD "").trimAscii.toString.isEmpty then 0
-      else Lean4Fmt.Syntax.countLineComments
+      if ((f.getArgs[0]?.map (bare_src ·)).getD "").trimAscii.toString.isEmpty then 0
+      else Lean4Fmt.Syntax.count_line_comments
         ((Lean4Fmt.Syntax.leading? (f.getArgs[1]?.getD .missing)).getD "")
-    if Lean4Fmt.Syntax.countSubtreeLineComments f >
-        Lean4Fmt.Syntax.countLineComments ((Lean4Fmt.Syntax.leading? f).getD "")
-          + Lean4Fmt.Syntax.countLineComments
-              ((Lean4Fmt.Syntax.lastTokenTrailing? f).getD "")
+    if Lean4Fmt.Syntax.count_subtree_line_comments f >
+        Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? f).getD "")
+          + Lean4Fmt.Syntax.count_line_comments
+              ((Lean4Fmt.Syntax.last_token_trailing? f).getD "")
           + zoneCnt then
       return none
     let trailT := ((Lean4Fmt.Syntax.trailing? f).getD "").trimAscii.toString
@@ -543,9 +543,9 @@ def structureDoc?
     let owned := !last || hasDer
     if owned && trailT.any (· == '\n') then return none
     let lead := (Lean4Fmt.Syntax.leading? f).getD ""
-    let some sep := leadingSep? lead | return none
+    let some sep := leading_sep? lead | return none
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
-    let some (docD, nameSeg, restSeg, line, lineDoc?) ← fieldDoc? walk f preserve | return none
+    let some (docD, nameSeg, restSeg, line, lineDoc?) ← field_doc? walk f preserve | return none
     let rawTrail := (((Lean4Fmt.Syntax.trailing? f).getD "").trimAsciiEnd).toString
     let (line, trailT) :=
       if preserve && owned && !trailT.isEmpty && !rawTrail.any (· == '\n') then
@@ -563,7 +563,7 @@ def structureDoc?
     a `declaration` — `Decl.emit` does the real work), one per group at +2,
     inter-declaration comment/blank structure placed by the seam loop, `end` at
     the mutual's column. Everything else reproduces verbatim. -/
-def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
+def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
   let kind := stx.getKind
   if kind == `Batteries.Tactic.Alias.alias then
     -- `@[deprecated] alias longName := target` — [declModifiers, "alias",
@@ -573,25 +573,25 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
     let a := stx.getArgs
     if a.size != 5 then
       return (← Lean4Fmt.Emit.verbatim stx)
-    if Lean4Fmt.Syntax.interiorHasLineComment stx then
+    if Lean4Fmt.Syntax.interior_has_line_comment stx then
       return (← Lean4Fmt.Emit.verbatim stx)
     let m := a[0]!
-    let docText := ((m.getArgs[0]?.map bareSrc).getD "").trimAscii.toString
+    let docText := ((m.getArgs[0]?.map bare_src).getD "").trimAscii.toString
     let mut modDoc : Doc := if docText.isEmpty then .nil else .textRaw docText ++ .hardline
-    let attrText := ((m.getArgs[1]?.map Lean4Fmt.Emit.canonTok).getD "").trimAscii.toString
+    let attrText := ((m.getArgs[1]?.map Lean4Fmt.Emit.canon_tok).getD "").trimAscii.toString
     if attrText.any (· == '\n') then
       return (← Lean4Fmt.Emit.verbatim stx)
     if !attrText.isEmpty then modDoc := modDoc ++ .text attrText ++ .hardline
     let mut pre := ""
     for c in (m.getArgs.toList.drop 2) do
-      let t := Lean4Fmt.Emit.canonTok c
+      let t := Lean4Fmt.Emit.canon_tok c
       if t.any (· == '\n') then
         return (← Lean4Fmt.Emit.verbatim stx)
       if !t.isEmpty then pre := pre ++ t ++ " "
-    let kwT := (bareSrc a[1]!).trimAscii.toString
-    let nameT := Lean4Fmt.Emit.canonTok a[2]!
-    let asgnT := (bareSrc a[3]!).trimAscii.toString
-    let tgtT := Lean4Fmt.Emit.canonTok a[4]!
+    let kwT := (bare_src a[1]!).trimAscii.toString
+    let nameT := Lean4Fmt.Emit.canon_tok a[2]!
+    let asgnT := (bare_src a[3]!).trimAscii.toString
+    let tgtT := Lean4Fmt.Emit.canon_tok a[4]!
     if kwT.isEmpty || nameT.isEmpty || tgtT.isEmpty
         || [kwT, nameT, asgnT, tgtT].any (·.any (· == '\n')) then
       return (← Lean4Fmt.Emit.verbatim stx)
@@ -620,13 +620,13 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
       let isAttr :=
         mk == `Lean.Parser.Term.attributes
             || (m.getArgs[0]?.map (·.getKind == `Lean.Parser.Term.attributes)).getD false
-      if (bareSrc m).trimAscii.toString.isEmpty then i := i + 1
+      if (bare_src m).trimAscii.toString.isEmpty then i := i + 1
       else if isDoc then
-        let t := (bareSrc m).trimAscii.toString
+        let t := (bare_src m).trimAscii.toString
         pieces := pieces.push (.textRaw t, (Lean4Fmt.Syntax.leading? m).getD "")
         i := i + 1
       else if isAttr then
-        let t := (bareSrc m).trimAscii.toString
+        let t := (bare_src m).trimAscii.toString
         if t.any (· == '\n') then
           return (← Lean4Fmt.Emit.verbatim stx)
         pieces := pieces.push (.text t, (Lean4Fmt.Syntax.leading? m).getD "")
@@ -642,19 +642,19 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
     -- Module's to place. Unownable shapes keep the whole command verbatim.
     let headLead := (Lean4Fmt.Syntax.leading? (Lean.mkNullNode (a.extract i (n - 1)))).getD ""
     let hasCmt : String → Bool :=
-      fun l => Lean4Fmt.Syntax.hasLineComment l || (l.splitOn "/-").length > 1
-    let sepOf : String → Lean4Fmt.Emit.EmitM Doc := fun l => do
+      fun l => Lean4Fmt.Syntax.has_line_comment l || (l.splitOn "/-").length > 1
+    let sepOf : String → Lean4Fmt.Emit.emit_m Doc := fun l => do
       if hasCmt l then
-        match Lean4Fmt.Emit.leadingSep? l with
+        match Lean4Fmt.Emit.leading_sep? l with
         | some d => pure d
         | none => pure Doc.hardline   -- unreachable: guarded below
       else pure Doc.hardline
     for h : j in [1:pieces.size] do
       if hasCmt (pieces[j].2)
-          && (Lean4Fmt.Emit.leadingSep? (pieces[j].2)).isNone then
+          && (Lean4Fmt.Emit.leading_sep? (pieces[j].2)).isNone then
         return (← Lean4Fmt.Emit.verbatim stx)
     if !pieces.isEmpty && hasCmt headLead
-        && (Lean4Fmt.Emit.leadingSep? headLead).isNone then
+        && (Lean4Fmt.Emit.leading_sep? headLead).isNone then
       return (← Lean4Fmt.Emit.verbatim stx)
     let mut prefixDoc : Doc := .nil
     for h : j in [0:pieces.size] do
@@ -671,17 +671,17 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
       let ta := body.getArgs
       if ta.size != 5 then
         return (← Lean4Fmt.Emit.verbatim stx)
-      tailHeadT := Lean4Fmt.Emit.canonTok (Lean.mkNullNode (ta.extract 0 4))
+      tailHeadT := Lean4Fmt.Emit.canon_tok (Lean.mkNullNode (ta.extract 0 4))
       if tailHeadT.isEmpty || tailHeadT.any (· == '\n') then
         return (← Lean4Fmt.Emit.verbatim stx)
       body := ta[4]!
-    let headT := (bareSrc (Lean.mkNullNode (a.extract i (n - 1)))).trimAscii.toString
+    let headT := (bare_src (Lean.mkNullNode (a.extract i (n - 1)))).trimAscii.toString
     let headT := headT ++ (if tailHeadT.isEmpty then "" else " " ++ tailHeadT)
     if headT.isEmpty || headT.any (· == '\n') then
       return (← Lean4Fmt.Emit.verbatim stx)
     let bDoc ← walk body
     if (match bDoc with | .verbatim _ _ => true | _ => false)
-        || Lean4Fmt.Doc.hasMidlineReanchor bDoc then
+        || Lean4Fmt.Doc.has_midline_reanchor bDoc then
       return (← Lean4Fmt.Emit.verbatim stx)
     -- ONLY a do/by body glues to the head line (its statements anchor on the
     -- first statement's own column — safe left of the keyword). Any other
@@ -700,15 +700,15 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
     -- fillSep at the continuation (each binder one item — a token fill
     -- would wrap inside brackets); single-line lists fit on the line the
     -- same way (mathlib's long variable blocks were 4.3KB of the census)
-    if Lean4Fmt.Syntax.hasOwnedLineComment stx then
+    if Lean4Fmt.Syntax.has_owned_line_comment stx then
       return (← Lean4Fmt.Emit.verbatim stx)
     let binders := ((stx.getArgs[1]?).map (·.getArgs)).getD #[]
     let mut items : Array Doc := #[]
     for b in binders do
-      let bd ← Lean4Fmt.Emit.binderDoc walk b
+      let bd ← Lean4Fmt.Emit.binder_doc walk b
       if Lean4Fmt.Doc.hasMultilineReanchor bd then
         return (← Lean4Fmt.Emit.verbatim stx)
-      if (Lean4Fmt.Doc.flatWidth bd).isNone then
+      if (Lean4Fmt.Doc.flat_width bd).isNone then
         return (← Lean4Fmt.Emit.verbatim stx)
       items := items.push (.flatten bd)
     if items.isEmpty then
@@ -720,10 +720,10 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
       || kind == ``Lean.Parser.Command.universe || kind == ``Lean.Parser.Command.eval then
     -- trivial one-line commands, token-for-token; a MULTI-LINE command
     -- (an `open Ns (long ident list)`) reflows its tokens as a fillSep pool
-    if Lean4Fmt.Syntax.hasOwnedLineComment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    if kind == ``Lean.Parser.Command.open && (bareSrc stx).any (· == '\n') then
-      let toks := (Lean4Fmt.Emit.leafTokens stx).map
-        (fun l => (bareSrc l).trimAscii.toString) |>.filter (fun t => !t.isEmpty)
+    if Lean4Fmt.Syntax.has_owned_line_comment stx then return (← Lean4Fmt.Emit.verbatim stx)
+    if kind == ``Lean.Parser.Command.open && (bare_src stx).any (· == '\n') then
+      let toks := (Lean4Fmt.Emit.leaf_tokens stx).map
+        (fun l => (bare_src l).trimAscii.toString) |>.filter (fun t => !t.isEmpty)
       if toks.isEmpty || toks.any (·.any (· == '\n')) then
         return (← Lean4Fmt.Emit.verbatim stx)
       match toks.toList with
@@ -745,7 +745,7 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
       | [] => return (← Lean4Fmt.Emit.verbatim stx)
     let mut line := ""
     for c in stx.getArgs do
-      let t := Lean4Fmt.Emit.canonTok c
+      let t := Lean4Fmt.Emit.canon_tok c
       if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
       if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
     if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
@@ -756,12 +756,12 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
     let a := stx.getArgs
     if a.size != 3 then
       return (← Lean4Fmt.Emit.verbatim stx)
-    let preT := Lean4Fmt.Emit.canonTok a[0]!
+    let preT := Lean4Fmt.Emit.canon_tok a[0]!
     if preT.isEmpty || preT.any (· == '\n') then
       return (← Lean4Fmt.Emit.verbatim stx)
     if !((Lean4Fmt.Syntax.trailing? a[1]!).getD "").trimAscii.toString.isEmpty then
       return (← Lean4Fmt.Emit.verbatim stx)
-    let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? a[2]!).getD "")
+    let some sep := leading_sep? ((Lean4Fmt.Syntax.leading? a[2]!).getD "")
         | return (← Lean4Fmt.Emit.verbatim stx)
     return .text (preT ++ " in") ++ sep ++ (← walk a[2]!)
   if kind != ``Lean.Parser.Command.mutual then
@@ -769,7 +769,7 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
   let a := stx.getArgs
   if a.size != 3 then
     return (← Lean4Fmt.Emit.verbatim stx)
-  if ((a[2]?.map bareSrc).getD "").trimAscii.toString != "end" then
+  if ((a[2]?.map bare_src).getD "").trimAscii.toString != "end" then
     return (← Lean4Fmt.Emit.verbatim stx)
   -- a comment on the `mutual` line itself has no home in the layout
   if !((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString.isEmpty then
@@ -779,7 +779,7 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
     return (← Lean4Fmt.Emit.verbatim stx)
   let mut body : Doc := .nil
   for d in decls do
-    let some sep := leadingSep? ((Lean4Fmt.Syntax.leading? d).getD "")
+    let some sep := leading_sep? ((Lean4Fmt.Syntax.leading? d).getD "")
       | return (← Lean4Fmt.Emit.verbatim stx)
     let trailT := ((Lean4Fmt.Syntax.trailing? d).getD "").trimAscii.toString
     if trailT.any (· == '\n') then
@@ -794,7 +794,7 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM D
     if Lean4Fmt.Doc.hasMultilineReanchor dDoc then
       return (← Lean4Fmt.Emit.verbatim stx)
     body := body ++ sep ++ dDoc ++ trailDoc
-  let some endSep := leadingSep? ((Lean4Fmt.Syntax.leading? a[2]!).getD "")
+  let some endSep := leading_sep? ((Lean4Fmt.Syntax.leading? a[2]!).getD "")
       | return (← Lean4Fmt.Emit.verbatim stx)
   return .text "mutual" ++ .nest 2 body ++ endSep ++ .text "end"
 

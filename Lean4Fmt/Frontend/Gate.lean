@@ -36,15 +36,15 @@ open Lean
     `env` is imported once per process by `formatFile`; both the source parse and
     the fixed-point reparse reuse it (re-importing per call is what breaks). -/
 unsafe
-def parseFull?
+def parse_full?
     (env : Environment)
     (path contents : String)
     (elabFallback : Bool := true)
     : IO (Option Lean.Syntax) := do
-  match ← parseModule? env path contents with
+  match ← parse_module? env path contents with
   | some stx => pure (some stx)
   | none =>
-    if elabFallback then Session.parseModule? env path contents
+    if elabFallback then Session.parse_module? env path contents
     else pure none
 
 /-- The safety gate: return the text to emit — the actively-formatted output when
@@ -54,13 +54,13 @@ def parseFull?
     through UNCHANGED but never silently: a warning diagnostic says why (skipped
     coverage must be visible — a formatter that quietly no-ops looks like it ran). -/
 unsafe
-def formatSafe
+def format_safe
     (env : Environment)
     (path contents : String)
     (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
     (elabFallback : Bool := true)
     : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
-  match ← parseFull? env path contents elabFallback with
+  match ← parse_full? env path contents elabFallback with
   | none =>
     let msg :=
       if elabFallback then
@@ -74,7 +74,7 @@ def formatSafe
     let diags := lintDiags ++ emitDiags
     if active == contents then pure (contents, diags)
     else
-      match ← parseFull? env path active elabFallback with
+      match ← parse_full? env path active elabFallback with
       | none =>
         -- gate fallback is NEVER silent: an emitter bug that breaks the reparse
         -- would otherwise masquerade as a byte-identical "OK" in --check
@@ -103,18 +103,18 @@ def formatSafe
         -- fails, keep the conservative reject.
         let stx ← do
           if elabFallback
-              && (← parseModule? env path active).isNone
-              && (← parseModule? env path contents).isSome then
-            pure ((← Session.parseModule? env path contents).getD stx)
+              && (← parse_module? env path active).isNone
+              && (← parse_module? env path contents).isSome then
+            pure ((← Session.parse_module? env path contents).getD stx)
           else pure stx
         let (active2, _) := Lean4Fmt.Emit.format style stx2.updateLeading
-        let toksOk := Lean4Fmt.Syntax.leafToks stx == Lean4Fmt.Syntax.leafToks stx2 -- tokens preserved
-        let spineOk := Lean4Fmt.Syntax.kindSpine stx == Lean4Fmt.Syntax.kindSpine stx2 -- tree shape kept: in
+        let toksOk := Lean4Fmt.Syntax.leaf_toks stx == Lean4Fmt.Syntax.leaf_toks stx2 -- tokens preserved
+        let spineOk := Lean4Fmt.Syntax.kind_spine stx == Lean4Fmt.Syntax.kind_spine stx2 -- tree shape kept: in
         -- whitespace-sensitive regions (tactic bullets, branches) identical
         -- tokens can parse to a DIFFERENT tree — re-scoped meaning the token
         -- check alone cannot see
-        let cmtOk := Lean4Fmt.Syntax.commentContent stx == Lean4Fmt.Syntax.commentContent stx2 -- comments kept
-        let hdrOk := headerToks stx == headerToks stx2 -- imports in header
+        let cmtOk := Lean4Fmt.Syntax.comment_content stx == Lean4Fmt.Syntax.comment_content stx2 -- comments kept
+        let hdrOk := header_toks stx == header_toks stx2 -- imports in header
         let fixOk := active2 == active -- fixed point
         if toksOk && spineOk && cmtOk && hdrOk && fixOk then pure (active, diags)
         else
@@ -135,16 +135,16 @@ def formatSafe
             IO.FS.writeFile ⟨s!"{dir}/{slug}.1.lean"⟩ active
             if !fixOk then IO.FS.writeFile ⟨s!"{dir}/{slug}.2.lean"⟩ active2
             if !toksOk then
-              let t1 := Lean4Fmt.Syntax.leafToks stx
-              let t2 := Lean4Fmt.Syntax.leafToks stx2
+              let t1 := Lean4Fmt.Syntax.leaf_toks stx
+              let t2 := Lean4Fmt.Syntax.leaf_toks stx2
               let mut i := 0
               while i < Nat.min t1.size t2.size && t1[i]! == t2[i]! do
                 i := i + 1
               IO.eprintln
                 s!"TOKDIFF {path} @{i}: {(t1.extract (i - 2) (i + 4)).toList} vs {(t2.extract (i - 2) (i + 4)).toList} (sizes {t1.size}/{t2.size})"
             if toksOk && !spineOk then
-              let k1 := Lean4Fmt.Syntax.kindSpine stx
-              let k2 := Lean4Fmt.Syntax.kindSpine stx2
+              let k1 := Lean4Fmt.Syntax.kind_spine stx
+              let k2 := Lean4Fmt.Syntax.kind_spine stx2
               let mut i := 0
               while i < Nat.min k1.size k2.size && k1[i]! == k2[i]! do
                 i := i + 1
@@ -161,7 +161,7 @@ def formatSafe
 
 /-- Build the environment for a file (loads its imports) and format it. -/
 unsafe
-def formatFile
+def format_file
     (path contents : String)
     (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
     (elabFallback : Bool := true)
@@ -169,6 +169,6 @@ def formatFile
   let ictx := Parser.mkInputContext contents path
   let (hdr, _, msgs) ← Parser.parseHeader ictx
   let (env, _) ← Elab.processHeader hdr {} msgs ictx (trustLevel := 1024)
-  formatSafe env path contents style elabFallback
+  format_safe env path contents style elabFallback
 
 end Lean4Fmt.Frontend

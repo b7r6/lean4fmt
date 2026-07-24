@@ -34,7 +34,7 @@ open Lean4Fmt
 /-- The outcome of one job: the gated output, the original (for change/check), and
     the lint diagnostics. `output` is guaranteed never worse than `original` (the
     gate falls back to identity), so downstream modes are trivial. -/
-structure Result where
+structure result where
   path        : System.FilePath
   original    : String
   output      : String
@@ -42,7 +42,7 @@ structure Result where
   deriving Inhabited
 
 /-- Whether formatting would change the file. -/
-def Result.changed (r : Result) : Bool := r.output != r.original
+def result.changed (r : result) : Bool := r.output != r.original
 
 /-- The shared-nothing per-file work unit (read → parse → lint → format → gate).
     Self-contained: everything it needs is its arguments and the filesystem read;
@@ -50,19 +50,19 @@ def Result.changed (r : Result) : Bool := r.output != r.original
     an error diagnostic) so a batch never aborts — this is what a worker pool
     dispatches. -/
 unsafe
-def runJob
+def run_job
     (env : Lean.Environment)
     (style : Style.Style)
     (path : System.FilePath)
     (elabFallback : Bool := true)
     (retry : Option (String × Array String) := none)
-    : IO Result := do
+    : IO result := do
   let original ← IO.FS.readFile path
   try
     -- per-file config: `style` is the CLI base; fmt.lean chain overrides
-    let style ← styleFor style path
+    let style ← style_for style path
     let (output, diagnostics) ←
-      Frontend.formatSafe env path.toString original style elabFallback
+      Frontend.format_safe env path.toString original style elabFallback
     -- Retry ladder: a parse failure under the shared SUPERSET env can be a
     -- syntax-extension conflict between co-imported DSLs, not a broken file.
     -- The runtime's import model is one-shot (ImportingFlag: the first
@@ -81,7 +81,7 @@ def runJob
     with a parse diagnostic (a superset-env conflict, an own-notation file the
     union could not help, or a genuinely broken file — the retry sorts them). -/
 private
-def Result.retryable (r : Result) : Bool :=
+def result.retryable (r : result) : Bool :=
   r.output == r.original && r.diagnostics.any (·.rule == "parse")
 
 /-- The scheduler seam. The main pass is SEQUENTIAL today — the single place a
@@ -97,19 +97,19 @@ def Result.retryable (r : Result) : Bool :=
     are independent processes, each importing its own (subset) env, so the only
     coupling is transient memory: `LEAN4FMT_JOBS` bounds the wave (default 8). -/
 unsafe
-def runAll
+def run_all
     (style : Style.Style)
     (paths : Array System.FilePath)
     (elabFallback : Bool := true)
     (retry : Option (String × Array String) := none)
-    : IO (Array Result) := do
-  let env ← Frontend.batchEnv paths
+    : IO (Array result) := do
+  let env ← Frontend.batch_env paths
   -- main pass: IO tasks over the shared frozen env (default task priority = the
   -- runtime's core-sized pool; the env is `leakEnv`-persistent, shared
   -- read-only — the LSP sharing model). `runJob` catches its own errors, so a
   -- task failure here is a runtime fault, reported per file rather than thrown.
-  let tasks ← paths.mapM (fun p => IO.asTask (runJob env style p elabFallback none))
-  let mut results : Array Result := #[]
+  let tasks ← paths.mapM (fun p => IO.asTask (run_job env style p elabFallback none))
+  let mut results : Array result := #[]
   for p in paths, t in tasks do
     match t.get with
     | .ok r => results := results.push r
@@ -154,7 +154,7 @@ def runAll
 def expand (inputs : Array System.FilePath) : IO (Array System.FilePath) := do
   let mut acc : Array System.FilePath := #[]
   for p in inputs do
-    if ← p.isDir then acc := acc ++ (← findLean p)
+    if ← p.isDir then acc := acc ++ (← find_lean p)
     else acc := acc.push p
   let sorted := acc.qsort (fun a b => a.toString < b.toString)
   -- dedup (adjacent, since sorted)

@@ -17,18 +17,18 @@ import Lean4Fmt.Style.Options
 namespace Lean4Fmt.Style
 
 /-- A style override. Absent (`none`) groups leave the base untouched. -/
-structure StylePatch where
+structure style_patch where
   layout     : Option Layout := none
-  breaking   : Option Breaking := none
-  alignment  : Option Alignment := none
-  blankLines : Option BlankLines := none
-  spacing    : Option Spacing := none
-  imports    : Option Imports := none
-  comments   : Option Comments := none
+  breaking   : Option breaking := none
+  alignment  : Option alignment := none
+  blankLines : Option blank_lines := none
+  spacing    : Option spacing := none
+  imports    : Option imports := none
+  comments   : Option comments := none
   deriving Inhabited
 
 /-- Right-biased merge: the later patch wins per group. -/
-instance : Append StylePatch :=
+instance : Append style_patch :=
   ⟨
     fun a b => {
       layout := b.layout <|> a.layout
@@ -42,7 +42,7 @@ instance : Append StylePatch :=
   ⟩
 
 /-- Apply a patch to a base style (patch wins where present). -/
-def Style.apply (base : Style) (p : StylePatch) : Style := {
+def Style.apply (base : Style) (p : style_patch) : Style := {
   layout := p.layout.getD base.layout
   breaking := p.breaking.getD base.breaking
   alignment := p.alignment.getD base.alignment

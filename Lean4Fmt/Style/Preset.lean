@@ -66,7 +66,7 @@ def purtell : Style := {
 }
 
 /-- Look up a preset by name. -/
-def byName? : String → Option Style
+def by_name? : String → Option Style
   | "straylight" => some straylight
   | "mathlib"    => some mathlib
   | "aniva"      => some aniva

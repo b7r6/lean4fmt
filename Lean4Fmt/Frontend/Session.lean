@@ -33,7 +33,7 @@ namespace Lean4Fmt.Frontend.Session
 open Lean
 
 /-- How much of a file to elaborate to keep parsing faithful (§14.7). -/
-inductive ElabDepth
+inductive elab_depth
   | importsOnly -- floor: load imports; enough for import-provided notation
   | tablesOnly  -- elaborate just far enough to extend parser tables (skip proofs)
   | full        -- fully elaborate (heaviest; always faithful)
@@ -52,7 +52,7 @@ inductive ElabDepth
     planned throughput lever (§12). The env must already be built (imports loaded)
     ONCE per process — re-importing per call is what breaks in-process reuse. -/
 unsafe
-def parseModule? (env : Environment) (path contents : String) : IO (Option Lean.Syntax) := do
+def parse_module? (env : Environment) (path contents : String) : IO (Option Lean.Syntax) := do
   let ictx := Parser.mkInputContext contents path
   let (hdr, mps, msgs) ← Parser.parseHeader ictx
   -- the tablesOnly depth (§14.7), shipped: `debug.byAsSorry` stubs every

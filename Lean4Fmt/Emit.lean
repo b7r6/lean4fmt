@@ -37,7 +37,7 @@ mutual
     the do/tactic/command lists below are single-consumer and stay inline. -/
 partial def walkCore
             (stx : Lean.Syntax)
-            : EmitM Doc := do
+            : emit_m Doc := do
   match stx with
   | .missing => pure .nil
   | .atom _ v => pure (.text v)
@@ -45,7 +45,7 @@ partial def walkCore
     -- SOURCE bytes, not `n.toString`: a keyword-named ident (`«have»`,
     -- `«let»`) round-trips through toString WITHOUT its guillemets and
     -- reparses as the keyword (found on Pantograph — MANGLED)
-    let t := Lean4Fmt.Emit.bareSrc stx
+    let t := Lean4Fmt.Emit.bare_src stx
     -- an EMPTY-SOURCE anonymous ident is SYNTHETIC (cdot expansion): its
     -- toString would INJECT the literal text "[anonymous]" into the output
     -- (gate-caught on mathlib Determinant, tokens +1) — emit nothing
@@ -69,9 +69,9 @@ partial def walkCore
          || kind == ``Lean.Parser.Command.in then
       Command.emit walk stx
     else if (← read).breaking.preserveLineBreaks && kind == ``Lean.Parser.Term.do
-        && !(Lean4Fmt.Emit.bareSrc stx).any (· == '\n')
-        && !(Lean4Fmt.Emit.bareSrc stx).isEmpty then
-      pure (.text (Lean4Fmt.Emit.bareSrc stx))
+        && !(Lean4Fmt.Emit.bare_src stx).any (· == '\n')
+        && !(Lean4Fmt.Emit.bare_src stx).isEmpty then
+      pure (.text (Lean4Fmt.Emit.bare_src stx))
     else if kind == ``Lean.Parser.Term.do
          || kind == ``Lean.Parser.Term.doNested
          || kind == ``Lean.Parser.Term.doFor
@@ -161,16 +161,16 @@ partial def walkCore
     -- decisions inside expressions are load-bearing; structure (decls, do,
     -- tactics, seams) stays active.
     else if (← read).breaking.preserveLineBreaks
-        && (kind == ``Lean.Parser.Term.match || Lean4Fmt.Syntax.isBinOp kind
+        && (kind == ``Lean.Parser.Term.match || Lean4Fmt.Syntax.is_bin_op kind
             || kind.toString.startsWith "Lean.Parser.Term"
             || kind.toString.startsWith "term"
             || kind.toString.startsWith "«term") then
-      let t := Lean4Fmt.Emit.bareSrc stx
+      let t := Lean4Fmt.Emit.bare_src stx
       if !t.isEmpty && !t.any (· == '\n') then pure (.text t)
       else verbatim stx
-    else if Lean4Fmt.Syntax.isBinOp kind
-         || Lean4Fmt.Syntax.isBinderComma kind
-         || Lean4Fmt.Syntax.walkTermKinds.contains kind then
+    else if Lean4Fmt.Syntax.is_bin_op kind
+         || Lean4Fmt.Syntax.is_binder_comma kind
+         || Lean4Fmt.Syntax.walk_term_kinds.contains kind then
       Term.emit walk stx
     -- default: a SINGLE-LINE construct rides as active text — byte-exact
     -- (bareSrc is the source bytes, inter-token trivia included) and
@@ -179,7 +179,7 @@ partial def walkCore
     -- makes literals, types, and custom notations ACTIVE without per-kind
     -- ports — the opt-out log shows only the multi-line residue.
     else
-      let t := Lean4Fmt.Emit.bareSrc stx
+      let t := Lean4Fmt.Emit.bare_src stx
       if !t.isEmpty && !t.any (· == '\n') then
         -- canonical respacing (zero-passthrough): ws gaps collapse to one
         -- space; when tokenJoin? can't (choice nodes, synthetic-info gaps,
@@ -187,9 +187,9 @@ partial def walkCore
         -- and comment bytes survive, interior space runs do not. Quotation
         -- kinds are content byte-exact (pin); templates are guarded inside
         -- canonVerbatimWs itself.
-        match Lean4Fmt.Emit.tokenJoin? stx with
+        match Lean4Fmt.Emit.token_join? stx with
         | some t' => pure (.text t')
-        | none => pure (.text (Lean4Fmt.Emit.canonWsPiecewise stx t))
+        | none => pure (.text (Lean4Fmt.Emit.canon_ws_piecewise stx t))
       else verbatim stx
 
 /-- `walkCore` + the single-line bail interception: a DISPATCHED emitter that
@@ -200,12 +200,12 @@ partial def walkCore
     joins stay byte-exact; preserveLineBreaks styles keep source bytes. -/
 partial def walk
             (stx : Lean.Syntax)
-            : EmitM Doc := do
+            : emit_m Doc := do
   let d ← walkCore stx
   match d with
   | .verbatim s _ =>
     if s.any (· == '\n') || (← read).breaking.preserveLineBreaks then return d
-    match Lean4Fmt.Emit.tokenJoin? stx with
+    match Lean4Fmt.Emit.token_join? stx with
     | some t =>
       -- walkCore's bail logged an opt-out for THIS node, but the respaced
       -- text ships — pop the stale entry so the trail reports emissions

@@ -26,7 +26,7 @@ def quietly {α} (act : IO α) : IO α := do
 
 /-- Parse a module quietly; `none` if it does not parse cleanly in `env`. -/
 unsafe
-def parseModule? (env : Environment) (path contents : String) : IO (Option Lean.Syntax) :=
+def parse_module? (env : Environment) (path contents : String) : IO (Option Lean.Syntax) :=
   quietly do
     try
       let stx ← Parser.testParseModule env path contents
@@ -34,9 +34,9 @@ def parseModule? (env : Environment) (path contents : String) : IO (Option Lean.
     catch _ => pure none
 
 /-- Import tokens of a module header (used to confirm imports stay at the top). -/
-def headerToks (stx : Lean.Syntax) : Array String :=
+def header_toks (stx : Lean.Syntax) : Array String :=
   match stx.getArgs[0]? with
-  | some h => Lean4Fmt.Syntax.leafToks h
+  | some h => Lean4Fmt.Syntax.leaf_toks h
   | none   => #[]
 
 end Lean4Fmt.Frontend

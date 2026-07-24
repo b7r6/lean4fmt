@@ -17,24 +17,24 @@ namespace Lean4Fmt.Style
 
 -- ── choice knobs ────────────────────────────────────────────────────────────
 
-inductive ColonPlacement
+inductive colon_placement
   | breakBefore
   | breakAfter
   deriving Repr, Inhabited, BEq
 
-inductive AlignMode
+inductive align_mode
   | always
   | whenShort
   | never
   deriving Repr, Inhabited, BEq
 
-inductive BlankPolicy
+inductive blank_policy
   | preserve
   | impose
   | normalize
   deriving Repr, Inhabited, BEq
 
-inductive BinderLayout
+inductive binder_layout
   | oneLine
   | onePerLine
   | fill
@@ -49,36 +49,36 @@ inductive BinderLayout
 /-- Where a broken operator chain puts the operator: `leading` starts the
     continuation line with it (house); `trailing` ends the previous line with
     it (mathlib arrows). clang-format's BreakBeforeBinaryOperators. -/
-inductive OpBreak
+inductive op_break
   | leading
   | trailing
   deriving Repr, Inhabited, BEq
 
-def AlignMode.ofString? : String → Option AlignMode
+def align_mode.of_string? : String → Option align_mode
   | "always"    => some .always
   | "whenShort" => some .whenShort
   | "never"     => some .never
   | _           => none
 
-def BlankPolicy.ofString? : String → Option BlankPolicy
+def blank_policy.of_string? : String → Option blank_policy
   | "preserve"  => some .preserve
   | "impose"    => some .impose
   | "normalize" => some .normalize
   | _           => none
 
-def ColonPlacement.ofString? : String → Option ColonPlacement
+def colon_placement.of_string? : String → Option colon_placement
   | "breakBefore" => some .breakBefore
   | "breakAfter"  => some .breakAfter
   | _             => none
 
-def BinderLayout.ofString? : String → Option BinderLayout
+def binder_layout.of_string? : String → Option binder_layout
   | "oneLine"    => some .oneLine
   | "onePerLine" => some .onePerLine
   | "fill"       => some .fill
   | "adaptive"   => some .adaptive
   | _            => none
 
-def OpBreak.ofString? : String → Option OpBreak
+def op_break.of_string? : String → Option op_break
   | "leading"  => some .leading
   | "trailing" => some .trailing
   | _          => none
@@ -97,10 +97,10 @@ structure Layout where
   bodyFitWidth : Nat := 1000
   deriving Repr, Inhabited
 
-structure Breaking where
-  colon             : ColonPlacement := .breakAfter
-  binders           : BinderLayout := .oneLine
-  attributesOwnLine : Bool := false                 -- `@[…]` on its own line above the keyword
+structure breaking where
+  colon : colon_placement := .breakAfter
+  binders : binder_layout := .oneLine
+  attributesOwnLine : Bool := false -- `@[…]` on its own line above the keyword
   /-- `private`/`protected`/`noncomputable`/… on their OWN line above the
       keyword. The keyword then starts at column 0, so `onePerLine` binders
       (aligned under the name) hang at a uniform +4 instead of deep under
@@ -128,7 +128,7 @@ structure Breaking where
       ordinary body (inline when it fits, else its own line). -/
   glueFun : Bool := false
   /-- Operator position when a binop/arrow chain breaks (see `OpBreak`). -/
-  opBreak : OpBreak := .leading
+  opBreak : op_break := .leading
   /-- Over-width bracket lists (`simp only [...]`, `rw [...]`) FILL — items
       pack per line and wrap at the width, the closer glued to the last item
       (the mathlib shape); off = the all-or-nothing commaList (one item per
@@ -142,18 +142,18 @@ structure Breaking where
   solveDefs : Bool := false
   deriving Repr, Inhabited
 
-structure Alignment where
-  structFields     : AlignMode := .whenShort
-  matchArms        : AlignMode := .whenShort
-  letBlocks        : AlignMode := .never
-  recordFields     : AlignMode := .whenShort
-  trailingComments : AlignMode := .never
-  binderGroups     : AlignMode := .never
+structure alignment where
+  structFields     : align_mode := .whenShort
+  matchArms        : align_mode := .whenShort
+  letBlocks        : align_mode := .never
+  recordFields     : align_mode := .whenShort
+  trailingComments : align_mode := .never
+  binderGroups     : align_mode := .never
   maxDelta         : Nat := 8
   deriving Repr, Inhabited
 
-structure BlankLines where
-  policy               : BlankPolicy := .normalize
+structure blank_lines where
+  policy               : blank_policy := .normalize
   betweenTopLevelDecls : Nat := 1
   betweenImportGroups  : Nat := 1
   afterNamespaceOpen   : Nat := 1
@@ -167,7 +167,7 @@ structure BlankLines where
   maxConsecutive       : Nat := 1
   deriving Repr, Inhabited
 
-structure Spacing where
+structure spacing where
   aroundOperators : Bool := true
   insideBrackets  : Bool := true
   afterComma      : Bool := true
@@ -176,12 +176,12 @@ structure Spacing where
   preserveBinders : Bool := false
   deriving Repr, Inhabited
 
-structure Imports where
+structure imports where
   group : Bool := true
   sort  : Bool := false
   deriving Repr, Inhabited
 
-structure Comments where
+structure comments where
   spaceAfterDashes : Bool := true -- `--foo` → `-- foo`
   deriving Repr, Inhabited
 
@@ -199,12 +199,12 @@ structure Naming where
 /-- The fully-resolved style. -/
 structure Style where
   layout     : Layout := {}
-  breaking   : Breaking := {}
-  alignment  : Alignment := {}
-  blankLines : BlankLines := {}
-  spacing    : Spacing := {}
-  imports    : Imports := {}
-  comments   : Comments := {}
+  breaking   : breaking := {}
+  alignment  : alignment := {}
+  blankLines : blank_lines := {}
+  spacing    : spacing := {}
+  imports    : imports := {}
+  comments   : comments := {}
   naming     : Naming := {}
   deriving Repr, Inhabited
 
