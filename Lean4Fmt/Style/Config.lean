@@ -88,6 +88,13 @@ def asAlign (e : ConfigEntry) : Except String AlignMode :=
   | some m => pure m
   | none   => throw s!"line {e.line}: `{e.key}` expects always/whenShort/never (got `{e.val}`)"
 
+private
+def asCase (e : ConfigEntry) : Except String Lean4Fmt.Casing.Case :=
+  match Lean4Fmt.Casing.Case.ofString? e.val with
+  | some c => pure c
+  | none =>
+    throw s!"line {e.line}: `{e.key}` expects snake/camel/upperCamel/preserve (got `{e.val}`)"
+
 /-- Apply one entry to a style. The single source of truth for the key space —
     an unknown key is an error here, which is what makes a typo'd axis LOUD. -/
 def applyEntry (s : Style) (e : ConfigEntry) : Except String Style := do
@@ -155,6 +162,10 @@ def applyEntry (s : Style) (e : ConfigEntry) : Except String Style := do
   | "imports.group" => pure { s with imports.group := ← asBool e }
   | "imports.sort" => pure { s with imports.sort := ← asBool e }
   | "comments.spaceAfterDashes" => pure { s with comments.spaceAfterDashes := ← asBool e }
+  | "naming.namespaces" => pure { s with naming.namespaces := ← asCase e }
+  | "naming.types" => pure { s with naming.types := ← asCase e }
+  | "naming.theorems" => pure { s with naming.theorems := ← asCase e }
+  | "naming.terms" => pure { s with naming.terms := ← asCase e }
   | k => throw s!"line {e.line}: unknown option `{k}`"
 
 /-- Apply a whole config (one fmt.lean) onto a base style, in entry order. -/

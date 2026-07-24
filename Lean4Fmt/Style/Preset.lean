@@ -26,6 +26,7 @@ def straylight : Style := {
   alignment := { structFields := .whenShort, matchArms := .whenShort,
                   trailingComments := .whenShort, maxDelta := 16 }
   blankLines := { policy := .normalize, betweenTopLevelDecls := 1, maxConsecutive := 1 }
+  naming := { namespaces := .upperCamel, types := .upperCamel, theorems := .snake, terms := .camel }
 }
 
 /-- Placeholder — tuned to minimize mathlib4 churn (§9). Currently = Straylight

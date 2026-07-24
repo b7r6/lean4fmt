@@ -7,9 +7,11 @@
     sub-records so --help / docs / presets stay navigable. Choice-knobs are enums
     with FromString so config parse and `--set group.key=value` are mechanical.
 
-    Pure. Depends on nothing.
+    Pure. Depends only on `Casing` (the `Case` enum).
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
+
+import Lean4Fmt.Casing
 
 namespace Lean4Fmt.Style
 
@@ -183,6 +185,17 @@ structure Comments where
   spaceAfterDashes : Bool := true -- `--foo` → `-- foo`
   deriving Repr, Inhabited
 
+/-- Identifier casing per declaration AXIS — the rename policy. Code default is
+    `preserve` (inert); the packaged preset (straylight) carries the house policy.
+    A rename CHANGES tokens, so this rides a build-validated project pass, NOT the
+    token-preserving formatter — there is no degrade-to-identity floor here. -/
+structure Naming where
+  namespaces : Lean4Fmt.Casing.Case := .preserve -- namespace / module names
+  types      : Lean4Fmt.Casing.Case := .preserve -- structure / inductive / class
+  theorems   : Lean4Fmt.Casing.Case := .preserve -- theorem / lemma / axiom (Prop-valued)
+  terms      : Lean4Fmt.Casing.Case := .preserve -- def / abbrev / instance / fields
+  deriving Repr, Inhabited
+
 /-- The fully-resolved style. -/
 structure Style where
   layout     : Layout := {}
@@ -192,6 +205,7 @@ structure Style where
   spacing    : Spacing := {}
   imports    : Imports := {}
   comments   : Comments := {}
+  naming     : Naming := {}
   deriving Repr, Inhabited
 
 end Lean4Fmt.Style
