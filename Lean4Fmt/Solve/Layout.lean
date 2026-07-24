@@ -376,4 +376,54 @@ def sigOneLineFits (W prefixW bindersW : Nat) : Bool :=
 #guard sigOneLineFits 100 12 90 == false -- 12+90=102 > 100 → onePerLine
 #guard (List.range 120).all (fun b => sigOneLineFits 100 10 b == decide (10 + b ≤ 100))
 
+-- ── G-L5: the fold — `.group` and `.alignOr` are degenerate `.choice` ────────
+--
+-- A Wadler pretty-printer's `.group` is flat-or-break decided with ONE-token
+-- lookahead; `.alignOr` is a fixed cascade of align options. Both are special
+-- cases of the solver's `.choice` + measure-algebra DP: `.choice` with FEW
+-- candidates, decided GREEDILY. The solver keeps every candidate in the Pareto
+-- frontier, so an ENCLOSING choice sees a global optimum a local `.group` — which
+-- has already committed — cannot. That is the whole thesis, made mechanical: the
+-- combinator vocabulary of greedy pretty-printing is the low-lookahead corner of
+-- one constraint problem, and the solver is the general instrument.
+
+/-- A `.group` with an explicit break penalty: FLAT (free) or BROKEN (`+pen`) —
+    the 2-candidate `.choice` a Wadler printer bakes in. -/
+def groupW (pen : Nat) (flat broken : LDoc) : LDoc := .choice [.pen 0 flat, .pen pen broken]
+
+/-- The standard `.group`: breaking costs 1. -/
+def group (flat broken : LDoc) : LDoc := groupW 1 flat broken
+
+/-- An `.alignOr` cascade: N equally-preferred align options, then a fallback —
+    the (N+1)-candidate `.choice`. -/
+def alignOr (opts : List LDoc) (fallback : LDoc) : LDoc :=
+  .choice (opts.map (fun o => LDoc.pen 0 o) ++ [.pen 1 fallback])
+
+def g1 : LDoc := group (.text "iiiiiiiiii") (.cat (.flush (.text "iii")) (.text "iii"))
+
+-- IN ISOLATION the solver reproduces the greedy `.group` decision, and `solve`
+-- and `greedy` AGREE — there is no nesting to exploit.
+#guard (solve 20 g1).map Meas.cost == some 0 -- flat fits (10 ≤ 20) → flat
+#guard (solve 5 g1).map Meas.cost == some 1 -- flat overflows (10 > 5) → break
+#guard (greedy 20 g1).cost == 0 && (greedy 5 g1).cost == 1 -- greedy makes the same call
+
+-- NESTED, they DIVERGE. Two nested groups: the flat outer+inner overflows at
+-- 12+10 = 22 > 20, so greedy commits the OUTER to broken (cost 10). The DP keeps
+-- the outer FLAT and breaks only the inner (cost 1) — same feasibility, a tenth
+-- the cost. `.group` is myopic; `.choice` + the frontier is not.
+def nestedGroups : LDoc :=
+  groupW 10 (.cat (.text "PPPPPPPPPPPP") g1) (.cat (.flush (.text "PPPPPPPPPPPP")) g1)
+
+#guard (solve 20 nestedGroups).map Meas.cost == some 1 -- DP: global optimum
+#guard (greedy 20 nestedGroups).cost == 10 -- greedy `.group`: myopic
+#guard (solve 20 nestedGroups).map (fun m => decide (m.maxw ≤ 20)) == some true -- and it fits
+#guard ((solve 20 nestedGroups).getD default).cost < (greedy 20 nestedGroups).cost
+
+-- `.alignOr`: the first feasible align option wins, else the fallback — the
+-- renderer's cascade semantics as an (N+1)-candidate `.choice`.
+def ao : LDoc := alignOr [.text "wwwwwwwwwwwwwwww", .text "wwww"] (.flush (.text "w"))
+
+#guard (solve 8 ao).map Meas.cost == some 0 -- the 4-wide option fits at W=8 → an align option
+#guard (solve 3 ao).map Meas.cost == some 1 -- both options overflow W=3 → the fallback
+
 end Lean4Fmt.Solve

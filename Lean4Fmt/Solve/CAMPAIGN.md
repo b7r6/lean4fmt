@@ -73,10 +73,27 @@ pin is live, make the solver CHOOSE among sig shapes per-def: add the
 (same sig, different rung by width), blank knobs exercised on a blank-dense
 anchor (Δlines > 0), preference map config-driven, home + census clean.*
 
-**G-L5 — the shape family + fold `.group`.** Extend to theorem/instance/
-structure sig ladders; document/fold `.group` (= the 2-candidate `.choice`) and
-`.alignOr` into the one combinator. *Exit: the solver drives every declaration
-shape, census stable, pinned as the house layout engine.*
+**G-L5 — the shape family + fold `.group`.** ✓ LANDED. *Shape family:* the
+solver already drives the sig-shape choice for every decl kind that HAS one —
+def/theorem/abbrev/opaque/example (defnDoc), def-where, and instance all route
+through `sigDoc`'s adaptive resolution (G-L4). Recon settled the rest:
+structure/inductive heads are ALWAYS single-line by construction (`inductiveDoc?`
+builds the head as one string, bailing to verbatim on any multi-line binder) —
+there is no shape choice to drive, so "every declaration shape" holds. *The
+fold:* `group`/`groupW`/`alignOr` in `Solve.Layout` show `.group` = the
+2-candidate `.choice` and `.alignOr` = the (N+1)-candidate `.choice`; the solver
+reproduces the greedy flat-or-break in isolation (`solve == greedy`) and is
+optimal where the greedy combinator is myopic (nested groups: DP 1 vs greedy
+10). Verified core, no reformat: home 401/2, census stable.
+
+> **CAMPAIGN COMPLETE.** The constraint solver is the house layout engine: it
+> makes the def sig-shape decision live on the Emit path (allInline ≻ oneLine ≻
+> onePerLine, per declaration, by width), the house style is pinned repo-wide,
+> and the greedy pretty-printer combinators are proven special cases of its
+> `.choice`. What remains is optional polish, not gates: the blank-line knobs
+> (blanks as zero-width choice points — G-L4's deferred half), and — only if a
+> real greedy-suboptimal case surfaces in the corpus — bridging live Docs
+> through the DP renderer (the proven `.group` renderer stays until then).
 
 ## Scoreboard
 
@@ -88,5 +105,6 @@ shape, census stable, pinned as the house layout engine.*
 | **G-L3** | 6ee4842 | `inlineDefFits` = `bestUnder` routes defnDoc's inline/break decision, `solveDefs` knob (repo on / preset off); `#guard` proves `≡ (total ≤ W)` totally; imported into Emit.Decl | home 401/2, corpus-gate 234/0/0, census 0-reject, guards green |
 | involution-fix | 990bc47 | `plainLead` blank-invariant: a blank-only leading in a single-tactic by/do body no longer diverts it off the inline path (the 2-step-convergence fixed-point bug the pin surfaced on 71 files) | corpus-gate 234/0/0, home 401/2, pin fallbacks 71→0 |
 | pin (adopt house style) | f087bea | `fmt.lean` → visibilityOwnLine + bodyOwnLine=false; whole `src/` reformatted to the pin (314 files, experiments excluded); the formatter self-hosts (rebuilds from its own pinned source, guards green) | home pin-clean, idempotent, census dormant |
-| **G-L4** (chooser) | (this) | `pickShape` (tagged feasible-set argmin — the preference map) + `sigOneLineFits` + `BinderLayout.adaptive`; sigDoc resolves adaptive per-decl through the solver. Dormant under onePerLine (byte-identical). Fix: use the type's real `flatWidth`, not typeInfo's getD-0'd width (an active `let`/`∀`-in-type would mangle onto the keyword line — a reparse-fail) | home 401/2 dormant, guards green |
-| **G-L4** (activate) | (next) | `fmt.lean` → binders=adaptive; `src/` reformatted (297 files): a broken def keeps its sig on one line when it fits ≤W, else stacks — width-capped, so mostly 1-2 binder defs un-explode | home adaptive-clean, 0 fallbacks, idempotent, census dormant |
+| **G-L4** (chooser) | 148865d | `pickShape` (tagged feasible-set argmin — the preference map) + `sigOneLineFits` + `BinderLayout.adaptive`; sigDoc resolves adaptive per-decl through the solver. Dormant under onePerLine (byte-identical). Fix: use the type's real `flatWidth`, not typeInfo's getD-0'd width (an active `let`/`∀`-in-type would mangle onto the keyword line — a reparse-fail) | home 401/2 dormant, guards green |
+| **G-L4** (activate) | a655922 | `fmt.lean` → binders=adaptive; `src/` reformatted (295 files): a broken def keeps its sig on one line when it fits ≤W, else stacks — width-capped, so mostly 1-2 binder defs un-explode | home 401/2, 0 fallbacks, corpus 234/0/0, make core builds, self-hosts |
+| **G-L5** (fold) | (this) | `group`/`groupW`/`alignOr` — `.group` and `.alignOr` shown as the degenerate `.choice`; the solver reproduces the greedy flat-or-break IN ISOLATION (`solve == greedy`) but is optimal NESTED (nestedGroups: DP 1 vs greedy 10). The combinator vocabulary is the low-lookahead corner of the one constraint problem | guards green, home 401/2, census stable |
