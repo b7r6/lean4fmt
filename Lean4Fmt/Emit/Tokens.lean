@@ -22,10 +22,7 @@ namespace Lean4Fmt.Emit
 
 /-- The leaf tokens of a subtree, in order (atoms + idents with source bytes). -/
 partial
-def leafTokens
-    (stx : Lean.Syntax)
-    (acc : Array Lean.Syntax := #[])
-    : Array Lean.Syntax :=
+def leafTokens (stx : Lean.Syntax) (acc : Array Lean.Syntax := #[]) : Array Lean.Syntax :=
   match stx with
   | .atom ..       => acc.push stx
   | .ident ..      => acc.push stx
@@ -35,9 +32,7 @@ def leafTokens
 /-- Any `choice` node in the subtree (ambiguous parse: children are ALL the
     alternatives — flattening would duplicate tokens). -/
 partial
-def hasChoice
-    (stx : Lean.Syntax)
-    : Bool :=
+def hasChoice (stx : Lean.Syntax) : Bool :=
   match stx with
   | .node _ k args => k == Lean.choiceKind || args.any hasChoice
   | _              => false
@@ -49,9 +44,7 @@ def hasChoice
     would catch it as a per-file fallback — correctness holds, coverage pays).
     clang-format is the shape of the eventual full table. -/
 private
-def gapRule
-    (prev next : String)
-    : Option Bool :=
+def gapRule (prev next : String) : Option Bool :=
   let identLike (t : String) :=
     t.toList.all fun c => c.isAlphanum || c == '_' || c == '\'' || c == '.' || c.toNat > 127
   if prev == "(" || prev == "⟨" || prev == "‹" || prev == "⦃" || prev == "¬" then
@@ -68,9 +61,7 @@ def gapRule
     canonical gaps (pair-rule table, else ws-gap → one space / zero gap →
     glued). `none` when a token is multi-line, a gap carries non-whitespace
     (an inline block comment), or there are no tokens. -/
-def tokenJoin?
-    (stx : Lean.Syntax)
-    : Option String :=
+def tokenJoin? (stx : Lean.Syntax) : Option String :=
   Id.run
     do
       if hasChoice stx then
@@ -134,9 +125,7 @@ def tokenJoin?
     tactics joined into an application). Single-line ones are safe: their
     interior is already one line and the join preserves it. -/
 partial
-def hasNewlineSemantic
-    (s : Lean.Syntax)
-    : Bool :=
+def hasNewlineSemantic (s : Lean.Syntax) : Bool :=
   ((s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
       || s.getKind == `Lean.Parser.Term.byTactic'
       || s.getKind == ``Lean.Parser.Term.let
@@ -152,9 +141,7 @@ def hasNewlineSemantic
     newline-semantic construct (no one-line spelling EXISTS — see
     `hasNewlineSemantic`; the flatten-side head-ws law, enforced at the one
     owner instead of per call site). -/
-def tokenJoinFlat?
-    (stx : Lean.Syntax)
-    : Option String :=
+def tokenJoinFlat? (stx : Lean.Syntax) : Option String :=
   Id.run
     do
       if hasChoice stx then
@@ -206,9 +193,7 @@ def tokenJoinFlat?
     synthetic-info gaps) still ws-canonicalizes LEXICALLY (canonVerbatimWs):
     token bytes survive, interior space runs do not — so even the fallback is
     not an origin carrier. -/
-def canonTok
-    (stx : Lean.Syntax)
-    : String :=
+def canonTok (stx : Lean.Syntax) : String :=
   match tokenJoin? stx with
   | some t => t
   | none =>

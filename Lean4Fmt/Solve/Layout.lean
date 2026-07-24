@@ -27,18 +27,14 @@ abbrev Lines := List (Nat × String)
 
 def linesMaxw (ls : Lines) : Nat := ls.foldl (fun m p => max m (p.1 + p.2.length)) 0
 
-def linesLast
-    (ls : Lines)
-    : Nat :=
+def linesLast (ls : Lines) : Nat :=
   match ls.getLast? with
   | some p => p.1 + p.2.length
   | none   => 0
 
 /-- Horizontal join: `b` continues `a`'s last line; `b`'s later lines shift
     right by `a`'s last-line width (they were relative to `b`'s left edge). -/
-def catLines
-    (a b : Lines)
-    : Lines :=
+def catLines (a b : Lines) : Lines :=
   match a.getLast? with
   | none => b
   | some pa =>
@@ -51,10 +47,7 @@ def catLines
 def flushLines (a : Lines) : Lines := a ++ [(0, "")]
 
 /-- Indent everything after the first line by `n`. -/
-def nestLines
-    (n : Nat)
-    (a : Lines)
-    : Lines :=
+def nestLines (n : Nat) (a : Lines) : Lines :=
   match a with
   | []        => []
   | p :: rest => p :: rest.map (fun q => (q.1 + n, q.2))
@@ -78,10 +71,7 @@ def penM (c : Nat) (a : Meas) : Meas := { a with cost := a.cost + c }
     drop it. This prune is the whole tractability argument. -/
 def dominates (x y : Meas) : Bool := x.maxw ≤ y.maxw && x.last ≤ y.last && x.cost ≤ y.cost
 
-def insertPareto
-    (m : Meas)
-    (acc : List Meas)
-    : List Meas :=
+def insertPareto (m : Meas) (acc : List Meas) : List Meas :=
   if acc.any (fun n => dominates n m) then acc else m :: acc.filter (fun n => !dominates m n)
 
 /-- Reduce a candidate set to its Pareto frontier. -/
@@ -116,10 +106,7 @@ def frontier : LDoc → List Meas
 /-- Pick the min-cost layout whose every line fits `W` (the hard constraint).
     If none fits, degrade to the narrowest — the never-worse-than-input floor,
     which the token/comment gate then backstops. -/
-def bestUnder
-    (W : Nat)
-    (f : List Meas)
-    : Option Meas :=
+def bestUnder (W : Nat) (f : List Meas) : Option Meas :=
   let feas := f.filter (fun m => m.maxw ≤ W)
   let pool := if feas.isEmpty then f else feas
   pool.foldl
@@ -146,9 +133,7 @@ def greedy (W : Nat) : LDoc → Meas
     | some m => m
     | none   => (cands.getLast?).getD { lines := [(0, "")], cost := 0 }
 
-def renderMeas
-    (m : Meas)
-    : String :=
+def renderMeas (m : Meas) : String :=
   String.intercalate "\n" (m.lines.map (fun p => String.ofList (List.replicate p.1 ' ') ++ p.2))
 
 /-- The affine feasibility of a horizontal composition — the two line-width
@@ -175,16 +160,14 @@ theorem cat_fits
 -- and lands cost 10.  The DP sees that keeping the outer flat and breaking only
 -- the inner also fits — for cost 1.
 
-def inner
-    : LDoc :=
+def inner : LDoc :=
   .choice
     [
       .pen 0 (.text "iiiiiiiiii"), -- flat, 10 wide, free
       .pen 1 (.cat (.flush (.text "iii")) (.text "iii")) -- broken, narrow, +1
     ]
 
-def whole
-    : LDoc :=
+def whole : LDoc :=
   .choice
     [
       .pen 0 (.cat (.text "PPPPPPPPPPPP") inner), -- flat outer
@@ -204,26 +187,16 @@ def whole
 
 def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')
 
-def joinSp
-    (xs : List String)
-    : String :=
+def joinSp (xs : List String) : String :=
   xs.foldl (fun s x => if s.isEmpty then x else s ++ " " ++ x) ""
 
 /-- Rung 0: everything on one line. -/
-def defInline
-    (vis kw name : String)
-    (bs : List String)
-    (ret : String)
-    : LDoc :=
+def defInline (vis kw name : String) (bs : List String) (ret : String) : LDoc :=
   .text (joinSp ([vis, kw, name] ++ bs) ++ " : " ++ ret ++ " :=")
 
 /-- Rung 1: the pinned house shape — `private` own line, `def name` at col 0,
     binders and colon hanging at +4 (indent baked into the line text). -/
-def defHang
-    (vis kw name : String)
-    (bs : List String)
-    (ret : String)
-    : LDoc :=
+def defHang (vis kw name : String) (bs : List String) (ret : String) : LDoc :=
   let ls : List LDoc :=
     [.text vis, .text (kw ++ " " ++ name)] ++ bs.map (fun b => .text (spaces 4 ++ b))
         ++ [.text (spaces 4 ++ ": " ++ ret ++ " :=")]
@@ -231,15 +204,10 @@ def defHang
   | none      => .text ""
   | some last => ls.dropLast.foldr (fun l acc => .cat (.flush l) acc) last
 
-def defDoc
-    (vis kw name : String)
-    (bs : List String)
-    (ret : String)
-    : LDoc :=
+def defDoc (vis kw name : String) (bs : List String) (ret : String) : LDoc :=
   .choice [.pen 0 (defInline vis kw name bs ret), .pen 2 (defHang vis kw name bs ret)]
 
-def exBs
-    : List String :=
+def exBs : List String :=
   ["(pool : Array upstream_slot)", "(slot_predicate : pooled_upstream_state → Bool)"]
 
 def exDef : LDoc := defDoc "private" "def" "find_upstream_slot" exBs "Option Nat"
@@ -273,9 +241,7 @@ def chain : Nat → LDoc
 
 /-- def-sig ladder whose body is a nested chain — def contains body, both
     branching, composed through the frontier. -/
-def nestedDef
-    (n : Nat)
-    : LDoc :=
+def nestedDef (n : Nat) : LDoc :=
   .cat (defDoc "private" "def" "f" ["(a : T)"] "R") (.nest 2 (.cat (.flush (.text "")) (chain n)))
 
 -- optimality: the pruned DP finds the SAME optimal cost as exhaustive search
@@ -304,37 +270,29 @@ structure DefPieces where
 
 /-- The rung ladder for a def signature: inline and hang, with preference
     weights. (Weights become config in G-L4; here inline-when-it-fits.) -/
-def defLadder
-    (p : DefPieces)
-    : LDoc :=
+def defLadder (p : DefPieces) : LDoc :=
   .choice
     [
       .pen 0 (defInline p.vis p.kw p.name p.binders p.ret),
       .pen 2 (defHang p.vis p.kw p.name p.binders p.ret)
     ]
 
-def renderDef
-    (W : Nat)
-    (p : DefPieces)
-    : String :=
+def renderDef (W : Nat) (p : DefPieces) : String :=
   renderMeas ((solve W (defLadder p)).getD default)
 
-def fxFindUpstream
-    : DefPieces :=
+def fxFindUpstream : DefPieces :=
   { vis     := "private",
     name    := "find_upstream_slot",
     binders := ["(pool : Array upstream_slot)", "(slot_predicate : pooled_upstream_state → Bool)"],
     ret     := "Option Nat" }
 
-def fxFindIdle
-    : DefPieces :=
+def fxFindIdle : DefPieces :=
   { vis     := "private",
     name    := "find_idle_upstream_slot",
     binders := ["(pool : Array upstream_slot)"],
     ret     := "Option Nat" }
 
-def fxDial
-    : DefPieces :=
+def fxDial : DefPieces :=
   { vis     := "private",
     name    := "dial_upstream_slot",
     binders := ["(loop : Loop)", "(pool : Array upstream_slot)", "(idx : Nat)", "(port : UInt16)"],
@@ -365,9 +323,7 @@ def fxAll : List DefPieces := [fxFindUpstream, fxFindIdle, fxDial]
     algebra, live on the Emit path. The seam G-L4 widens: add the oneLine/fill
     rungs and real preference weights, and this same `bestUnder` starts choosing
     among them. -/
-def inlineDefFits
-    (W total : Nat)
-    : Bool :=
+def inlineDefFits (W total : Nat) : Bool :=
   let inlineRung : Meas := { lines := [(total, "")], cost := 0 } -- maxw = total, preferred
   let breakRung : Meas := { lines := [(0, "")], cost := 2 } -- maxw = 0, always feasible
   (bestUnder W [inlineRung, breakRung]).map Meas.cost == some 0
@@ -387,11 +343,7 @@ def inlineDefFits
     adding one `(tag, Meas)` pair; the preference map is the cost column. This is
     the "select the most-preferred shape that satisfies the constraint" the whole
     campaign is for, one call. -/
-def pickShape
-    {α : Type}
-    (W : Nat)
-    (rungs : List (α × Meas))
-    : Option α :=
+def pickShape {α : Type} (W : Nat) (rungs : List (α × Meas)) : Option α :=
   let feas := rungs.filter (fun r => r.2.maxw ≤ W)
   let pool := if feas.isEmpty then rungs else feas
   (pool.foldl
@@ -410,9 +362,7 @@ def pickShape
     drops to the per-line stack. Returns `true` for oneLine. The adaptivity a
     fixed `binders` knob cannot do: the SAME sig rides one line where it fits and
     stacks where it does not, per declaration. -/
-def sigOneLineFits
-    (W prefixW bindersW : Nat)
-    : Bool :=
+def sigOneLineFits (W prefixW bindersW : Nat) : Bool :=
   (pickShape
     W
     [

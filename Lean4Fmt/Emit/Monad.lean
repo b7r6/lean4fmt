@@ -36,9 +36,7 @@ def emitDiag (d : Rules.Diagnostic) : EmitM Unit := modify (·.push d)
 abbrev Walk := Lean.Syntax → EmitM Doc
 
 /-- Bare source of a form (no leading/trailing trivia). -/
-def bareSrc
-    (stx : Lean.Syntax)
-    : String :=
+def bareSrc (stx : Lean.Syntax) : String :=
   (stx.getSubstring? false false).map (·.toString) |>.getD ""
 
 /-- `canonVerbatimWs` applied PIECEWISE around embedded quotation TERMS: the
@@ -49,11 +47,7 @@ def bareSrc
     `skipBytes` shifts the range base when `s` is a SUFFIX of the node's bare
     source (spanBodyBlank hands us the tail lines). Whole-node fallbacks: no
     substring/position info, or range geometry that doesn't land inside `s`. -/
-def canonWsPiecewise
-    (stx : Lean.Syntax)
-    (s : String)
-    (skipBytes : Nat := 0)
-    : String :=
+def canonWsPiecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) : String :=
   Id.run
     do
       if Lean4Fmt.Syntax.hasQuotationCommand stx then
@@ -87,10 +81,7 @@ def canonWsPiecewise
     `verbatim` emits it; PROBE constructions (docs built speculatively and
     possibly discarded) use `verbatimQuiet` and log at their decision site —
     the trail reports what is EMITTED, not what was considered. -/
-def logOptOut
-    (stx : Lean.Syntax)
-    (why : String := "")
-    : EmitM Unit :=
+def logOptOut (stx : Lean.Syntax) (why : String := "") : EmitM Unit :=
   let pos := (stx.getPos?.map (·.byteIdx)).getD 0
   let len := ((stx.getTailPos?.map (·.byteIdx)).getD pos) - pos
   emitDiag
@@ -106,9 +97,7 @@ def logOptOut
     trivia) — the renderer dedents continuations by that, so the block re-anchors
     correctly at whatever column it is placed (the composition seam, §0.3).
     This variant is TRAIL-QUIET — for speculative doc construction. -/
-def verbatimQuiet
-    (stx : Lean.Syntax)
-    : EmitM Doc := do
+def verbatimQuiet (stx : Lean.Syntax) : EmitM Doc := do
   let lead := (Lean4Fmt.Syntax.leading? stx).getD ""
   let base :=
     if lead.any (· == '\n') then
@@ -133,18 +122,13 @@ def verbatimQuiet
   else pure (.verbatim (canon s) base)
 
 /-- Opaque reproduction WITH the opt-out trail entry — the safe default. -/
-def verbatim
-    (stx : Lean.Syntax)
-    (why : String := "")
-    : EmitM Doc := do
+def verbatim (stx : Lean.Syntax) (why : String := "") : EmitM Doc := do
   if !(bareSrc stx).isEmpty then   -- an empty node emits nothing: not an opt-out
     logOptOut stx why
   verbatimQuiet stx
 
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
-def passthrough
-    (stx : Lean.Syntax)
-    : EmitM Doc := do
+def passthrough (stx : Lean.Syntax) : EmitM Doc := do
   emitDiag
     { severity := .debug,
       pos      := (stx.getPos?.map (·.byteIdx)).getD 0,
@@ -245,9 +229,7 @@ def armsAlignedRuns
     return flush out sectLead sect
 
 /-- The `matchAlt` nodes of a `matchAlts` node (groups flattened). -/
-def matchAltsOf
-    (altsNode : Lean.Syntax)
-    : Array Lean.Syntax :=
+def matchAltsOf (altsNode : Lean.Syntax) : Array Lean.Syntax :=
   Id.run do
     let mut alts : Array Lean.Syntax := #[]
     for g in altsNode.getArgs do

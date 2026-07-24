@@ -22,9 +22,7 @@ open Lean
     header doesn't parse — the caller's job will diagnose). Header parsing is
     cheap text work; no environment is needed. -/
 unsafe
-def fileImports
-    (path : System.FilePath)
-    : IO (Array Import) := do
+def fileImports (path : System.FilePath) : IO (Array Import) := do
   try
     let contents ← IO.FS.readFile path
     let ictx := Parser.mkInputContext contents path.toString
@@ -39,9 +37,7 @@ def fileImports
     end-of-process teardown of a region that lives for the whole invocation
     anyway. -/
 unsafe
-def importsEnv
-    (imports : Array Import)
-    : IO Environment := do
+def importsEnv (imports : Array Import) : IO Environment := do
   let mut seen : NameSet := {}
   let mut resolved : Array Import := #[]
   for imp in imports do
@@ -56,9 +52,7 @@ def importsEnv
   importModules resolved {} (trustLevel := 1024) (leakEnv := true) (loadExts := true)
 
 /-- A stable cache key for an import set (sorted, deduped module names). -/
-def importsKey
-    (imports : Array Import)
-    : String :=
+def importsKey (imports : Array Import) : String :=
   String.intercalate ";" (((imports.map (·.module.toString)).qsort (· < ·)).toList)
 
 /-- One environment for a whole batch: union every file's header imports and
@@ -71,9 +65,7 @@ def importsKey
     file's own import set (`importsEnv`, cached by `importsKey`), so the union
     stays the fast path and conflicts cost only their own files. -/
 unsafe
-def batchEnv
-    (paths : Array System.FilePath)
-    : IO Environment := do
+def batchEnv (paths : Array System.FilePath) : IO Environment := do
   let mut all : Array Import := #[]
   for p in paths do
     all := all ++ (← fileImports p)

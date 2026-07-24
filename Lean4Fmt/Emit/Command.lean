@@ -563,10 +563,7 @@ def structureDoc?
     a `declaration` — `Decl.emit` does the real work), one per group at +2,
     inter-declaration comment/blank structure placed by the seam loop, `end` at
     the mutual's column. Everything else reproduces verbatim. -/
-def emit
-    (walk : Lean4Fmt.Emit.Walk)
-    (stx : Lean.Syntax)
-    : Lean4Fmt.Emit.EmitM Doc := do
+def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
   let kind := stx.getKind
   if kind == `Batteries.Tactic.Alias.alias then
     -- `@[deprecated] alias longName := target` — [declModifiers, "alias",

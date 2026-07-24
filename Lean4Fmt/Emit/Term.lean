@@ -124,9 +124,7 @@ def seamCommaList?
     elaboration-level tree change the gate caught as tokens). let/structInst
     newline semantics ride safely inside their own self-anchored docs. -/
 private partial
-def containsDoBy
-    (s : Lean.Syntax)
-    : Bool :=
+def containsDoBy (s : Lean.Syntax) : Bool :=
   s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
       || s.getKind == `Lean.Parser.Term.byTactic'
       || s.getArgs.any containsDoBy
@@ -139,9 +137,7 @@ def containsDoBy
     reparse (gate-caught on OmegaLimit: `<| calc` glued flat, the step list
     ended early — tokens). -/
 private partial
-def tailGlueSafe
-    (s : Lean.Syntax)
-    : Bool :=
+def tailGlueSafe (s : Lean.Syntax) : Bool :=
   let k := s.getKind
   if k == ``Lean.Parser.Term.byTactic || k == `Lean.Parser.Term.byTactic'
       || k == ``Lean.Parser.Term.do then
@@ -169,9 +165,7 @@ def tailGlueSafe
     list early on reparse (home Preset.lean). Every other multi-line value
     is nest-relative and re-anchors deterministically. -/
 private partial
-def containsCommaStructInst
-    (s : Lean.Syntax)
-    : Bool :=
+def containsCommaStructInst (s : Lean.Syntax) : Bool :=
   (s.getKind == ``Lean.Parser.Term.structInst && (bareSrc s).any (· == ','))
       || s.getArgs.any containsCommaStructInst
 
@@ -180,9 +174,7 @@ def containsCommaStructInst
     container contributes its children's pieces recursively; `none` when a
     leaf itself spans lines (nothing to wrap on). -/
 private partial
-def headPieces?
-    (s : Lean.Syntax)
-    : Option (Array String) :=
+def headPieces? (s : Lean.Syntax) : Option (Array String) :=
   let t := Lean4Fmt.Emit.canonTok s
   if !t.any (· == '\n') then
     if t.isEmpty then some #[] else some #[t]
@@ -202,10 +194,7 @@ def headPieces?
     placements, a column hazard when glued at a field/binding column
     (doc-derived test: flatWidth none is pass-stable). -/
 private
-def chainOwnLine
-    (v : Lean.Syntax)
-    (vdoc : Doc)
-    : Bool :=
+def chainOwnLine (v : Lean.Syntax) (vdoc : Doc) : Bool :=
   (v.getKind == ``Lean.Parser.Term.let || v.getKind == ``Lean.Parser.Term.letrec
       || v.getKind == ``Lean.Parser.Term.have
       || v.getKind == ``Lean.Parser.Term.letI
@@ -217,10 +206,7 @@ def chainOwnLine
     `structInstFieldDef` in «rest») is walked so it lays out actively. A shorthand
     field `{ x }` (no `:=`) is just its LVal. -/
 private partial
-def structFieldDoc
-    (walk : Walk)
-    (field : Lean.Syntax)
-    : EmitM Doc := do
+def structFieldDoc (walk : Walk) (field : Lean.Syntax) : EmitM Doc := do
   let fa := field.getArgs
   let lvalStx := fa[0]?.getD .missing
   let lvalT := bareSrc lvalStx
@@ -276,10 +262,7 @@ def structFieldDoc
     handled kinds; everything else (and anything with a line comment) reproduces
     verbatim. -/
 partial
-def emit
-    (walk : Walk)
-    (stx : Lean.Syntax)
-    : EmitM Doc := do
+def emit (walk : Walk) (stx : Lean.Syntax) : EmitM Doc := do
 
   -- comment hazard (§0.4): never restructure a subtree carrying a line comment.
   -- The tail token's TRAILING is exempt: it belongs to the enclosing seam

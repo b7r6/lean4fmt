@@ -16,18 +16,14 @@ namespace Lean4Fmt.Syntax
 open Lean
 
 /-- Leading trivia string of a syntax's head token, if original. -/
-def leading?
-    (stx : Lean.Syntax)
-    : Option String :=
+def leading? (stx : Lean.Syntax) : Option String :=
   match stx.getHeadInfo with
   | .original leading .. => some (Substring.Raw.toString leading)
   | _ => none
 
 /-- Trailing trivia string of a syntax's tail token, if original. Together with
     the next form's leading this partitions the inter-form gap exactly. -/
-def trailing?
-    (stx : Lean.Syntax)
-    : Option String :=
+def trailing? (stx : Lean.Syntax) : Option String :=
   match stx.getTailInfo with
   | .original _ _ trailing _ => some (Substring.Raw.toString trailing)
   | _ => none
@@ -35,9 +31,7 @@ def trailing?
 /-- The trailing trivia of the LAST token in the subtree (robust against
     trailing empty null slots, which defeat `getTailInfo`). -/
 partial
-def lastTokenTrailing?
-    (stx : Lean.Syntax)
-    : Option String :=
+def lastTokenTrailing? (stx : Lean.Syntax) : Option String :=
   match trailing? stx with
   | some t => some t
   | none   => stx.getArgs.reverse.findSome? lastTokenTrailing?
@@ -49,9 +43,7 @@ def hasLineComment (s : String) : Bool := (s.splitOn "--").length > 1
 /-- True if any token in the subtree carries a line comment in its trivia. Such
     a subtree must never be inlined/flattened (§0.4). -/
 partial
-def subtreeHasLineComment
-    (stx : Lean.Syntax)
-    : Bool :=
+def subtreeHasLineComment (stx : Lean.Syntax) : Bool :=
   let inTrivia (info : SourceInfo) : Bool :=
     match info with
     | .original l _ t _ =>
@@ -73,9 +65,7 @@ def countLineComments (s : String) : Nat := (s.splitOn "--").length - 1
     places byte-exact) by subtracting its count; a boolean can't express that,
     since a comment in an exempt zone would mask one in the interior. -/
 partial
-def countSubtreeLineComments
-    (stx : Lean.Syntax)
-    : Nat :=
+def countSubtreeLineComments (stx : Lean.Syntax) : Nat :=
   let inInfo (info : SourceInfo) : Nat :=
     match info with
     | .original l _ t _ =>
@@ -93,17 +83,13 @@ def countSubtreeLineComments
     statement loop for statements). The counting arithmetic is what makes the
     exemption sound — a boolean check would let a trailing comment mask an
     interior one. -/
-def hasOwnedLineComment
-    (stx : Lean.Syntax)
-    : Bool :=
+def hasOwnedLineComment (stx : Lean.Syntax) : Bool :=
   countSubtreeLineComments stx > countLineComments ((trailing? stx).getD "")
 
 /-- Line comment strictly INTERIOR to a form: between its first and last token.
     Both the head token's leading and the tail token's trailing are exempt — for
     a do-statement the loop places both zones itself. -/
-def interiorHasLineComment
-    (stx : Lean.Syntax)
-    : Bool :=
+def interiorHasLineComment (stx : Lean.Syntax) : Bool :=
 
   -- the trailing exemption must reach the LAST TOKEN's trailing: getTailInfo
   -- is defeated by trailing empty null slots (a match arm ends in one), which
@@ -115,9 +101,7 @@ def interiorHasLineComment
 /-- Exact original source text for a node (leading trivia in, trailing out):
     reprint, falling back to the source slice when reprint is unavailable
     (§0.3 — reprint can be `none` for some nodes after `updateLeading`). -/
-def verbatimSrc?
-    (stx : Lean.Syntax)
-    : Option String :=
+def verbatimSrc? (stx : Lean.Syntax) : Option String :=
   match stx.reprint with
   | some s => some s
   | none   => (stx.getSubstring? true false).map (·.toString)

@@ -41,9 +41,7 @@ def triviaText : Lean.Syntax → String
     only whitespace + comments). Comments are not tokens, so `leafToks` alone does
     not catch a DROPPED comment; the gate compares this too. Whitespace is stripped
     so that reflowed/re-indented (but content-identical) comments still match. -/
-def commentContent
-    (stx : Lean.Syntax)
-    : String :=
+def commentContent (stx : Lean.Syntax) : String :=
   String.ofList ((triviaText stx).toList.filter (fun c => !c.isWhitespace))
 
 /-- The kind SPINE: every node kind in preorder. Token equality alone
@@ -52,9 +50,7 @@ def commentContent
     scope with an IDENTICAL token stream. Tree-shape equality closes that class:
     a meaning-preserving formatter keeps the token stream AND the kind spine. -/
 partial
-def kindSpine
-    (stx : Lean.Syntax)
-    : Array Name :=
+def kindSpine (stx : Lean.Syntax) : Array Name :=
   match stx with
   | .node _ kind args => args.foldl (fun acc x => acc ++ kindSpine x) #[kind]
   | _                 => #[]

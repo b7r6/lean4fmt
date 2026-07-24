@@ -15,10 +15,7 @@ namespace Lean4Fmt.Doc
 def spaced (a b : Doc) : Doc := a ++ .line ++ b
 
 /-- Intercalate `sep` between docs. -/
-def sepBy
-    (sep : Doc)
-    (ds : Array Doc)
-    : Doc :=
+def sepBy (sep : Doc) (ds : Array Doc) : Doc :=
   Id.run do
     let mut acc := Doc.nil
     let mut first := true
@@ -28,10 +25,7 @@ def sepBy
     return acc
 
 /-- `l` … `r` around `d`, as a group (breaks together). -/
-def brackets
-    (l r : String)
-    (d : Doc)
-    : Doc :=
+def brackets (l r : String) (d : Doc) : Doc :=
   .group (.text l ++ .nest 2 (.softline ++ d) ++ .softline ++ .text r)
 
 /-- Comma-and-line separated list inside `l`/`r` (breaks all-or-nothing). -/
@@ -40,10 +34,7 @@ def commaList (l r : String) (ds : Array Doc) : Doc := brackets l r (sepBy (.tex
 /-- Fill-packed list inside `l`/`r`: items ride the line and wrap at the
     width (continuation at +2), the closer GLUED to the last item — the
     mathlib bracket-list shape. Items must be flat-capable (fillSep). -/
-def fillList
-    (l r : String)
-    (ds : Array Doc)
-    : Doc :=
+def fillList (l r : String) (ds : Array Doc) : Doc :=
   Id.run do
     if ds.isEmpty then
       return .text (l ++ r)

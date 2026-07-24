@@ -135,9 +135,7 @@ def modifiersDoc
 
 /-- Keyword-led definition shapes we actively format. -/
 private
-def isDefShape
-    (kind : SyntaxNodeKind)
-    : Bool :=
+def isDefShape (kind : SyntaxNodeKind) : Bool :=
   kind == ``Lean.Parser.Command.definition || kind == ``Lean.Parser.Command.theorem
       || kind == ``Lean.Parser.Command.abbrev
       || kind == ``Lean.Parser.Command.opaque
@@ -151,9 +149,7 @@ def isDefShape
     the signature would still be reformatted while the arms re-anchor wrongly, as
     there is no `:=` seam to anchor them). -/
 private
-def eqnsFormattable
-    (declVal : Lean.Syntax)
-    : Bool :=
+def eqnsFormattable (declVal : Lean.Syntax) : Bool :=
   Id.run
     do
       -- comments handle per-seam in the arm loop (between-arm comments place
@@ -210,9 +206,7 @@ def eqnsFormattable
     preserve inter-binder comments instead of dropping them (which would otherwise
     force the gate's identity fallback). -/
 private
-def commentBlock?
-    (trivia : String)
-    : Option String :=
+def commentBlock? (trivia : String) : Option String :=
   Id.run do
     let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
     let mut ls := trivia.splitOn "\n"
@@ -393,9 +387,7 @@ def sigDoc
     `Syntax.Kinds.activeMultilineTermKinds` — one registry shared with the walk
     router, subset relation by construction. -/
 private
-def isActiveMultiline
-    (kind : SyntaxNodeKind)
-    : Bool :=
+def isActiveMultiline (kind : SyntaxNodeKind) : Bool :=
   Lean4Fmt.Syntax.activeMultilineTermKinds.contains kind || Lean4Fmt.Syntax.isBinOp kind
 
 /-- How a definition value is to be placed. `span` is a whole `:= …` reproduced
@@ -415,9 +407,7 @@ inductive ValForm
     into the blank (renderer pend accumulation), so exactly one blank line
     appears — the same rhythm term bodies get after `:=`. -/
 private
-def glueBodyBlank
-    (d : Doc)
-    : Doc :=
+def glueBodyBlank (d : Doc) : Doc :=
   -- the body blank is DO/BY rhythm — a glued record literal (unconditional
   -- `{` left edge, the vertical structInst) keeps its close brace tight
   if ((Lean4Fmt.Doc.leftEdgeText? d).map (·.startsWith "{")).getD false then d
@@ -476,10 +466,7 @@ def spanBodyBlank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : ValForm → Val
     body lets the caller choose the separator: inline ` := `, or (bodyOwnLine)
     `:=` then a blank then the body on its own indented line. -/
 private
-def valForm
-    (walk : Lean4Fmt.Emit.Walk)
-    (declVal : Lean.Syntax)
-    : EmitM ValForm := do
+def valForm (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM ValForm := do
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
     let a := declVal.getArgs
     -- a same-line comment after `:=` lives in the ASSIGN ATOM's trailing
@@ -673,11 +660,7 @@ def ValForm.flatWidth : ValForm → Option Nat
     laid out by `valDoc`. (Any doc-comment/attribute lines sit above and do not
     count toward the one-line budget.) -/
 private
-def defnDoc
-    (walk : Lean4Fmt.Emit.Walk)
-    (modsWidth : Nat)
-    (defn : Lean.Syntax)
-    : EmitM Doc := do
+def defnDoc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.Syntax) : EmitM Doc := do
   let a := defn.getArgs
   -- content in slots past the value (a standalone `deriving` clause on a
   -- def) has no placement yet — dropping it would DELETE code (gate-caught
@@ -870,10 +853,7 @@ def defnDoc
     piece, a value carrying a multi-line opaque block, or a structural
     surprise. -/
 private
-def whereFieldDoc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (f : Lean.Syntax)
-    : EmitM (Option Doc) := do
+def whereFieldDoc? (walk : Lean4Fmt.Emit.Walk) (f : Lean.Syntax) : EmitM (Option Doc) := do
   if f.getKind != ``Lean.Parser.Term.structInstField then
     return none
   if (← read).breaking.preserveLineBreaks then
@@ -1001,10 +981,7 @@ def headValDoc?
     seam loop owning inter-field trivia. The caller prepends `<head> where`
     and nests. -/
 private
-def whereBodyDoc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (declVal : Lean.Syntax)
-    : EmitM (Option Doc) := do
+def whereBodyDoc? (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : EmitM (Option Doc) := do
   let wa := declVal.getArgs
   if wa.size != 3 then
     return none
@@ -1039,10 +1016,7 @@ def whereBodyDoc?
 /-- `def name <sig> where <fields>` (the codegen Func-where pattern): head
     tokens single-line, fields via the where machinery. -/
 private
-def defWhereDoc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (defn : Lean.Syntax)
-    : EmitM (Option Doc) := do
+def defWhereDoc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : EmitM (Option Doc) := do
   let dargs := defn.getArgs
   if dargs.size < 4 then
     return none
@@ -1080,10 +1054,7 @@ def defWhereDoc?
 /-- `example <sig> := value`: keyword + signature single-line, the value via
     the shared head-value placement. -/
 private
-def exampleDoc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (defn : Lean.Syntax)
-    : EmitM (Option Doc) := do
+def exampleDoc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : EmitM (Option Doc) := do
   let dargs := defn.getArgs
   if dargs.size != 3 then
     return none
@@ -1139,10 +1110,7 @@ def docHeadValDoc?
 /-- An `example` whose signature cannot flatten: binders via the kit, the
     TYPE walked at the continuation, value behind the Doc head. -/
 private
-def exampleWalkedDoc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (defn : Lean.Syntax)
-    : EmitM (Option Doc) := do
+def exampleWalkedDoc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : EmitM (Option Doc) := do
   let dargs := defn.getArgs
   if dargs.size != 3 then
     return none
@@ -1176,9 +1144,7 @@ def exampleWalkedDoc?
     re-anchored span — the decl participates in module structure (blank
     rhythm) while its interior stays byte-exact. -/
 private
-def exampleSpanDoc?
-    (defn : Lean.Syntax)
-    : EmitM (Option Doc) := do
+def exampleSpanDoc? (defn : Lean.Syntax) : EmitM (Option Doc) := do
   let dargs := defn.getArgs
   if dargs.size != 3 then
     return none
@@ -1198,10 +1164,7 @@ def exampleSpanDoc?
     verbatim on: equation-style values, `where`-decls suffixes, comments in
     seamless zones, multi-line head pieces, or an over-wide head. -/
 private
-def instanceDoc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (defn : Lean.Syntax)
-    : EmitM (Option Doc) := do
+def instanceDoc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : EmitM (Option Doc) := do
   let a := defn.getArgs
   if a.size != 6 then
     return none
@@ -1303,9 +1266,7 @@ def instanceDoc?
     comments above the decl — placed byte-exact by `Module`), and docstring TEXT
     (`--` inside `/-- … -/` is token content, not a trivia comment). -/
 private
-def modifiersCommentHazard
-    (m defn : Lean.Syntax)
-    : Bool :=
+def modifiersCommentHazard (m defn : Lean.Syntax) : Bool :=
   Id.run
     do
       -- an ownable full-line comment run in a LATER piece's leading is NOT a
@@ -1356,10 +1317,7 @@ def modifiersCommentHazard
     via `walk` where needed. Plain `:= term` defs and `| pat => body` equation
     defs are actively formatted; `where`-instance / other value forms reproduce
     whole-verbatim (their sig↔value boundary trivia is subtle — deferred). -/
-def emit
-    (walk : Lean4Fmt.Emit.Walk)
-    (stx : Lean.Syntax)
-    : Lean4Fmt.Emit.EmitM Doc := do
+def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
   let a := stx.getArgs
   let some defn := a[1]? | return (← verbatim stx "decl-shape")
   let preserveLB := (← read).breaking.preserveLineBreaks

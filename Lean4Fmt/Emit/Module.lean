@@ -25,9 +25,7 @@ open Lean Lean4Fmt.Doc
     trailing, likewise. `none` (verbatim) on a `module`/`prelude` marker, a
     multi-line import span, or a seamless comment. -/
 private
-def headerDoc?
-    (h : Lean.Syntax)
-    : Option Doc :=
+def headerDoc? (h : Lean.Syntax) : Option Doc :=
   Id.run
     do
       if h.getKind != ``Lean.Parser.Module.header then
@@ -68,10 +66,7 @@ def headerDoc?
     clamp to policy). `none` when the trivia has a shape no seam owns
     (a same-line head segment with content). -/
 private
-def moduleTrivia?
-    (lead : String)
-    (atFileStart : Bool)
-    : Option Doc :=
+def moduleTrivia? (lead : String) (atFileStart : Bool) : Option Doc :=
   Id.run
     do
       let ls := lead.splitOn "\n"
@@ -162,10 +157,7 @@ def dropLeadingSep : Doc → Doc
     byte-exact: gaps carrying comments (banners, section markers), same-line
     gaps, and gaps between single-line forms (runs of one-line defs keep their
     hand grouping). `.preserve` keeps every gap byte-exact. -/
-def emit
-    (walk : Lean4Fmt.Emit.Walk)
-    (stx : Lean.Syntax)
-    : Lean4Fmt.Emit.EmitM Doc := do
+def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
   let style ← read
   let args := stx.getArgs
   -- multi-line form ⇢ participates in the imposed top-level rhythm. Decided

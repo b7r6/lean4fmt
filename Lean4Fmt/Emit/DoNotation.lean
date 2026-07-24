@@ -88,9 +88,7 @@ def idDeclDoc?
     `;` terminator (walking only the statement would lose that token). `none` on
     the bracketed `{ … }` shape or any structural surprise. -/
 private
-def stmts?
-    (seq : Lean.Syntax)
-    : Option (Array Lean.Syntax) :=
+def stmts? (seq : Lean.Syntax) : Option (Array Lean.Syntax) :=
   Id.run do
     if seq.getKind != ``Lean.Parser.Term.doSeqIndent then
       return none
@@ -190,10 +188,7 @@ def branchDoc?
     the binding statements (see module header). Only the plain `doSeqIndent` shape
     of `do` is handled; the bracketed `{ … }` shape and any structural surprise
     fall back to verbatim so no token (or comment) is dropped. -/
-def emit
-    (walk : Lean4Fmt.Emit.Walk)
-    (stx : Lean.Syntax)
-    : Lean4Fmt.Emit.EmitM Doc := do
+def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.EmitM Doc := do
 
   -- preserveLineBreaks: a single-line do-statement is byte-exact (the
   -- author's `let x: T ← …` spacing survives); the do BLOCK itself and

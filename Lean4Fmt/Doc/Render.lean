@@ -245,11 +245,7 @@ structure RSt where
 /-- Emit single-line visible text at break-indent `indent`, flushing pending
     newlines (with indentation) first. `wr` never writes the indent without
     content after it (the hygiene law in Proofs). -/
-def wr
-    (st : RSt)
-    (indent : Nat)
-    (s : String)
-    : RSt :=
+def wr (st : RSt) (indent : Nat) (s : String) : RSt :=
   let st :=
     if st.pend > 0 then
       { out := st.out ++ newlines st.pend ++ spaces indent, col := indent, pend := 0 }
@@ -276,17 +272,10 @@ def isBlankLine (l : List Char) : Bool := l.all (· == ' ')
     just the leading spaces — dropping `base` chars unconditionally would eat
     CONTENT on such lines (latent until the content-preservation theorem in
     Proofs demanded it be impossible). Lines dedented to empty stay pending. -/
-def dedent
-    (base : Nat)
-    (l : List Char)
-    : List Char :=
+def dedent (base : Nat) (l : List Char) : List Char :=
   if l.length ≥ base && (l.take base).all (· == ' ') then l.drop base else l.dropWhile (· == ' ')
 
-def wrLine
-    (st : RSt)
-    (indent base : Nat)
-    (l : List Char)
-    : RSt :=
+def wrLine (st : RSt) (indent base : Nat) (l : List Char) : RSt :=
   if (dedent base l).isEmpty then
     { st with pend := st.pend + 1 }
   else
@@ -303,9 +292,7 @@ def wrLines (indent base : Nat) : List (List Char) → RSt → RSt
     re-anchoring must emit them at their ORIGINAL absolute column. One Bool
     per `splitLines` line, first line `false` (a verbatim starts at a token
     boundary). Mirrors the `stripTrailingWs` mode machine. -/
-def inStringLineMask
-    (cs : List Char)
-    : List Bool :=
+def inStringLineMask (cs : List Char) : List Bool :=
   Id.run
     do
       let a : Array Char := cs.toArray
@@ -385,12 +372,7 @@ def wrLinesM (indent base : Nat) : List (List Char) → List Bool → RSt → RS
     `indent` (§0.3) — EXCEPT lines inside a multi-line string token, which keep
     their absolute column byte-exact (`wrLinesM`). Trailing whitespace is trimmed
     (so trailing blank lines cannot exist); leading blank lines are dropped. -/
-def wrBlock
-    (st : RSt)
-    (indent : Nat)
-    (base : Nat)
-    (raw : String)
-    : RSt :=
+def wrBlock (st : RSt) (indent : Nat) (base : Nat) (raw : String) : RSt :=
   let cs := trimEndWs raw.toList
   let ls := splitLines cs
   let k := (ls.takeWhile isBlankLine).length
@@ -549,9 +531,7 @@ end
     `s!"…{e}…"` the quote-toggle treats interpolation code as string — the
     conservative direction (never strips string content; at worst leaves a space
     inside interpolation code, which the gate would catch anyway). -/
-def stripTrailingWs
-    (s : String)
-    : String :=
+def stripTrailingWs (s : String) : String :=
   Id.run
     do
       let a : Array Char := s.toList.toArray
@@ -660,9 +640,7 @@ def stripTrailingWs
     are token/comment content — untouched. Both rules are idempotent, and
     token text is unchanged, so the gate's leafToks law is preserved by
     construction. -/
-def canonVerbatimWs
-    (s : String)
-    : String :=
+def canonVerbatimWs (s : String) : String :=
   Id.run
     do
       let a : Array Char := s.toList.toArray
@@ -789,10 +767,7 @@ def canonVerbatimWs
       return String.ofList out.toList
 
 /-- Render a `Doc` to a string under `style`. -/
-def render
-    (style : Style)
-    (doc : Doc)
-    : String :=
+def render (style : Style) (doc : Doc) : String :=
   let st := go style.layout.lineWidth (style.blankLines.maxConsecutive + 1) doc 0 false {}
   -- trailing whitespace is trivia everywhere outside string literals — the
   -- string-aware strip is what makes verbatim blocks canonical at line ends

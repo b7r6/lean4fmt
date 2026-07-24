@@ -81,9 +81,7 @@ def runJob
     with a parse diagnostic (a superset-env conflict, an own-notation file the
     union could not help, or a genuinely broken file — the retry sorts them). -/
 private
-def Result.retryable
-    (r : Result)
-    : Bool :=
+def Result.retryable (r : Result) : Bool :=
   r.output == r.original && r.diagnostics.any (·.rule == "parse")
 
 /-- The scheduler seam. The main pass is SEQUENTIAL today — the single place a
@@ -153,9 +151,7 @@ def runAll
 /-- Expand file/dir inputs into the `.lean` file set to process (directories are
     walked, `.lake` build trees skipped), deduplicated and in a deterministic
     (sorted) order so runs are reproducible. -/
-def expand
-    (inputs : Array System.FilePath)
-    : IO (Array System.FilePath) := do
+def expand (inputs : Array System.FilePath) : IO (Array System.FilePath) := do
   let mut acc : Array System.FilePath := #[]
   for p in inputs do
     if ← p.isDir then acc := acc ++ (← findLean p)

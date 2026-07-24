@@ -40,9 +40,7 @@ def seamLines (base : Nat) : Nat → List (List Char) → Doc
 
 /-- The dedent column of a seam run: the minimum space-indent over its comment
     lines (relative offsets between comments survive the re-anchoring). -/
-def seamBase
-    (full : List (List Char))
-    : Nat :=
+def seamBase (full : List (List Char)) : Nat :=
   (full.filter (fun l => !wsLine l)).foldl
     (fun m l => Nat.min m (l.takeWhile (· == ' ')).length)
     1000000
@@ -58,9 +56,7 @@ def seamBase
     content (e.g. a block comment on the form's line), there is no seam that
     owns it and the answer is `none` — the caller goes verbatim. Pure
     single-newline trivia degenerates to the plain `.hardline` separator. -/
-def leadingSep?
-    (lead : String)
-    : Option Doc :=
+def leadingSep? (lead : String) : Option Doc :=
   if !wsLine ((splitLines lead.toList).headD []) then
     none
   else if !wsLine ((splitLines lead.toList).getLastD []) then

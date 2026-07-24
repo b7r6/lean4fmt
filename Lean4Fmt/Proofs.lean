@@ -43,24 +43,19 @@ open Lean4Fmt.Doc
 theorem nonWsL_nil : nonWsL [] = [] := rfl
 
 @[simp]
-theorem nonWsL_append
-        (a b : List Char)
-        : nonWsL (a ++ b) = nonWsL a ++ nonWsL b := by simp [nonWsL, List.filter_append]
+theorem nonWsL_append (a b : List Char) : nonWsL (a ++ b) = nonWsL a ++ nonWsL b := by
+  simp [nonWsL, List.filter_append]
 
 @[simp]
-theorem nonWs_append
-        (a b : String)
-        : nonWs (a ++ b) = nonWs a ++ nonWs b := by simp [nonWs, String.toList_append]
+theorem nonWs_append (a b : String) : nonWs (a ++ b) = nonWs a ++ nonWs b := by
+  simp [nonWs, String.toList_append]
 
 @[simp]
-theorem nonWs_ofList
-        (l : List Char)
-        : nonWs (String.ofList l) = nonWsL l := by simp [nonWs, String.toList_ofList]
+theorem nonWs_ofList (l : List Char) : nonWs (String.ofList l) = nonWsL l := by
+  simp [nonWs, String.toList_ofList]
 
 @[simp]
-theorem ofList_length
-        (l : List Char)
-        : (String.ofList l).length = l.length := by
+theorem ofList_length (l : List Char) : (String.ofList l).length = l.length := by
   have h := congrArg List.length (String.toList_ofList (l := l))
   simpa [String.length_toList] using h
 
@@ -68,18 +63,14 @@ theorem ofList_length
 theorem space_length : (" " : String).length = 1 := rfl
 
 @[simp]
-theorem nonWs_spaces
-        (n : Nat)
-        : nonWs (spaces n) = [] := by
+theorem nonWs_spaces (n : Nat) : nonWs (spaces n) = [] := by
   simp only [spaces, nonWs_ofList, nonWsL]
   induction n with
   | zero => rfl
   | succ k ih => simpa [List.replicate_succ] using ih
 
 @[simp]
-theorem nonWs_newlines
-        (n : Nat)
-        : nonWs (newlines n) = [] := by
+theorem nonWs_newlines (n : Nat) : nonWs (newlines n) = [] := by
   simp only [newlines, nonWs_ofList, nonWsL]
   induction n with
   | zero => rfl
@@ -94,19 +85,14 @@ theorem nonWs_space : nonWs " " = [] := by decide
 @[simp]
 theorem nonWs_newline : nonWs "\n" = [] := by decide
 
-theorem nonWsL_nil_of_spaces
-        (cs : List Char)
-        (h : cs.all (· == ' '))
-        : nonWsL cs = [] := by
+theorem nonWsL_nil_of_spaces (cs : List Char) (h : cs.all (· == ' ')) : nonWsL cs = [] := by
   simp only [nonWsL, List.filter_eq_nil_iff]
   intro a ha
   have : a = ' ' := by simpa using List.all_eq_true.mp h a ha
   subst this
   decide
 
-theorem nonWsL_dropWhile_space
-        (cs : List Char)
-        : nonWsL (cs.dropWhile (· == ' ')) = nonWsL cs := by
+theorem nonWsL_dropWhile_space (cs : List Char) : nonWsL (cs.dropWhile (· == ' ')) = nonWsL cs := by
   induction cs with
   | nil => rfl
   | cons c cs ih =>
@@ -126,21 +112,16 @@ theorem nonWsL_dropWhile_ws
     · simpa [List.dropWhile_cons, nonWsL, List.filter_cons, hc] using ih
     · simp [List.dropWhile_cons, hc]
 
-theorem nonWsL_reverse
-        (cs : List Char)
-        : nonWsL cs.reverse = (nonWsL cs).reverse := by simp [nonWsL, List.filter_reverse]
+theorem nonWsL_reverse (cs : List Char) : nonWsL cs.reverse = (nonWsL cs).reverse := by
+  simp [nonWsL, List.filter_reverse]
 
-theorem nonWsL_trimEndWs
-        (cs : List Char)
-        : nonWsL (trimEndWs cs) = nonWsL cs := by
+theorem nonWsL_trimEndWs (cs : List Char) : nonWsL (trimEndWs cs) = nonWsL cs := by
   unfold trimEndWs
   rw [nonWsL_reverse, nonWsL_dropWhile_ws, nonWsL_reverse, List.reverse_reverse]
 
 -- ── splitLines / wrBlock plumbing ───────────────────────────────────────────
 
-theorem splitLines_ne_nil
-        (cs : List Char)
-        : splitLines cs ≠ [] := by
+theorem splitLines_ne_nil (cs : List Char) : splitLines cs ≠ [] := by
   cases cs with
   | nil => simp [splitLines]
   | cons c cs =>
@@ -149,9 +130,7 @@ theorem splitLines_ne_nil
     all_goals simp
 
 /-- Line-splitting loses only the '\n' separators — whitespace. -/
-theorem splitLines_nonWs
-        (cs : List Char)
-        : ((splitLines cs).map nonWsL).flatten = nonWsL cs := by
+theorem splitLines_nonWs (cs : List Char) : ((splitLines cs).map nonWsL).flatten = nonWsL cs := by
   induction cs with
   | nil => simp [splitLines]
   | cons c cs ih =>
@@ -204,10 +183,7 @@ theorem wr_out
 
 /-- Dedenting drops only spaces — the content of a continuation line survives
     its re-anchoring intact (the wrBlock content-eater made impossible). -/
-theorem nonWsL_dedent
-        (base : Nat)
-        (l : List Char)
-        : nonWsL (dedent base l) = nonWsL l := by
+theorem nonWsL_dedent (base : Nat) (l : List Char) : nonWsL (dedent base l) = nonWsL l := by
   unfold dedent
   split
   · next h =>
@@ -522,10 +498,7 @@ end
 
 -- splitLines / trimEndWs facts for the verbatim case of T2
 
-theorem splitLines_no_nl
-        (cs : List Char)
-        (h : '\n' ∉ cs)
-        : splitLines cs = [cs] := by
+theorem splitLines_no_nl (cs : List Char) (h : '\n' ∉ cs) : splitLines cs = [cs] := by
   induction cs with
   | nil => rfl
   | cons c cs ih =>
@@ -534,11 +507,7 @@ theorem splitLines_no_nl
     simp only [splitLines, ih hcs]
     simp [hc]
 
-theorem mem_trimEndWs
-        {c : Char}
-        {cs : List Char}
-        (h : c ∈ trimEndWs cs)
-        : c ∈ cs := by
+theorem mem_trimEndWs {c : Char} {cs : List Char} (h : c ∈ trimEndWs cs) : c ∈ cs := by
   unfold trimEndWs at h
   rw [List.mem_reverse] at h
   have := (List.dropWhile_sublist (l := cs.reverse) (p := Char.isWhitespace)).subset h
@@ -870,10 +839,7 @@ theorem go_flat_exact
 @[simp]
 theorem content_append (a b : Doc) : content (a ++ b) = content a ++ content b := rfl
 
-theorem nonWsL_nil_of_wsLine
-        (l : List Char)
-        (h : wsLine l)
-        : nonWsL l = [] := by
+theorem nonWsL_nil_of_wsLine (l : List Char) (h : wsLine l) : nonWsL l = [] := by
   simp only [nonWsL, List.filter_eq_nil_iff]
   intro a ha
   have := List.all_eq_true.mp h a ha
@@ -881,9 +847,8 @@ theorem nonWsL_nil_of_wsLine
   rcases this with rfl | rfl <;> decide
 
 @[simp]
-theorem content_seamSep
-        (b : Nat)
-        : content (seamSep b) = [] := by unfold seamSep; split <;> simp [content]
+theorem content_seamSep (b : Nat) : content (seamSep b) = [] := by
+  unfold seamSep; split <;> simp [content]
 
 /-- The seam's interior emission carries exactly the lines' content: blank
     lines denote nothing; each comment line's dedent (spaces only) and

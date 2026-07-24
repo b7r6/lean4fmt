@@ -21,10 +21,7 @@ open Lean Lean4Fmt.Doc
     bracketed binder kinds; `none` (caller falls back to per-binder verbatim)
     on anything else, a multi-line piece, or a comment (a line comment forces a
     newline into its segment, so the '\n' guard covers it). -/
-def binderText?
-    (b : Lean.Syntax)
-    (preserve : Bool := false)
-    : Option String :=
+def binderText? (b : Lean.Syntax) (preserve : Bool := false) : Option String :=
   Id.run
     do
       let k := b.getKind
@@ -57,10 +54,7 @@ def binderText?
 /-- A binder doc: active single-line text when `binderText?` can hold it;
     a MULTI-LINE binder walks its type (chains/apps lay out actively inside
     the brackets); verbatim only when the shape offers no seam. -/
-def binderDoc
-    (walk : Lean4Fmt.Emit.Walk)
-    (b : Lean.Syntax)
-    : EmitM Doc := do
+def binderDoc (walk : Lean4Fmt.Emit.Walk) (b : Lean.Syntax) : EmitM Doc := do
   match binderText? b (← read).spacing.preserveBinders with
   | some t => pure (.text t)
   | none =>

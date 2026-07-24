@@ -42,9 +42,7 @@ structure Options where
   deriving Repr, Inhabited
 
 /-- Parse argv into `Options`. -/
-def parse
-    (args : List String)
-    : Options :=
+def parse (args : List String) : Options :=
   Id.run do
     let mut o : Options := {}
     let mut rest := args
@@ -64,8 +62,7 @@ def parse
       | [] => break
     return o
 
-def usage
-    : String :=
+def usage : String :=
   "Usage: lean4fmt [--check | --write | --stats] [--width N] [--style NAME] [--elab auto|off] [--lake auto|off] <file...>\n\n"
       ++ "Multiple files in one invocation are supported (each is parsed against its own\n"
       ++ "imports). If a file's syntax-extension initializers ever conflict in-process,\n"

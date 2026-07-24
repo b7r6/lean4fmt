@@ -15,9 +15,7 @@ namespace Lean4Fmt.Driver
 
 /-- All `.lean` files under `root` (recursive), skipping `.lake` build dirs. -/
 partial
-def findLean
-    (root : System.FilePath)
-    : IO (Array System.FilePath) := do
+def findLean (root : System.FilePath) : IO (Array System.FilePath) := do
   let mut acc : Array System.FilePath := #[]
   if ← root.isDir then
     for entry in ← root.readDir do
