@@ -119,4 +119,94 @@ def snake_all : Lean4Fmt.Style.Naming :=
 #guard Lean4Fmt.Rename.ident_replacement [("bar", "baz")] "bar" == some "baz"
 #guard Lean4Fmt.Rename.ident_replacement [("bar", "baz")] "Foo.qux" == none
 
+-- ── G-L7.4d: the resolution rename — rewrite by resolved IDENTITY ─────────────
+
+/-- Rebuild a FULL name, renaming each PREFIX that is a renamed decl (`map`:
+    full-name → new-last-component). `A.Foo.bar` under `{A.Foo↦foo, A.Foo.bar↦
+    baz}` → `A.foo.baz`. Namespace-only components (not decls, absent from `map`)
+    are kept — which is why import/open module paths ride untouched. -/
+def rename_full (map : List (String × String)) (full : String) : String :=
+  let step :=
+    fun (acc : String × List String) (c : String) =>
+      let pfx := if acc.1.isEmpty then c else acc.1 ++ "." ++ c
+      (pfx, acc.2 ++ [((map.find? (·.1 == pfx)).map (·.2)).getD c])
+  String.intercalate "." ((full.splitOn ".").foldl step ("", [])).2
+
+/-- Rewrite one source TOKEN that resolves to `full`, under the identity `map`.
+    `none` if nothing in its prefix chain moves (the disambiguation: a token
+    resolving to a decl NOT in the map — a same-spelled name in another package —
+    is left byte-exact). The token's qualification level is preserved: keep the
+    last k components of the renamed full name, where k = the token's own. -/
+def resolved_rewrite (map : List (String × String)) (tokenText full : String) : Option String :=
+
+  -- SANITY: the token must actually SPELL the resolved decl's last component.
+  -- The InfoTree attributes some source tokens to GENERATED consts — a `deriving
+  -- DecidableEq` item to `…ctorIdx`, an anonymous `⟨…⟩` to `…mk` — and rewriting
+  -- those corrupts. If the token's tail doesn't match the const's, it isn't a
+  -- real spelled reference; leave it byte-exact.
+  if (tokenText.splitOn ".").getLastD tokenText != (full.splitOn ".").getLastD full then none
+  else
+    let newFull := rename_full map full
+    if newFull == full then none
+    else
+      let k := (tokenText.splitOn ".").length
+      let joined := String.intercalate "." (((newFull.splitOn ".").reverse.take k).reverse)
+      if joined == tokenText then none else some joined
+
+/-- The RESOLUTION plan: from the full names of DEFINED decls, `(full-name →
+    new-last-component)` renames, keyed by IDENTITY. Cross-namespace same
+    spellings COEXIST (distinct full names → distinct targets, no collision).
+    Dropped iff the new last-component is a keyword, or two decls in the SAME
+    namespace collide on it. No module-basename exemption — resolution never
+    touches module paths. -/
+def plan_resolved
+    (c : Case)
+    (decls : List String)
+    : List (String × String) × List (String × String) :=
+  let rows : List (String × String × String × String) :=
+    decls.eraseDups.map
+      (fun full =>
+        let comps := full.splitOn "."
+        let last := comps.getLastD full
+        let newLast := convert c last
+        (full, last, newLast, String.intercalate "." (comps.dropLast ++ [newLast])))
+  let collides := fun (nf : String) => (rows.filter (fun (_, _, _, x) => x == nf)).length > 1
+  let ok :=
+    fun (last newLast newFull : String) =>
+      last != newLast && !keywords.contains newLast && !collides newFull
+  (
+    rows.filterMap
+      (fun (full, last, newLast, newFull) =>
+        if ok last newLast newFull then some (full, newLast) else none),
+    rows.filterMap
+      (fun (full, last, newLast, newFull) =>
+        if last != newLast && !ok last newLast newFull then some (full, newLast) else none)
+  )
+
+-- ── #guard-locked: identity rewrite + resolution plan ────────────────────────
+
+-- prefix-wise full rename: only the mapped prefixes move
+#guard rename_full [("A.foo", "foo_x")] "A.foo" == "A.foo_x"
+#guard rename_full [("A.Foo", "foo"), ("A.Foo.bar", "baz")] "A.Foo.bar" == "A.foo.baz"
+#guard rename_full [("A.foo", "foo_x")] "A.other" == "A.other"
+
+-- token rewrite preserves qualification level (last k components)
+#guard resolved_rewrite [("A.foo", "foo_x")] "foo" "A.foo" == some "foo_x"
+#guard resolved_rewrite [("A.foo", "foo_x")] "A.foo" "A.foo" == some "A.foo_x"
+-- THE DISAMBIGUATION: token `isPure` resolving to Build's is NOT in a map that
+-- only holds Trust's `isPure` → left byte-exact
+#guard resolved_rewrite [("Trust.D.isPure", "is_pure")] "isPure" "Build.S.isPure" == none
+-- SANITY gate: a token whose tail doesn't spell the resolved const (deriving/
+-- anonymous-ctor infos → generated `ctorIdx`/`mk`) is left byte-exact
+#guard resolved_rewrite [("A.Foo", "foo")] "DecidableEq" "A.Foo.ctorIdx" == none
+
+-- plan: distinct camel decls → distinct snake targets
+#guard (plan_resolved .snake ["A.fooBar", "A.bazQux"]).1
+    == [("A.fooBar", "foo_bar"), ("A.bazQux", "baz_qux")]
+-- same-namespace collision: `A.fooBar` and existing `A.foo_bar` → skipped
+#guard (plan_resolved .snake ["A.fooBar", "A.foo_bar"]).1 == []
+-- CROSS-namespace same spelling: NO collision, both rename (identity)
+#guard (plan_resolved .snake ["A.fooBar", "B.fooBar"]).1
+    == [("A.fooBar", "foo_bar"), ("B.fooBar", "foo_bar")]
+
 end Lean4Fmt.Rename

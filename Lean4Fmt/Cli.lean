@@ -46,6 +46,14 @@ structure Options where
   /-- Precomputed rename map file for the `renameRewrite` worker: lines
       `SRC<TAB>TGT`, the plan the orchestrator built over the whole file set. -/
   mapFile : Option String := none
+  /-- Rewrite by RESOLVED decl identity (G-L7.4) instead of token spelling:
+      the set is full names, the plan keys by identity, and each occurrence is
+      rewritten iff it RESOLVES to a renamed decl. Needs elaboration + the farm. -/
+  resolve : Bool := false
+  /-- Prebuilt olean farm dir the orchestrator hands each `--resolve` worker
+      (`--farm <path>`), so cross-package modules resolve without a per-worker
+      rebuild. -/
+  farmDir : Option String := none
   files : List String := []
   deriving Repr, Inhabited
 
@@ -64,6 +72,8 @@ def parse (args : List String) : Options :=
       | "--rename-rewrite" :: r => o := { o with mode := .renameRewrite }; rest := r
       | "--resolve-dump" :: r => o := { o with mode := .resolveDump }; rest := r
       | "--map" :: f :: r => o := { o with mapFile := some f }; rest := r
+      | "--resolve" :: r => o := { o with resolve := true }; rest := r
+      | "--farm" :: f :: r => o := { o with farmDir := some f }; rest := r
       | "--write" :: r => o := { o with mode := .write }; rest := r
       | "-w" :: r => o := { o with mode := .write }; rest := r
       | "--width" :: n :: r => o := { o with width := some n.toNat! }; rest := r

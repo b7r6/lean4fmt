@@ -76,6 +76,13 @@ def collect_infos : Lean.Elab.InfoTree → Array Lean.Elab.Info → Array Lean.E
   | .node i cs, acc   => cs.foldl (fun a c => collect_infos c a) (acc.push i)
   | .hole _, acc      => acc
 
+/-- First ident leaf of a subtree — the declId's NAME, dropping any `.{univs}`. -/
+partial
+def first_ident : Lean.Syntax → Option Lean.Syntax
+  | stx@(.ident ..) => some stx
+  | .node _ _ args  => args.findSome? first_ident
+  | _               => none
+
 /-- G-L7.4: name-resolution. Elaborate a module with info trees ON, and return,
     for every resolved identifier OCCURRENCE, its source byte range paired with
     the resolved full constant name — a bare `.const` reference, a dot-projection
@@ -88,7 +95,7 @@ unsafe
 def resolve_idents
     (env : Environment)
     (path contents : String)
-    : IO (Array (Nat × Nat × Name)) := do
+    : IO (Array (Nat × Nat × Name × Bool)) := do
   let ictx := Parser.mkInputContext contents path
   let (_, mps, msgs) ← Parser.parseHeader ictx
   let st0 := Lean.Elab.Command.mkState env msgs Options.empty
@@ -97,29 +104,32 @@ def resolve_idents
     do
       try
         let s ← Lean.Elab.IO.processCommands ictx mps st
-        let mut acc : Array (Nat × Nat × Name) := #[]
+        let mut acc : Array (Nat × Nat × Name × Bool) := #[]
         for tree in s.commandState.infoState.trees do
           for i in collect_infos tree #[] do
             match i with
             | .ofTermInfo ti =>
-              if ti.stx.isIdent then
-                match ti.expr.consumeMData, ti.stx.getRange? with
-                | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm)
+              if ti.stx.getKind == `Lean.Parser.Command.declId then
+                -- DEFINITION site: the defined const, at the declId's name ident
+                match ti.expr.getAppFn.consumeMData, (first_ident ti.stx).bind (·.getRange?) with
+                | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm, true)
                 | _, _ => pure ()
-              else if ti.stx.getKind == `Lean.Parser.Term.identProj then
-                -- dot-projection `p.field`: the `identProj` node's range is the
-                -- FIELD exactly, the resolved const is the application head
-                -- (`DischargeProof.isPure`) — peel the args with `getAppFn`
+              else
+                -- ANY const-resolving occurrence (bare ident, dot-projection,
+                -- binder type, …) at its stx range. Broad on purpose: the rewrite's
+                -- SANITY gate (token tail must spell the const's last component)
+                -- filters whole-application / generated-const infos, so over-
+                -- capture here is safe and closes the binder-type gap.
                 match ti.expr.getAppFn.consumeMData, ti.stx.getRange? with
-                | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm)
+                | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm, false)
                 | _, _ => pure ()
             | .ofFieldInfo fi =>
               match fi.stx.getRange? with
-              | some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, fi.projName)
+              | some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, fi.projName, false)
               | none => pure ()
             | _ => pure ()
         -- the elaborator records an ident in several info nodes; dedup exact
-        -- (start, stop, name) so the rewrite never double-edits a range
+        -- (start, stop, name, isDef) so the rewrite never double-edits a range
         pure acc.toList.eraseDups.toArray
       catch _ => pure #[]
 
