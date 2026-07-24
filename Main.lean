@@ -15,6 +15,8 @@ import Lean
 import Lean4Fmt.Log
 import Lean4Fmt.Cli
 import Lean4Fmt.Driver
+import Lean4Fmt.Rename
+import Lean4Fmt.Style.Preset
 
 open Lean
 open Lean4Fmt
@@ -160,6 +162,32 @@ opaque runStats (files : List String) (width : Option Nat) (preset : String) (el
 
 def main (argv : List String) : IO Unit := do
   let o := Cli.parse argv
+  if o.mode == .renamePlan then
+    -- read `NAME AXIS` lines on stdin (AXIS ∈ ns|typ|thm|term), apply the preset's
+    -- naming policy through the verified plan builder, print renames + skips.
+    let naming := ((Lean4Fmt.Style.byName? o.preset).getD Lean4Fmt.Style.straylight).naming
+    let input ← (← IO.getStdin).readToEnd
+    let decls : List (String × Lean4Fmt.Rename.Axis) :=
+      input.splitOn "\n"
+        |>.filterMap
+          (fun line =>
+            match (line.trimAscii.toString.splitOn " ").filter (· ≠ "") with
+            | [nm, ax] =>
+              match ax with
+              | "ns" => some (nm, .ns)
+              | "typ" => some (nm, .typ)
+              | "thm" => some (nm, .thm)
+              | "term" => some (nm, .term)
+              | _ => none
+            | _ => none)
+    let plan := Lean4Fmt.Rename.buildPlan naming decls
+    IO.println
+      s!"// rename plan (preset {o.preset}): {plan.renames.length} rename, {plan.skipped.length} skip"
+    for (nm, tgt) in plan.renames do
+      IO.println s!"  {nm} → {tgt}"
+    for (nm, tgt) in plan.skipped do
+      IO.println s!"  SKIP {nm} → {tgt}"
+    return
   if o.files.isEmpty then
     (← IO.getStderr).putStrLn Cli.usage
     IO.Process.exit 1
@@ -209,6 +237,7 @@ def main (argv : List String) : IO Unit := do
       if d.severity == .error then failed := true
     match o.mode with
     | .stats => pure ()   -- unreachable: stats returns above
+    | .renamePlan => pure ()   -- unreachable: renamePlan returns above
     | .format => IO.print r.output
     | .check =>
       if r.changed then

@@ -26,7 +26,9 @@ def straylight : Style := {
   alignment := { structFields := .whenShort, matchArms := .whenShort,
                   trailingComments := .whenShort, maxDelta := 16 }
   blankLines := { policy := .normalize, betweenTopLevelDecls := 1, maxConsecutive := 1 }
-  naming := { namespaces := .upperCamel, types := .upperCamel, theorems := .snake, terms := .camel }
+  -- the ServeFd house convention: snake-everything but namespaces (types too —
+  -- `upstream_slot`, `pooled_upstream_state`; the `WorkerState` outliers normalize)
+  naming := { namespaces := .upperCamel, types := .snake, theorems := .snake, terms := .snake }
 }
 
 /-- Placeholder — tuned to minimize mathlib4 churn (§9). Currently = Straylight

@@ -12,10 +12,11 @@
 namespace Lean4Fmt.Cli
 
 inductive Mode
-  | format -- print to stdout (default)
-  | check  -- exit 1 if any file would change
-  | write  -- overwrite in place
-  | stats  -- coverage accounting: active/verbatim/trivia bytes per file + total
+  | format     -- print to stdout (default)
+  | check      -- exit 1 if any file would change
+  | write      -- overwrite in place
+  | stats      -- coverage accounting: active/verbatim/trivia bytes per file + total
+  | renamePlan -- read `NAME AXIS` lines on stdin, print the casing rename plan
   deriving Repr, Inhabited, BEq
 
 structure Options where
@@ -50,6 +51,7 @@ def parse (args : List String) : Options :=
       match rest with
       | "--check" :: r => o := { o with mode := .check }; rest := r
       | "--stats" :: r => o := { o with mode := .stats }; rest := r
+      | "--rename-plan" :: r => o := { o with mode := .renamePlan }; rest := r
       | "--write" :: r => o := { o with mode := .write }; rest := r
       | "-w" :: r => o := { o with mode := .write }; rest := r
       | "--width" :: n :: r => o := { o with width := some n.toNat! }; rest := r
