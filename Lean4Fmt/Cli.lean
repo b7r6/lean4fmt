@@ -20,6 +20,7 @@ inductive mode
   | renameApply   -- orchestrate the rename over the given files (subprocess/file)
   | renameDecls   -- worker: print `NAME<TAB>AXIS` for one file's declarations
   | renameRewrite -- worker: apply a precomputed `--map` to one file, in place
+  | resolveDump   -- probe: elaborate one file, print resolved `range<TAB>fullName`
   deriving Repr, Inhabited, BEq
 
 structure Options where
@@ -61,6 +62,7 @@ def parse (args : List String) : Options :=
       | "--rename-apply" :: r => o := { o with mode := .renameApply }; rest := r
       | "--rename-decls" :: r => o := { o with mode := .renameDecls }; rest := r
       | "--rename-rewrite" :: r => o := { o with mode := .renameRewrite }; rest := r
+      | "--resolve-dump" :: r => o := { o with mode := .resolveDump }; rest := r
       | "--map" :: f :: r => o := { o with mapFile := some f }; rest := r
       | "--write" :: r => o := { o with mode := .write }; rest := r
       | "-w" :: r => o := { o with mode := .write }; rest := r

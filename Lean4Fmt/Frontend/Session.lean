@@ -69,4 +69,47 @@ def parse_module? (env : Environment) (path contents : String) : IO (Option Lean
       else pure (some (Syntax.node .none ``Lean.Parser.Module.module #[hdr, mkNullNode s.commands]))
     catch _ => pure none
 
+/-- Flatten every `Info` node of a tree in document order. -/
+partial
+def collect_infos : Lean.Elab.InfoTree → Array Lean.Elab.Info → Array Lean.Elab.Info
+  | .context _ t, acc => collect_infos t acc
+  | .node i cs, acc   => cs.foldl (fun a c => collect_infos c a) (acc.push i)
+  | .hole _, acc      => acc
+
+/-- G-L7.4: name-resolution. Elaborate a module with info trees ON, and return,
+    for every resolved identifier OCCURRENCE, its source byte range paired with
+    the resolved full constant name — a `.const` term reference (`TermInfo`) or a
+    dot-notation field projection (`FieldInfo.projName`). This is exactly what the
+    token map cannot compute: it disambiguates two decls that share a spelling
+    across packages (`core/build`'s `isPure` vs `core/trust`'s
+    `DischargeProof.isPure`), and it sees inside expanded macro/quotation bodies. -/
+unsafe
+def resolve_idents
+    (env : Environment)
+    (path contents : String)
+    : IO (Array (Nat × Nat × Name)) := do
+  let ictx := Parser.mkInputContext contents path
+  let (_, mps, msgs) ← Parser.parseHeader ictx
+  let st0 := Lean.Elab.Command.mkState env msgs Options.empty
+  let st := { st0 with infoState := { st0.infoState with enabled := true } }
+  quietly do
+    try
+      let s ← Lean.Elab.IO.processCommands ictx mps st
+      let mut acc : Array (Nat × Nat × Name) := #[]
+      for tree in s.commandState.infoState.trees do
+        for i in collect_infos tree #[] do
+          match i with
+          | .ofTermInfo ti =>
+            if ti.stx.isIdent then
+              match ti.expr.consumeMData, ti.stx.getRange? with
+              | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm)
+              | _, _ => pure ()
+          | .ofFieldInfo fi =>
+            match fi.stx.getRange? with
+            | some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, fi.projName)
+            | none => pure ()
+          | _ => pure ()
+      pure acc
+    catch _ => pure #[]
+
 end Lean4Fmt.Frontend.Session

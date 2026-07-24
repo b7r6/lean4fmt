@@ -319,6 +319,22 @@ def run_rename_rewrite_impl
 @[implemented_by run_rename_rewrite_impl]
 opaque run_rename_rewrite (files : List String) (mapFile : Option String) (elabFallback : Bool) : IO Unit
 
+/-- G-L7.4 probe (`--resolve-dump`): elaborate the file(s) and print each resolved
+    ident occurrence as `start-stop<TAB>fullName`. Validates that the InfoTree
+    disambiguation works before the token map is swapped for it. -/
+unsafe
+def run_resolve_dump_impl (files : List String) : IO Unit := do
+  let paths := files.toArray.map System.FilePath.mk
+  let env ← Frontend.batch_env paths
+  let out ← IO.getStdout
+  for p in paths do
+    let contents ← IO.FS.readFile p
+    for (s, e, nm) in ← Frontend.Session.resolve_idents env p.toString contents do
+      out.putStrLn s!"{s}-{e}\t{nm}"
+
+@[implemented_by run_resolve_dump_impl]
+opaque run_resolve_dump (files : List String) : IO Unit
+
 /-- G-L7.3 orchestrator (`--rename-apply`): the multi-workspace-safe driver.
     `importModules` is one-shot per process, so instead of one union `batchEnv`,
     spawn a worker subprocess PER FILE — each with its own clean env. Pass 1
@@ -453,6 +469,9 @@ def main (argv : List String) : IO Unit := do
   if o.mode == .renameRewrite then
     run_rename_rewrite o.files o.mapFile o.elabFallback
     return
+  if o.mode == .resolveDump then
+    run_resolve_dump o.files
+    return
 
   if o.mode == .stats then
     let rows ← run_stats o.files o.width o.preset o.elabFallback o.retry
@@ -498,6 +517,7 @@ def main (argv : List String) : IO Unit := do
     | .renameApply => pure ()   -- unreachable: renameApply returns above
     | .renameDecls => pure ()   -- unreachable: renameDecls returns above
     | .renameRewrite => pure ()   -- unreachable: renameRewrite returns above
+    | .resolveDump => pure ()   -- unreachable: resolveDump returns above
     | .format => IO.print r.output
     | .check =>
       if r.changed then
