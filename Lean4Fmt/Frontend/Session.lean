@@ -78,11 +78,12 @@ def collect_infos : Lean.Elab.InfoTree → Array Lean.Elab.Info → Array Lean.E
 
 /-- G-L7.4: name-resolution. Elaborate a module with info trees ON, and return,
     for every resolved identifier OCCURRENCE, its source byte range paired with
-    the resolved full constant name — a `.const` term reference (`TermInfo`) or a
-    dot-notation field projection (`FieldInfo.projName`). This is exactly what the
-    token map cannot compute: it disambiguates two decls that share a spelling
-    across packages (`core/build`'s `isPure` vs `core/trust`'s
-    `DischargeProof.isPure`), and it sees inside expanded macro/quotation bodies. -/
+    the resolved full constant name — a bare `.const` reference, a dot-projection
+    (`Term.identProj`, whose node range IS the field and whose const is the app
+    head), or a `FieldInfo`. This is exactly what the token map cannot compute:
+    it disambiguates two decls that share a spelling across packages (`core/
+    build`'s `isPure` vs `core/trust`'s `DischargeProof.isPure`), and it sees
+    inside expanded macro/quotation bodies. -/
 unsafe
 def resolve_idents
     (env : Environment)
@@ -92,24 +93,34 @@ def resolve_idents
   let (_, mps, msgs) ← Parser.parseHeader ictx
   let st0 := Lean.Elab.Command.mkState env msgs Options.empty
   let st := { st0 with infoState := { st0.infoState with enabled := true } }
-  quietly do
-    try
-      let s ← Lean.Elab.IO.processCommands ictx mps st
-      let mut acc : Array (Nat × Nat × Name) := #[]
-      for tree in s.commandState.infoState.trees do
-        for i in collect_infos tree #[] do
-          match i with
-          | .ofTermInfo ti =>
-            if ti.stx.isIdent then
-              match ti.expr.consumeMData, ti.stx.getRange? with
-              | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm)
-              | _, _ => pure ()
-          | .ofFieldInfo fi =>
-            match fi.stx.getRange? with
-            | some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, fi.projName)
-            | none => pure ()
-          | _ => pure ()
-      pure acc
-    catch _ => pure #[]
+  quietly
+    do
+      try
+        let s ← Lean.Elab.IO.processCommands ictx mps st
+        let mut acc : Array (Nat × Nat × Name) := #[]
+        for tree in s.commandState.infoState.trees do
+          for i in collect_infos tree #[] do
+            match i with
+            | .ofTermInfo ti =>
+              if ti.stx.isIdent then
+                match ti.expr.consumeMData, ti.stx.getRange? with
+                | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm)
+                | _, _ => pure ()
+              else if ti.stx.getKind == `Lean.Parser.Term.identProj then
+                -- dot-projection `p.field`: the `identProj` node's range is the
+                -- FIELD exactly, the resolved const is the application head
+                -- (`DischargeProof.isPure`) — peel the args with `getAppFn`
+                match ti.expr.getAppFn.consumeMData, ti.stx.getRange? with
+                | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm)
+                | _, _ => pure ()
+            | .ofFieldInfo fi =>
+              match fi.stx.getRange? with
+              | some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, fi.projName)
+              | none => pure ()
+            | _ => pure ()
+        -- the elaborator records an ident in several info nodes; dedup exact
+        -- (start, stop, name) so the rewrite never double-edits a range
+        pure acc.toList.eraseDups.toArray
+      catch _ => pure #[]
 
 end Lean4Fmt.Frontend.Session
