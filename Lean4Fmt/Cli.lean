@@ -12,12 +12,14 @@
 namespace Lean4Fmt.Cli
 
 inductive mode
-  | format      -- print to stdout (default)
-  | check       -- exit 1 if any file would change
-  | write       -- overwrite in place
-  | stats       -- coverage accounting: active/verbatim/trivia bytes per file + total
-  | renamePlan  -- read `NAME AXIS` lines on stdin, print the casing rename plan
-  | renameApply -- parse the given files, apply the casing rename plan IN PLACE
+  | format        -- print to stdout (default)
+  | check         -- exit 1 if any file would change
+  | write         -- overwrite in place
+  | stats         -- coverage accounting: active/verbatim/trivia bytes per file + total
+  | renamePlan    -- read `NAME AXIS` lines on stdin, print the casing rename plan
+  | renameApply   -- orchestrate the rename over the given files (subprocess/file)
+  | renameDecls   -- worker: print `NAME<TAB>AXIS` for one file's declarations
+  | renameRewrite -- worker: apply a precomputed `--map` to one file, in place
   deriving Repr, Inhabited, BEq
 
 structure Options where
@@ -40,6 +42,9 @@ structure Options where
       append its `lake env` LEAN_PATH to the olean search path. `--lake off`
       keeps the explicit-LEAN_PATH-only behavior. -/
   lakeEnv : Bool := true
+  /-- Precomputed rename map file for the `renameRewrite` worker: lines
+      `SRC<TAB>TGT`, the plan the orchestrator built over the whole file set. -/
+  mapFile : Option String := none
   files : List String := []
   deriving Repr, Inhabited
 
@@ -54,6 +59,9 @@ def parse (args : List String) : Options :=
       | "--stats" :: r => o := { o with mode := .stats }; rest := r
       | "--rename-plan" :: r => o := { o with mode := .renamePlan }; rest := r
       | "--rename-apply" :: r => o := { o with mode := .renameApply }; rest := r
+      | "--rename-decls" :: r => o := { o with mode := .renameDecls }; rest := r
+      | "--rename-rewrite" :: r => o := { o with mode := .renameRewrite }; rest := r
+      | "--map" :: f :: r => o := { o with mapFile := some f }; rest := r
       | "--write" :: r => o := { o with mode := .write }; rest := r
       | "-w" :: r => o := { o with mode := .write }; rest := r
       | "--width" :: n :: r => o := { o with width := some n.toNat! }; rest := r
