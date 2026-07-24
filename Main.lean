@@ -293,22 +293,6 @@ def axis_of_tag : String → Option Lean4Fmt.Rename.axis
   | "term" => some .term
   | _      => none
 
-/-- Full names of structure FIELDS in a module (`decls_of_full` already appends
-    each field as a `type.field` `.term` entry; a field is a `.term` whose name is
-    nested under a `.typ` name). Feeds the resolve path's target-taken guard: fields
-    carry no declId so `resolve_idents` can't see them, but a type snaking onto a
-    field name (`Lang` → `lang`) must be blocked. Over-inclusion (a real `T.helper`
-    def caught by the prefix test) is harmless — it is a def either way. -/
-def struct_field_fulls (stx : Lean.Syntax) : List String :=
-  let ds := decls_of_full stx
-  let typs := (ds.filter (fun (_, ax) => ax == Lean4Fmt.Rename.axis.typ)).map (·.1)
-  ds.filterMap
-    (fun (f, ax) =>
-      if ax == Lean4Fmt.Rename.axis.term && typs.any (fun t => f.startsWith (t ++ ".")) then
-        some f
-      else
-        none)
-
 /-- Prepend a prebuilt farm dir to the search path — the orchestrator builds the
     farm ONCE and hands each worker its path via `--farm`, so no per-subprocess
     rebuild. -/
@@ -337,21 +321,19 @@ def run_rename_decls_impl
   for p in paths do
     let contents ← IO.FS.readFile p
     if resolve then
-      -- RESOLVED occurrences `lastComp<TAB>fullName<TAB>D|U` — the hybrid's input
-      for (_, _, nm, isDef) in ← Frontend.Session.resolve_idents env p.toString contents do
+      -- RESOLVED occurrences `lastComp<TAB>fullName<TAB>D|U` (the hybrid's input),
+      -- plus every locally-DEFINED const as `F` def-only (fields/constructors/decls
+      -- — the collision+taken guards' input) — BOTH from one elaboration.
+      let (occ, locals) ← Frontend.Session.resolve_idents env p.toString contents
+      for (_, _, nm, isDef) in occ do
         let full := nm.toString
         let lastC := (full.splitOn ".").getLastD full
         let d := if isDef then "D" else "U"
         out.putStrLn s!"{lastC}\t{full}\t{d}"
-      -- struct FIELDS as `F` (def-only, the target-taken guard's input): they carry
-      -- no declId so resolve_idents omits them. Elab fallback ON so macro/notation
-      -- files still parse — a field missed here would let a type snake onto it.
-      match ← Frontend.parse_full? env p.toString contents true with
-      | some stx =>
-        for full in struct_field_fulls stx do
-          let lastC := (full.splitOn ".").getLastD full
-          out.putStrLn s!"{lastC}\t{full}\tF"
-      | none => pure ()
+      for nm in locals do
+        let full := nm.toString
+        let lastC := (full.splitOn ".").getLastD full
+        out.putStrLn s!"{lastC}\t{full}\tF"
     else
       match ← Frontend.parse_full? env p.toString contents elabFallback with
       | some stx =>
@@ -395,41 +377,6 @@ def rewrite_file
       ba := (ba.extract 0 s) ++ new.toUTF8 ++ (ba.extract e ba.size)
     IO.FS.writeFile p (String.fromUTF8! ba)
     err.putStrLn s!"rewrite: {p} ({edits.size} idents)"
-
-/-- G-L7.4d resolution rewrite of one file: elaborate, then for each RESOLVED
-    occurrence `(range, fullName)` rewrite the token iff `fullName` (or a prefix)
-    is in the identity `map` — the last-K-components rule preserves qualification.
-    Overlap-safe splice: descending by start, skip any range overlapping the
-    already-applied one (the elaborator's rare same-start-different-stop dups). -/
-unsafe
-def resolve_rewrite_file
-    (env : Lean.Environment)
-    (map : List (String × String))
-    (p : System.FilePath)
-    : IO Unit := do
-  let err ← IO.getStderr
-  let contents ← IO.FS.readFile p
-  let bytes := contents.toUTF8
-  let occs ← Frontend.Session.resolve_idents env p.toString contents
-  let mut edits : Array (Nat × Nat × String) := #[]
-  for (s, e, nm, _) in occs do
-    let tokenText := String.fromUTF8! (bytes.extract s e)
-    match Lean4Fmt.Rename.resolved_rewrite map tokenText nm.toString with
-    | some newText => edits := edits.push (s, e, newText)
-    | none => pure ()
-  if edits.isEmpty then
-    return
-  let sorted := edits.qsort (fun a b => a.1 > b.1)
-  let mut ba := bytes
-  let mut lastStart := ba.size + 1
-  let mut n := 0
-  for (s, e, new) in sorted do
-    if e <= lastStart then
-      ba := (ba.extract 0 s) ++ new.toUTF8 ++ (ba.extract e ba.size)
-      lastStart := s
-      n := n + 1
-  IO.FS.writeFile p (String.fromUTF8! ba)
-  err.putStrLn s!"rewrite: {p} ({n} idents, resolved)"
 
 /-- Worker (`--rename-rewrite --map F`): read the map, rewrite the file in place
     under its own env — token spelling, or RESOLVED identity under `--resolve`. -/
@@ -514,7 +461,8 @@ def run_resolve_dump_impl (files : List String) : IO Unit := do
   let out ← IO.getStdout
   for p in paths do
     let contents ← IO.FS.readFile p
-    for (s, e, nm, isDef) in ← Frontend.Session.resolve_idents env p.toString contents do
+    let (occ, _) ← Frontend.Session.resolve_idents env p.toString contents
+    for (s, e, nm, isDef) in occ do
       let tag := if isDef then "DEF" else "use"
       out.putStrLn s!"{s}-{e}\t{nm}\t{tag}"
 
@@ -562,7 +510,8 @@ def run_rename_apply_impl
         stderr := .piped }
   let mut allDecls : List (String × Lean4Fmt.Rename.axis) := []
   let mut occs : List (String × String) := [] -- (lastComp, fullName) resolved occurrences
-  let mut defs : List String := [] -- full names DEFINED in the set
+  let mut defs : List String := [] -- AUTHORIZE: declId real decls (D) — may be renamed
+  let mut existing : List String := [] -- COLLIDE: all local consts (F) — incl. generated
   let mut i := 0
   while i < paths.size do
     let wave := paths.extract i (Nat.min (i + jobs) paths.size)
@@ -578,10 +527,10 @@ def run_rename_apply_impl
           match line.splitOn "\t" with
           | [lastC, full, d] =>
             if d == "F" then
-              defs := defs ++ [full] -- field: def-only (target-taken), not an occurrence
+              existing := existing ++ [full] -- all local consts: collision set only
             else
               occs := occs ++ [(lastC, full)]
-              if d == "D" then defs := defs ++ [full]
+              if d == "D" then defs := defs ++ [full] -- declId real: authorize
           | _ => pure ()
         else
           match line.splitOn "\t" with
@@ -594,7 +543,7 @@ def run_rename_apply_impl
   -- the plan: HYBRID under --resolve (resolution decides, token acts), else token
   let (renames, skipped) :=
     if resolve then
-      Lean4Fmt.Rename.plan_hybrid .snake modules occs defs
+      Lean4Fmt.Rename.plan_hybrid .snake modules occs defs existing
     else
       let p := Lean4Fmt.Rename.build_plan naming modules allDecls; (p.renames, p.skipped)
   let tag := if resolve then "resolve" else preset

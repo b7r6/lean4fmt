@@ -185,24 +185,36 @@ def plan_resolved
 
 /-- The HYBRID plan (G-L7.4e): resolution DECIDES, a token rewrite ACTS. A simple
     name is renamed iff EVERY resolved occurrence of it points to the SAME full
-    name AND that name is DEFINED in the file-set (`defs`). Then a plain token
-    rewrite of that simple name catches every spelling — including the structure
-    binder-type positions the InfoTree doesn't record. A spelling shared across
-    packages (`isPure` = build's field AND trust's) resolves to ≥2 full names →
-    ambiguous → left byte-exact. `occs` = (lastComponent, fullName) resolved
-    occurrences. Returns `(simpleName → target)` renames + skips (keyword/collision). -/
+    name that is AUTHORIZED — a real source declaration (`defs`, the declId-captured
+    set). Then a plain token rewrite of that name catches every spelling, including
+    the structure binder-type positions the InfoTree doesn't record. A spelling
+    shared across packages (`isPure` = build's field AND trust's) resolves to ≥2
+    full names → ambiguous → left byte-exact.
+
+    Two distinct sets, because they answer distinct questions:
+    • `defs` — what may be renamed (authorize). ONLY real source decls; NEVER a
+      generated const (an `extends` `toParent` projection, a recursor, a match arm)
+      — renaming those breaks, they have no source token.
+    • `exists` — every name that EXISTS (all local consts, incl. generated). The
+      collision guard checks targets against THIS: a rename onto a taken name is
+      unsafe even if the taken name isn't itself renamable.
+
+    `occs` = (lastComponent, fullName) resolved occurrences. Returns
+    `(simpleName → target)` renames + skips (keyword/collision/taken). -/
 def plan_hybrid
     (c : Case)
     (modules : List String)
     (occs : List (String × String))
     (defs : List String)
+    (exists_ : List String)
     : List (String × String) × List (String × String) :=
   let defSet := defs.eraseDups
+  let existSet := exists_.eraseDups
   let simples := (occs.map (·.1)).eraseDups
   let fullsOf := fun (s : String) => ((occs.filter (·.1 == s)).map (·.2)).eraseDups
-  -- unambiguous (one full name) AND defined in the set AND not a module basename
-  -- (the token rewrite hits `import`/`open` paths too, so a type sharing a module
-  -- name — `Toolchain` in `Toolchain.lean` — must be exempted, the local exemption)
+  -- unambiguous (one full name) AND authorized (a real source decl) AND not a
+  -- module basename (the token rewrite hits `import`/`open` paths too, so a type
+  -- sharing a module name — `Toolchain` in `Toolchain.lean` — must be exempted)
   let rows : List (String × String × String) :=
     simples.filterMap
       (fun s =>
@@ -216,13 +228,12 @@ def plan_hybrid
   -- two distinct safe sources snaking to one target collide (both skipped)
   let collides := fun (t : String) => (rows.filter (fun (_, _, x) => x == t)).length > 1
   -- TARGET-TAKEN (the type↔field guard): a rename `S → t` is unsafe if some OTHER
-  -- decl already spells `t`. The token rewrite is global-by-simple-name, so the
-  -- new `t` shadows that decl wherever they share a scope — `Lang → lang` atop the
-  -- `lang` FIELD of `target_def` (a DIFFERENT namespace, `…Build.Lang` vs
-  -- `…Build.target_def.lang`), so the check is identity-aware but namespace-BLIND.
-  -- Needs struct fields in `defs`: they carry no declId, so the resolve worker
-  -- emits them syntactically as `F` (def-only) lines.
-  let taken := fun (sFull t : String) => defSet.any (fun d => d != sFull && lastOf d == t)
+  -- name already EXISTS as `t`. The token rewrite is global-by-simple-name, so the
+  -- new `t` shadows that name wherever they share a scope — `Lang → lang` atop the
+  -- `lang` FIELD of `target_def`, or `Attr → attr` atop `def attr` (DIFFERENT
+  -- namespaces), so the check is identity-aware but namespace-BLIND. Checked against
+  -- `existSet` (ALL local consts) so a clash with a non-renamable name still blocks.
+  let taken := fun (sFull t : String) => existSet.any (fun d => d != sFull && lastOf d == t)
   let changed := rows.filter (fun (s, _, t) => s != t)
   let ok := fun (sFull t : String) => !keywords.contains t && !collides t && !taken sFull t
   (
@@ -232,19 +243,22 @@ def plan_hybrid
 
 -- ── #guard-locked: identity rewrite + resolution plan ────────────────────────
 
--- HYBRID: unambiguous + defined → token-renamed; ambiguous / external → left
-#guard (plan_hybrid .snake [] [("Resource", "A.Resource"), ("Resource", "A.Resource")] ["A.Resource"]).1
+-- HYBRID: unambiguous + authorized → token-renamed; ambiguous / external → left
+#guard (plan_hybrid .snake [] [("Resource", "A.Resource"), ("Resource", "A.Resource")] ["A.Resource"] ["A.Resource"]).1
     == [("Resource", "resource")]
 
-#guard (plan_hybrid .snake [] [("isPure", "B.S.isPure"), ("isPure", "T.D.isPure")] ["B.S.isPure"]).1 == []
+#guard (plan_hybrid .snake [] [("isPure", "B.S.isPure"), ("isPure", "T.D.isPure")] ["B.S.isPure"] ["B.S.isPure"]).1 == []
 
-#guard (plan_hybrid .snake [] [("map", "List.map")] []).1 == []
+#guard (plan_hybrid .snake [] [("map", "List.map")] [] []).1 == []
 -- module-basename exemption: `Toolchain` is a type AND a module → left byte-exact
-#guard (plan_hybrid .snake ["Toolchain"] [("Toolchain", "A.Toolchain")] ["A.Toolchain"]).1 == []
--- type↔field: a `lang` FIELD (different namespace) blocks `Lang → lang` (target-taken)
-#guard (plan_hybrid .snake [] [("Lang", "A.Lang")] ["A.Lang", "A.T.lang"]).1 == []
+#guard (plan_hybrid .snake ["Toolchain"] [("Toolchain", "A.Toolchain")] ["A.Toolchain"] ["A.Toolchain"]).1 == []
+-- type↔field: a `lang` FIELD (exists but not declId-authorized, different namespace)
+-- blocks `Lang → lang` via the target-taken guard on `exists`
+#guard (plan_hybrid .snake [] [("Lang", "A.Lang")] ["A.Lang"] ["A.Lang", "A.T.lang"]).1 == []
 -- …but with no term already spelling the target, the type renames
-#guard (plan_hybrid .snake [] [("Lang", "A.Lang")] ["A.Lang"]).1 == [("Lang", "lang")]
+#guard (plan_hybrid .snake [] [("Lang", "A.Lang")] ["A.Lang"] ["A.Lang"]).1 == [("Lang", "lang")]
+-- generated const (an `extends` `toParent`) EXISTS but is NOT authorized → never renamed
+#guard (plan_hybrid .snake [] [("toParent", "A.S.toParent")] [] ["A.S.toParent"]).1 == []
 
 -- prefix-wise full rename: only the mapped prefixes move
 #guard rename_full [("A.foo", "foo_x")] "A.foo" == "A.foo_x"

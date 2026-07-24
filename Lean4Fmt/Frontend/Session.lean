@@ -95,7 +95,7 @@ unsafe
 def resolve_idents
     (env : Environment)
     (path contents : String)
-    : IO (Array (Nat × Nat × Name × Bool)) := do
+    : IO (Array (Nat × Nat × Name × Bool) × Array Name) := do
   let ictx := Parser.mkInputContext contents path
   let (_, mps, msgs) ← Parser.parseHeader ictx
   let st0 := Lean.Elab.Command.mkState env msgs Options.empty
@@ -128,9 +128,17 @@ def resolve_idents
               | some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, fi.projName, false)
               | none => pure ()
             | _ => pure ()
+        -- the COMPLETE def set the collision/taken guards need — fields,
+        -- constructors, every decl — harvested from the SAME elaboration via the
+        -- environment's local (stage-2) constant map. One elaboration, so the
+        -- worker is DETERMINISTIC; a second parse for fields raced and dropped
+        -- defs, letting a type snake onto an unseen term (`Attr` → `attr`).
+        let mut locals : Array Name := #[]
+        for (nm, _) in s.commandState.env.constants.map₂.toList do
+          unless nm.isInternal do locals := locals.push nm
         -- the elaborator records an ident in several info nodes; dedup exact
         -- (start, stop, name, isDef) so the rewrite never double-edits a range
-        pure acc.toList.eraseDups.toArray
-      catch _ => pure #[]
+        pure (acc.toList.eraseDups.toArray, locals)
+      catch _ => pure (#[], #[])
 
 end Lean4Fmt.Frontend.Session
