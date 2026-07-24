@@ -112,7 +112,11 @@ failures) = 0, experiments untouched.*
 | **G-L7.2** (dogfood) | 0c0210e | snake-ify lean4fmt's own 55 files: 288 renames / 10 skipped (7 module-basename + Case keyword + ValForm/valForm collision), re-formatted the 12 width-shifted files | make green (102 jobs), self-hosts, fixed point 0-reformat, home clean but the 2 experiments, idempotent (2nd pass 0 renames), census dormant |
 | **G-L7.3** (harden) | 2e88b24 | multi-workspace orchestrator (subprocess/file, bounded waves — solves the union-batchEnv failure) + field-aware collision detection (struct fields on the terms axis) | 0 parse failures on aleph (48) + core/build (37); type↔field collisions blocked; floor caught every domain hazard |
 | **G-L7.3** (house rollout) | PENDING | snake the domain tree — needs name-resolution rename (see status) | — |
-| **G-L7.4** (resolver foundation) | a6b65b3 | `Session.resolve_idents` — elaborate w/ info trees, harvest `(range, resolvedFullName)` from TermInfo/FieldInfo; `--resolve-dump` probe | resolver works (in-package + core refs); root cause found (see below) |
+| **G-L7.4b** (resolver foundation) | a6b65b3 | `Session.resolve_idents` — elaborate w/ info trees, harvest `(range, resolvedFullName)` from TermInfo/FieldInfo; `--resolve-dump` probe | resolves bare-ident + qualified refs; root cause found |
+| **G-L7.4a** (the olean farm) | d1c5aa3 | `build_olean_farm` — merged symlink farm (one `Continuity/` root, first on path) fixes findOLean's root-namespace mis-resolution | proof: `DischargeProof` in env, 26 Trust refs (was 0), full elaboration restored |
+| **G-L7.4c** (resolver complete) | — | dot-projection case in `resolve_idents` (`p.isPure` → owning field const) | `p.isPure` resolves; no unresolved non-local ident |
+| **G-L7.4d** (resolved rewrite) | — | `--resolve`: identity map (full names), rewrite iff resolved-in-set | cross-package fixture: local renames, imported use byte-exact, reparses |
+| **G-L7.4e** (THE BANK) | — | `core/build` under `--resolve` | `lake -R build` GREEN where token went red; rejects 0; committed |
 
 ## The dogfood finding (2026-07-24, the empirical basis for G-L7.1's exemption)
 
@@ -206,3 +210,51 @@ that actually owns them. Once a domain file FULLY elaborates in the exe,
 `resolve_idents` + the existing plan/exemption/subprocess/splice pipeline is the
 complete name-resolution rename. Until then, G-L7.4 (and any correct
 multi-workspace elaboration in the exe) is gated on the module-resolution fix.
+
+## G-L7.4 gate ladder — to a REAL BANK (set 2026-07-24)
+
+Goal: land the RESOLUTION rename — rewrite by resolved decl IDENTITY, not
+spelling — and bank it on the domain package that broke the token approach
+(`core/build`), build-validated. The farm (G-L7.4a, multi-workspace resolution)
+and the InfoTree resolver (G-L7.4b, bare + qualified) are IN. Three monotone
+gates close the loop.
+
+The floor is unchanged: the BUILD. A rename that miscompiles is caught by `lake
+-R build` / `make`, reverted, zero damaged source. Resolution adds a SECOND
+floor — **completeness**: every non-local ident occurrence must resolve, else a
+missed use-site of a renamed decl breaks. Standing checks per gate: build green,
+census-dormant (`.preserve`), home 401/0/0 (layout orthogonal), and the new one
+— resolution-complete (no unresolved non-local ident in the target).
+
+**G-L7.4c — the resolver complete (projections).** Add the dot-projection case
+to `resolve_idents`: a projection-syntax `TermInfo` (`p.isPure`) whose stx is the
+whole `p.isPure` and whose `expr.getAppFn` is the field/projection const — pull
+the FIELD ident child's range + that const. *Exit: `p.isPure` resolves to
+`…DischargeProof.isPure` in `--resolve-dump`; no unresolved non-local ident in
+the probe file; the field-projection class covered.*
+
+**G-L7.4d — the resolved-identity rewrite (`--resolve`).** Swap the token map for
+identity. Pass-1 decls emit FULL names; the plan keys by full name (cross-package
+same-spelling names COEXIST — the collision exemption dissolves for them);
+pass-2 rewrites an occurrence iff its RESOLVED full name is in the set, rewriting
+the token's tail to the new name (qualification preserved). The farm rides each
+worker's search path. Module-path components (import/open) are untouched by
+construction — not const references — so the module-basename exemption largely
+dissolves too (verify). *Exit: on a fixture with a deliberate cross-package
+collision — a local `isPure` decl AND a used imported `isPure` — the local
+renames, the imported use stays byte-exact, output reparses; `#guard` on the
+identity-map builder.*
+
+**G-L7.4e — THE REAL BANK: `core/build` under `--resolve`.** Run the resolution
+rename on the package the token approach broke. The `isPure` / `Lang`-class
+collisions resolve by identity — build's own `isPure` renames, trust's
+`DischargeProof.isPure` projection is skipped byte-exact — so `lake -R build`
+goes GREEN where the token rename went red. Iterate any residual. *Exit:
+`core/build` snake-ified by resolution, `lake -R build` green, rejects 0,
+committed. THE BANK — a domain package renamed correctly by name resolution,
+floor-validated; the token approach's cross-package + macro classes both retired.*
+
+Beyond the bank (not gates): fold the farm into the SHARED env path (fixes
+multi-workspace FORMATTING + `--stats`, which hit the same silent drop invisibly
+today); resume the house rollout on the safe leaf set with resolution; the
+experiment closures stay gated until unblocked.
