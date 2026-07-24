@@ -16,6 +16,7 @@ import Lean4Fmt.Log
 import Lean4Fmt.Cli
 import Lean4Fmt.Driver
 import Lean4Fmt.Rename
+import Lean4Fmt.Emit.Tokens
 import Lean4Fmt.Style.Preset
 
 open Lean
@@ -160,6 +161,94 @@ def runStatsImpl
 opaque runStats (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool) :
     IO (Array (Nat × Nat × Nat × Nat × String))
 
+-- ── the rename apply (G-L7.1): parse-based, token-aware identifier rewrite ────
+
+/-- Last dotted component of a name (`Foo.bar` → `bar`). -/
+def lastComp (s : String) : String := (s.splitOn ".").getLastD s
+
+/-- The naming axis a declaration node's KIND falls on, or `none` (example, or a
+    command that declares no renamable name). -/
+def axisOfKind (k : Lean.Name) : Option Lean4Fmt.Rename.Axis :=
+  if k == ``Lean.Parser.Command.definition || k == ``Lean.Parser.Command.abbrev
+      || k == ``Lean.Parser.Command.opaque || k == ``Lean.Parser.Command.instance then
+    some .term
+  else if k == ``Lean.Parser.Command.theorem || k == ``Lean.Parser.Command.axiom then
+    some .thm
+  else if k == ``Lean.Parser.Command.structure || k == ``Lean.Parser.Command.inductive then
+    some .typ
+  else none
+
+/-- The declared simple-name of a definition node: the first ident of its
+    `declId` child, last dotted component. `none` for anonymous decls (an
+    unnamed instance) or a node with no declId. -/
+def declNameOf? (defn : Lean.Syntax) : Option String := do
+  let declId ← defn.getArgs.find? (·.getKind == ``Lean.Parser.Command.declId)
+  let idTok ← (Lean4Fmt.Emit.leafTokens declId).find? (·.isIdent)
+  let src := Lean4Fmt.Emit.bareSrc idTok
+  if src.isEmpty then none else some (lastComp src)
+
+/-- Every renamable top-level declaration of a parsed module as `(simple-name,
+    axis)`. Namespaced decls are siblings (namespace/end are their own
+    commands), so a flat command walk sees them all. -/
+def declsOf (stx : Lean.Syntax) : List (String × Lean4Fmt.Rename.Axis) :=
+  let cmds := ((stx.getArgs[1]?).map (·.getArgs)).getD #[]
+  cmds.toList.filterMap (fun c =>
+    if c.getKind == ``Lean.Parser.Command.declaration then
+      c.getArgs.findSome? (fun defn =>
+        match axisOfKind defn.getKind with
+        | some ax => (declNameOf? defn).map (fun nm => (nm, ax))
+        | none    => none)
+    else none)
+
+/-- G-L7.1 apply: parse every file under one batch env, collect the decl set
+    across the WHOLE input (so collisions are global), build the plan (preset
+    naming + the module-basename exemption), then rewrite each file token-aware —
+    only `.ident` leaves whose text moves under the map are spliced, end-to-start
+    over the UTF-8 bytes (strings/comments/docstrings are never leaf idents, so
+    they ride byte-exact). The build is the floor; a bad rename is a failed
+    make, not corrupted source. -/
+unsafe
+def runRenameApplyImpl (files : List String) (preset : String) (elabFallback : Bool) : IO Unit := do
+  let paths := files.toArray.map System.FilePath.mk
+  let env ← Frontend.batchEnv paths
+  let naming := ((Lean4Fmt.Style.byName? preset).getD Lean4Fmt.Style.straylight).naming
+  let modules := files.filterMap (fun f => (System.FilePath.mk f).fileStem)
+  let err ← IO.getStderr
+  let mut allDecls : List (String × Lean4Fmt.Rename.Axis) := []
+  let mut parsed : Array (System.FilePath × String × Lean.Syntax) := #[]
+  for p in paths do
+    let contents ← IO.FS.readFile p
+    match ← Frontend.parseFull? env p.toString contents elabFallback with
+    | some stx =>
+      allDecls := allDecls ++ declsOf stx
+      parsed := parsed.push (p, contents, stx)
+    | none => err.putStrLn s!"rename: SKIP (no parse) {p}"
+  let plan := Lean4Fmt.Rename.buildPlan naming modules allDecls
+  let map := plan.renames
+  err.putStrLn
+    s!"// rename apply (preset {preset}): {map.length} renames, {plan.skipped.length} skipped over {parsed.size} files"
+  for (p, contents, stx) in parsed do
+    let idents := (Lean4Fmt.Emit.leafTokens stx).filter (·.isIdent)
+    let mut edits : Array (Nat × Nat × String) := #[]
+    for id in idents do
+      match id.getSubstring? false false with
+      | some ss =>
+        match Lean4Fmt.Rename.identReplacement map ss.toString with
+        | some newText => edits := edits.push (ss.startPos.byteIdx, ss.stopPos.byteIdx, newText)
+        | none => pure ()
+      | none => pure ()
+    if edits.isEmpty then continue
+    -- end-to-start: applying larger offsets first keeps smaller ones valid
+    let sorted := edits.qsort (fun a b => a.1 > b.1)
+    let mut ba := contents.toUTF8
+    for (s, e, new) in sorted do
+      ba := (ba.extract 0 s) ++ new.toUTF8 ++ (ba.extract e ba.size)
+    IO.FS.writeFile p (String.fromUTF8! ba)
+    err.putStrLn s!"rename: {p} ({edits.size} idents)"
+
+@[implemented_by runRenameApplyImpl]
+opaque runRenameApply (files : List String) (preset : String) (elabFallback : Bool) : IO Unit
+
 def main (argv : List String) : IO Unit := do
   let o := Cli.parse argv
   if o.mode == .renamePlan then
@@ -180,7 +269,7 @@ def main (argv : List String) : IO Unit := do
               | "term" => some (nm, .term)
               | _ => none
             | _ => none)
-    let plan := Lean4Fmt.Rename.buildPlan naming decls
+    let plan := Lean4Fmt.Rename.buildPlan naming [] decls
     IO.println
       s!"// rename plan (preset {o.preset}): {plan.renames.length} rename, {plan.skipped.length} skip"
     for (nm, tgt) in plan.renames do
@@ -196,6 +285,10 @@ def main (argv : List String) : IO Unit := do
   Lean4Fmt.Log.setLevel (Lean4Fmt.Log.Level.ofString o.logLevel)
   if o.lakeEnv then addLakePaths o.files
   let err ← IO.getStderr
+
+  if o.mode == .renameApply then
+    runRenameApply o.files o.preset o.elabFallback
+    return
 
   if o.mode == .stats then
     let rows ← runStats o.files o.width o.preset o.elabFallback o.retry
@@ -238,6 +331,7 @@ def main (argv : List String) : IO Unit := do
     match o.mode with
     | .stats => pure ()   -- unreachable: stats returns above
     | .renamePlan => pure ()   -- unreachable: renamePlan returns above
+    | .renameApply => pure ()   -- unreachable: renameApply returns above
     | .format => IO.print r.output
     | .check =>
       if r.changed then

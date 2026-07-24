@@ -17,6 +17,7 @@ inductive Mode
   | write      -- overwrite in place
   | stats      -- coverage accounting: active/verbatim/trivia bytes per file + total
   | renamePlan -- read `NAME AXIS` lines on stdin, print the casing rename plan
+  | renameApply -- parse the given files, apply the casing rename plan IN PLACE
   deriving Repr, Inhabited, BEq
 
 structure Options where
@@ -52,6 +53,7 @@ def parse (args : List String) : Options :=
       | "--check" :: r => o := { o with mode := .check }; rest := r
       | "--stats" :: r => o := { o with mode := .stats }; rest := r
       | "--rename-plan" :: r => o := { o with mode := .renamePlan }; rest := r
+      | "--rename-apply" :: r => o := { o with mode := .renameApply }; rest := r
       | "--write" :: r => o := { o with mode := .write }; rest := r
       | "-w" :: r => o := { o with mode := .write }; rest := r
       | "--width" :: n :: r => o := { o with width := some n.toNat! }; rest := r
