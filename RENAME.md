@@ -122,6 +122,8 @@ failures) = 0, experiments untouched.*
 | **G-L7.4h** (THE REAL BANK) | 1f873b1 | `core/build` snaked under `--resolve` with f+g in — 29 renames / 10 skips over 12 files | `lake -R build` GREEN (73 jobs) where the token approach went red; rejects 0; committed |
 | **G-L7.4i** (deterministic resolver + authorize/collide split) | 0adc64d | def set harvested from ONE elaboration (`env.constants.map₂`, was a 2nd flaky parse); split into `defs` (declId reals — authorize) vs `exists` (all local consts incl. generated — collide) so generated projections (`extends` `toParent`) never rename but still block | non-determinism gone (5/5, 3/3); `TrustStateWithPolicy.toTrustState` no longer mis-renamed; dead `resolve_rewrite_file`/`struct_field_fulls` removed |
 | **G-L7.4j** (codegen — first CROSS-PACKAGE bank) | c300cc9 | codegen snaked AND build's use-sites of codegen's renamed decls rewritten in one pass (`Top` → `top`, build's `: Top` → `: top`, 16 build files) — the "A renames, B follows" path core/build's self-contained pass never tested | 33 renames / 27 skips / 106 files, deterministic 3/3; `lake -R build` GREEN codegen (133) + core/build (73) |
+| **G-L7.4k** (local-binder capture) | a6e57ac | `resolve_idents` harvests each term's `lctx.decls` user names into the COLLISION set (`exists`) — the taken guard then skips a type whose snaked form shadows a param/`let`/`match` binder (`(action : Action)` → `(action : action)`). Renames become a strict subset (more skips, never more) → no green package regresses | type↔binder shadow class closed; the "pass it through without breaking" floor |
+| **G-L7.4l** (aleph — non-breaking pass) | f8fc171 | aleph snaked as far as safe: binder-shadowing types left camelCase, EDSL macro quotations (EDSL.lean, 123 lines) rewritten CONSISTENTLY (global-by-resolved-identity → a name renames in quotation + def + uses alike — the macro class the token approach couldn't handle, retired) | 65 renames / 23 skips / 47 files, deterministic 2/2; `lake -R build` green (44-job lib, baseline parity; pre-existing `--bogus`/ld test-target errors unrelated) |
 
 ## The frontier finding (2026-07-24, cross-package + the determinism trap)
 
@@ -146,6 +148,21 @@ Two things surfaced, both caught by the floor, both now closed:
 - **The farm needs clean oleans.** Resolution reads BUILT oleans; a stale/partial
   build (e.g. from a reverted experiment) skews the plan. Build the package clean
   before renaming. (Surfaced as a phantom 0-vs-3 that vanished after a clean build.)
+- **aleph — the two walls, and both fell (`a6e57ac`, `f8fc171`).** aleph broke
+  first on the **type↔local-binder shadow** (`(action : Action)` → `(action :
+  action)` — the param named after its type). Local binders aren't env consts, so
+  the const-based collision set never saw them; harvesting each term's `lctx`
+  user-names into `exists` closes it (the shadowing types stay camelCase — partial
+  snake, but green). The **EDSL macro-quotation class** I'd flagged as the harder
+  wall turned out SAFE: the resolution rename is global-by-resolved-identity, so a
+  name renames in its `` `(…) `` quotation, its definition, and its uses uniformly
+  — EDSL.lean's 123 rewritten lines built green. The macro class the *token*
+  approach couldn't stay consistent through is retired by resolution. Verdict:
+  aleph passes through non-breaking (65 renames / 23 skips), the floor the user set.
+- **The lesson for the rollout.** The rename is CLEAN on mostly-snake code (codegen
+  fully) and NON-BREAKING-but-partial on camelCase-convention code (aleph — the
+  `(x : X)` idiom forces some types to stay camelCase). Either way the floor holds:
+  never a broken build.
 
 ## The dogfood finding (2026-07-24, the empirical basis for G-L7.1's exemption)
 
