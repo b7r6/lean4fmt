@@ -105,6 +105,12 @@ def resolve_idents
       try
         let s ← Lean.Elab.IO.processCommands ictx mps st
         let mut acc : Array (Nat × Nat × Name × Bool) := #[]
+        -- local BINDER names (fn params, `let`s, `match` vars) in scope at any term.
+        -- A type snaking onto a binder name shadows it — `(action : Action)` →
+        -- `(action : action)`, where `action → …` then reads the value, not the type.
+        -- Binders aren't env consts, so they must be harvested from each term's local
+        -- context; they feed the COLLISION set only (never renamed).
+        let mut binders : Lean.NameSet := {}
         for tree in s.commandState.infoState.trees do
           for i in collect_infos tree #[] do
             match i with
@@ -123,6 +129,12 @@ def resolve_idents
                 match ti.expr.getAppFn.consumeMData, ti.stx.getRange? with
                 | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm, false)
                 | _, _ => pure ()
+              for d in ti.lctx.decls do
+                match d with
+                | some ld =>
+                  unless ld.userName.isInternal || ld.userName.hasMacroScopes do
+                    binders := binders.insert ld.userName
+                | none => pure ()
             | .ofFieldInfo fi =>
               match fi.stx.getRange? with
               | some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, fi.projName, false)
@@ -132,8 +144,9 @@ def resolve_idents
         -- constructors, every decl — harvested from the SAME elaboration via the
         -- environment's local (stage-2) constant map. One elaboration, so the
         -- worker is DETERMINISTIC; a second parse for fields raced and dropped
-        -- defs, letting a type snake onto an unseen term (`Attr` → `attr`).
-        let mut locals : Array Name := #[]
+        -- defs, letting a type snake onto an unseen term (`Attr` → `attr`). Plus the
+        -- local binders (collision-only) that close the type↔binder shadow class.
+        let mut locals : Array Name := binders.toList.toArray
         for (nm, _) in s.commandState.env.constants.map₂.toList do
           unless nm.isInternal do locals := locals.push nm
         -- the elaborator records an ident in several info nodes; dedup exact
