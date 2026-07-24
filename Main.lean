@@ -293,6 +293,22 @@ def axis_of_tag : String → Option Lean4Fmt.Rename.axis
   | "term" => some .term
   | _      => none
 
+/-- Full names of structure FIELDS in a module (`decls_of_full` already appends
+    each field as a `type.field` `.term` entry; a field is a `.term` whose name is
+    nested under a `.typ` name). Feeds the resolve path's target-taken guard: fields
+    carry no declId so `resolve_idents` can't see them, but a type snaking onto a
+    field name (`Lang` → `lang`) must be blocked. Over-inclusion (a real `T.helper`
+    def caught by the prefix test) is harmless — it is a def either way. -/
+def struct_field_fulls (stx : Lean.Syntax) : List String :=
+  let ds := decls_of_full stx
+  let typs := (ds.filter (fun (_, ax) => ax == Lean4Fmt.Rename.axis.typ)).map (·.1)
+  ds.filterMap
+    (fun (f, ax) =>
+      if ax == Lean4Fmt.Rename.axis.term && typs.any (fun t => f.startsWith (t ++ ".")) then
+        some f
+      else
+        none)
+
 /-- Prepend a prebuilt farm dir to the search path — the orchestrator builds the
     farm ONCE and hands each worker its path via `--farm`, so no per-subprocess
     rebuild. -/
@@ -327,6 +343,15 @@ def run_rename_decls_impl
         let lastC := (full.splitOn ".").getLastD full
         let d := if isDef then "D" else "U"
         out.putStrLn s!"{lastC}\t{full}\t{d}"
+      -- struct FIELDS as `F` (def-only, the target-taken guard's input): they carry
+      -- no declId so resolve_idents omits them. Elab fallback ON so macro/notation
+      -- files still parse — a field missed here would let a type snake onto it.
+      match ← Frontend.parse_full? env p.toString contents true with
+      | some stx =>
+        for full in struct_field_fulls stx do
+          let lastC := (full.splitOn ".").getLastD full
+          out.putStrLn s!"{lastC}\t{full}\tF"
+      | none => pure ()
     else
       match ← Frontend.parse_full? env p.toString contents elabFallback with
       | some stx =>
@@ -552,8 +577,11 @@ def run_rename_apply_impl
         if resolve then
           match line.splitOn "\t" with
           | [lastC, full, d] =>
-            occs := occs ++ [(lastC, full)]
-            if d == "D" then defs := defs ++ [full]
+            if d == "F" then
+              defs := defs ++ [full] -- field: def-only (target-taken), not an occurrence
+            else
+              occs := occs ++ [(lastC, full)]
+              if d == "D" then defs := defs ++ [full]
           | _ => pure ()
         else
           match line.splitOn "\t" with
@@ -589,6 +617,7 @@ def run_rename_apply_impl
         stdout := .piped,
         stderr := .piped }
   let mut renamed := 0
+  let mut skips := 0
   let mut j := 0
   while j < paths.size do
     let wave := paths.extract j (Nat.min (j + jobs) paths.size)
@@ -603,8 +632,20 @@ def run_rename_apply_impl
         if line.startsWith "rewrite: " then
           renamed := renamed + 1
           err.putStrLn s!"//   {line}"
+        else if line.startsWith "rename-rewrite: SKIP" then
+          skips := skips + 1
+          err.putStrLn s!"//   {line}"
     j := j + jobs
   err.putStrLn s!"// rewrote {renamed} files"
+  -- G-L7.4g pass-2 consistency: pass 1 RESOLVED every file (it elaborated). A
+  -- pass-2 SKIP means a file could not be rewritten while its DEPS were — a
+  -- half-rename. Exit nonzero so the driver reverts the whole set, rather than
+  -- leaning on the next build to notice. (core/build hits 0 skips; this is the
+  -- fail-safe for the rollout.)
+  if resolve && skips > 0 then
+    err.putStrLn
+      s!"// ABORT: {skips} file(s) failed to rewrite in pass 2 — rename is INCONSISTENT; revert the set"
+    IO.Process.exit 1
 
 @[implemented_by run_rename_apply_impl]
 opaque run_rename_apply (files : List String) (preset : String) (resolve : Bool) (elabFallback : Bool) : IO Unit

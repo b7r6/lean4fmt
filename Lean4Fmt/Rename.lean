@@ -212,16 +212,22 @@ def plan_hybrid
           match fullsOf s with
           | [full] => if defSet.contains full then some (s, full, convert c s) else none
           | _      => none)
-  -- two distinct safe sources snaking to one target collide (both skipped). NOTE:
-  -- a type↔field clash (`Lang` → `lang` where a `lang` FIELD exists) is NOT fully
-  -- caught here — fields carry no declId, so they're absent from `defs`/`rows`;
-  -- the build floor catches the residue. The clean fix is field-declId capture.
+  let lastOf := fun (d : String) => (d.splitOn ".").getLastD d
+  -- two distinct safe sources snaking to one target collide (both skipped)
   let collides := fun (t : String) => (rows.filter (fun (_, _, x) => x == t)).length > 1
+  -- TARGET-TAKEN (the type↔field guard): a rename `S → t` is unsafe if some OTHER
+  -- decl already spells `t`. The token rewrite is global-by-simple-name, so the
+  -- new `t` shadows that decl wherever they share a scope — `Lang → lang` atop the
+  -- `lang` FIELD of `target_def` (a DIFFERENT namespace, `…Build.Lang` vs
+  -- `…Build.target_def.lang`), so the check is identity-aware but namespace-BLIND.
+  -- Needs struct fields in `defs`: they carry no declId, so the resolve worker
+  -- emits them syntactically as `F` (def-only) lines.
+  let taken := fun (sFull t : String) => defSet.any (fun d => d != sFull && lastOf d == t)
   let changed := rows.filter (fun (s, _, t) => s != t)
-  let ok := fun (t : String) => !keywords.contains t && !collides t
+  let ok := fun (sFull t : String) => !keywords.contains t && !collides t && !taken sFull t
   (
-    changed.filterMap (fun (s, _, t) => if ok t then some (s, t) else none),
-    changed.filterMap (fun (s, _, t) => if ok t then none else some (s, t))
+    changed.filterMap (fun (s, full, t) => if ok full t then some (s, t) else none),
+    changed.filterMap (fun (s, full, t) => if ok full t then none else some (s, t))
   )
 
 -- ── #guard-locked: identity rewrite + resolution plan ────────────────────────
@@ -235,6 +241,10 @@ def plan_hybrid
 #guard (plan_hybrid .snake [] [("map", "List.map")] []).1 == []
 -- module-basename exemption: `Toolchain` is a type AND a module → left byte-exact
 #guard (plan_hybrid .snake ["Toolchain"] [("Toolchain", "A.Toolchain")] ["A.Toolchain"]).1 == []
+-- type↔field: a `lang` FIELD (different namespace) blocks `Lang → lang` (target-taken)
+#guard (plan_hybrid .snake [] [("Lang", "A.Lang")] ["A.Lang", "A.T.lang"]).1 == []
+-- …but with no term already spelling the target, the type renames
+#guard (plan_hybrid .snake [] [("Lang", "A.Lang")] ["A.Lang"]).1 == [("Lang", "lang")]
 
 -- prefix-wise full rename: only the mapped prefixes move
 #guard rename_full [("A.foo", "foo_x")] "A.foo" == "A.foo_x"
