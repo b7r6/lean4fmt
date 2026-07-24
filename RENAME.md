@@ -110,7 +110,8 @@ failures) = 0, experiments untouched.*
 | **G-L7.0b** (plan + dry-run) | 9914048 | `Style.Naming` schema (straylight = snake) + `Rename.buildPlan` (differs ∧ unique ∧ non-keyword, collisions vs full name set) + `--rename-plan`; three exclusions `#guard`-locked | guards green, dry-run demonstrated on real decls |
 | **G-L7.1** (apply, hardened) | f1faaa7 | `identReplacement` + `--rename-apply` + `runRenameApply` (declsOf axis-classifies each command, global decl set, end-to-start UTF-8 splice); module-basename exemption (Diagnostic/Doc/Layout/Naming/Options/Style/Walk) | fixture round-trip (def+use move; string/comment/docstring byte-exact; reparses), exemption + dotted-rewrite `#guard`, exe builds, census dormant |
 | **G-L7.2** (dogfood) | 0c0210e | snake-ify lean4fmt's own 55 files: 288 renames / 10 skipped (7 module-basename + Case keyword + ValForm/valForm collision), re-formatted the 12 width-shifted files | make green (102 jobs), self-hosts, fixed point 0-reformat, home clean but the 2 experiments, idempotent (2nd pass 0 renames), census dormant |
-| **G-L7.3** (house) | BLOCKED | see status below | — |
+| **G-L7.3** (harden) | 2e88b24 | multi-workspace orchestrator (subprocess/file, bounded waves — solves the union-batchEnv failure) + field-aware collision detection (struct fields on the terms axis) | 0 parse failures on aleph (48) + core/build (37); type↔field collisions blocked; floor caught every domain hazard |
+| **G-L7.3** (house rollout) | PENDING | snake the domain tree — needs name-resolution rename (see status) | — |
 
 ## The dogfood finding (2026-07-24, the empirical basis for G-L7.1's exemption)
 
@@ -124,40 +125,49 @@ whole thesis of the axis working as designed — a bad rename is a failed compil
 never corrupted source. The fix is the exemption in G-L7.1; the full set is the
 seven module-colliding decls named above.
 
-## G-L7.3 status — mechanism proven, house rollout gated on two things (2026-07-24)
+## G-L7.3 status — tool hardened; domain rollout needs name-resolution (2026-07-24)
 
-The apply mechanism is done and self-proven (G-L7.2 snaked the formatter's own
-55 files, self-hosted). Rolling it across the Continuity tree hit two real,
-orthogonal blockers — neither is a flaw in the rename axis:
+The apply mechanism is proven and self-hosted (G-L7.2 snaked the formatter's own
+55 files). The house rollout drove two tool hardenings and surfaced the real
+ceiling of the token approach. Every domain hazard below was caught by the floor
+(`make` / `lake build`) — zero corrupted source, the whole thesis holding.
 
-**1. The protected experiments gate their dependency closures.** `GradedMonad`
-lives *in* `core/base`; `ServeFd` pulls `evring` + `core/codec` + `freeside`.
-Both experiments declare AND consume domain names, and they may not be touched
-(user-protected formatting studies). Renaming a name an experiment references,
-without renaming the experiment too, is a guaranteed compile break — which the
-floor (`make`) would correctly reject. So `core/base`, `core/codec`, `evring`,
-`freeside` (and their transitive closure, which reaches `stdlibex`, the DAG
-floor) are OFF LIMITS until the experiments are unblocked. The safe complement
-is roughly `aleph`, `codegen`, `core/build`.
+**Hardening 1 — multi-workspace apply (SOLVED, `2e88b24`).** A single union
+`batchEnv` over a cross-workspace tree throws when an olean resolves to the wrong
+build dir (aleph's `Continuity.Codec.Core.Box` → `core/trust`, which lacks it;
+`make aleph` is green because lake uses the real dep graph, but the exe's flat
+`lake env` path is incomplete). `importModules` is one-shot per process, so no
+in-process retry is possible. `--rename-apply` is now an ORCHESTRATOR: two worker
+modes (`--rename-decls`, `--rename-rewrite`) spawned one subprocess PER FILE
+(clean single import each) in bounded waves. Pass 1 collects decls globally, pass
+2 rewrites. **0 parse failures on aleph (48 files) and core/build (37), five
+workspaces.** The parse problem is gone.
 
-**2. Multi-workspace olean resolution breaks the single-batch-env apply.**
-lean4fmt snaked cleanly because it is SELF-CONTAINED (Lean-core-only, all its
-oleans built and resolvable, one `batchEnv`). `aleph` spans five workspaces, and
-the exe's flat `lake env printenv LEAN_PATH` resolves a cross-package module
-(`Continuity.Codec.Core.Box`) to the wrong build dir (`core/trust`, which lacks
-it) instead of `core/codec` (which has it) — `batchEnv` throws at env
-construction. `make aleph` is green (lake uses the real dep graph); only the
-exe's flat discovered path is incomplete. `importModules` is one-shot per
-process, so a catch-and-retry bare-env fallback trips
-`enableInitializersExecution` — the union must succeed the first time. Doing
-multi-workspace safely needs the Driver's architecture (per-file own-env parse,
-subprocess retry of conflicts) lifted onto the rename path — a real effort, not
-a patch. The tool stays at its proven single-batchEnv state (clean for
-self-contained trees).
+**Hardening 2 — field-aware collisions (SOLVED, `2e88b24`).** `decls_of` now
+extracts structure FIELDS (the terms axis). A type↔field collision — `Lang`
+snaking to `lang` while a `lang` field exists — is now blocked, not applied
+(+ Arch/OS/ABI/Cpu/Gpu/CoeffectPolicy/… on core/build).
 
-**The paths forward** (the decision): (a) unblock the experiments (finish the
-studies / allow the rename) → the DAG floor `stdlibex` + `core` become
-renamable; (b) invest in the per-file-env + subprocess-retry hardening → the
-multi-workspace packages (`aleph`, apps) become renamable; (c) hold at
-mechanism-proven + formatter-dogfooded and roll the house out later. The
-mechanism is banked either way.
+**The ceiling — cross-package identifier collisions (needs name-resolution).**
+core/build uses `isPure` (its own decl) AND references `core/trust`'s
+`DischargeProof.isPure` field — the SAME token. A component-wise rewrite renames
+both, and the projection on the (unchanged) trust field breaks. Token rewrite
+cannot distinguish two decls sharing a spelling; only ELABORATION-aware rename
+(resolve each ident to its defining decl, rewrite by resolved identity) can. This
+is why the formatter snaked cleanly — its names are collision-free — and domain
+code does not. aleph adds a second class: macro/quotation bodies (`` `(TargetDef.mk' …) ``)
+where a token rename can't stay consistent through elaboration.
+
+**Still standing — the protected experiments gate their closures.** `GradedMonad`
+(in `core/base`) and `ServeFd` (→ `evring`/`codec`/`freeside`) consume domain
+names and may not be touched, so their transitive closure (reaching `stdlibex`,
+the DAG floor) is off-limits until unblocked. And only LEAF packages are
+renamable in isolation anyway — a non-leaf rename must update use-sites tree-wide,
+re-hitting the experiments.
+
+**The paths forward** (the decision): (a) build the name-resolution rename
+(elaboration-aware, rewrite by resolved decl identity) — the honest fix for
+domain code, retires both the cross-package and the macro class; (b) unblock the
+experiments → the token tool can at least attempt collision-free leaf packages;
+(c) hold — the tool is hardened and the formatter is snaked/self-hosted; roll the
+house out when (a) lands. The two hardenings are banked either way.
