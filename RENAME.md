@@ -112,6 +112,7 @@ failures) = 0, experiments untouched.*
 | **G-L7.2** (dogfood) | 0c0210e | snake-ify lean4fmt's own 55 files: 288 renames / 10 skipped (7 module-basename + Case keyword + ValForm/valForm collision), re-formatted the 12 width-shifted files | make green (102 jobs), self-hosts, fixed point 0-reformat, home clean but the 2 experiments, idempotent (2nd pass 0 renames), census dormant |
 | **G-L7.3** (harden) | 2e88b24 | multi-workspace orchestrator (subprocess/file, bounded waves — solves the union-batchEnv failure) + field-aware collision detection (struct fields on the terms axis) | 0 parse failures on aleph (48) + core/build (37); type↔field collisions blocked; floor caught every domain hazard |
 | **G-L7.3** (house rollout) | PENDING | snake the domain tree — needs name-resolution rename (see status) | — |
+| **G-L7.4** (resolver foundation) | a6b65b3 | `Session.resolve_idents` — elaborate w/ info trees, harvest `(range, resolvedFullName)` from TermInfo/FieldInfo; `--resolve-dump` probe | resolver works (in-package + core refs); root cause found (see below) |
 
 ## The dogfood finding (2026-07-24, the empirical basis for G-L7.1's exemption)
 
@@ -171,3 +172,37 @@ domain code, retires both the cross-package and the macro class; (b) unblock the
 experiments → the token tool can at least attempt collision-free leaf packages;
 (c) hold — the tool is hardened and the formatter is snaked/self-hosted; roll the
 house out when (a) lands. The two hardenings are banked either way.
+
+## G-L7.4 scoping — the resolver works; the real blocker is module resolution (2026-07-24)
+
+Scoped the name-resolution rename (path (a) above). `Session.resolve_idents`
+elaborates a module with info trees ON and harvests, per resolved ident
+occurrence, its byte range + the resolved full constant name (`TermInfo.expr` for
+const references, `FieldInfo.projName` for dot-projections). Exposed as
+`--resolve-dump`. **The resolver is correct** — every in-package and Lean-core
+reference in a probe file resolved to its true full name; this is exactly the
+disambiguation the token map lacked.
+
+**But the probe surfaced the unified root cause behind every domain-rollout
+failure — and it is not the rename axis and not the InfoTree.** It is the exe's
+MULTI-WORKSPACE MODULE RESOLUTION. The monorepo's packages all share the
+`Continuity.*` namespace, each building only its own subtree's oleans. The exe
+merges the workspaces' `lake env` lib dirs into ONE flat search path, and
+`findOLean Continuity.Trust.Discharge` then returns `core/codec`'s build dir (a
+`Continuity/` root that appears on the path but does NOT own that olean) —
+`.../core/codec/.../Continuity/Trust/Discharge.olean`, which does not exist.
+`imports_env` (Frontend/Env.lean) then SILENTLY DROPS the import (its
+`findOLean` + `pathExists` guard fails), so `DischargeProof` never enters the
+elaboration env and its references don't elaborate — no resolution info for
+exactly the cross-package names that cause the collisions. The same
+mis-resolution *threw* (`Box.olean does not exist`) in the parse-batch path and
+*silently drops* in the elaboration path.
+
+**The fix is infrastructure, and it unblocks more than the rename:** replace the
+flat merged search path with a per-package module→olean resolution that respects
+lake's dependency graph (e.g. drive each file's env from `lake setup-file`, or a
+built module→owning-lib map), so cross-package modules resolve to the workspace
+that actually owns them. Once a domain file FULLY elaborates in the exe,
+`resolve_idents` + the existing plan/exemption/subprocess/splice pipeline is the
+complete name-resolution rename. Until then, G-L7.4 (and any correct
+multi-workspace elaboration in the exe) is gated on the module-resolution fix.
