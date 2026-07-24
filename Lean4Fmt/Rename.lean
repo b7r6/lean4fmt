@@ -183,7 +183,58 @@ def plan_resolved
         if last != newLast && !ok last newLast newFull then some (full, newLast) else none)
   )
 
+/-- The HYBRID plan (G-L7.4e): resolution DECIDES, a token rewrite ACTS. A simple
+    name is renamed iff EVERY resolved occurrence of it points to the SAME full
+    name AND that name is DEFINED in the file-set (`defs`). Then a plain token
+    rewrite of that simple name catches every spelling — including the structure
+    binder-type positions the InfoTree doesn't record. A spelling shared across
+    packages (`isPure` = build's field AND trust's) resolves to ≥2 full names →
+    ambiguous → left byte-exact. `occs` = (lastComponent, fullName) resolved
+    occurrences. Returns `(simpleName → target)` renames + skips (keyword/collision). -/
+def plan_hybrid
+    (c : Case)
+    (modules : List String)
+    (occs : List (String × String))
+    (defs : List String)
+    : List (String × String) × List (String × String) :=
+  let defSet := defs.eraseDups
+  let simples := (occs.map (·.1)).eraseDups
+  let fullsOf := fun (s : String) => ((occs.filter (·.1 == s)).map (·.2)).eraseDups
+  -- unambiguous (one full name) AND defined in the set AND not a module basename
+  -- (the token rewrite hits `import`/`open` paths too, so a type sharing a module
+  -- name — `Toolchain` in `Toolchain.lean` — must be exempted, the local exemption)
+  let rows : List (String × String × String) :=
+    simples.filterMap
+      (fun s =>
+        if modules.contains s then
+          none
+        else
+          match fullsOf s with
+          | [full] => if defSet.contains full then some (s, full, convert c s) else none
+          | _      => none)
+  -- two distinct safe sources snaking to one target collide (both skipped). NOTE:
+  -- a type↔field clash (`Lang` → `lang` where a `lang` FIELD exists) is NOT fully
+  -- caught here — fields carry no declId, so they're absent from `defs`/`rows`;
+  -- the build floor catches the residue. The clean fix is field-declId capture.
+  let collides := fun (t : String) => (rows.filter (fun (_, _, x) => x == t)).length > 1
+  let changed := rows.filter (fun (s, _, t) => s != t)
+  let ok := fun (t : String) => !keywords.contains t && !collides t
+  (
+    changed.filterMap (fun (s, _, t) => if ok t then some (s, t) else none),
+    changed.filterMap (fun (s, _, t) => if ok t then none else some (s, t))
+  )
+
 -- ── #guard-locked: identity rewrite + resolution plan ────────────────────────
+
+-- HYBRID: unambiguous + defined → token-renamed; ambiguous / external → left
+#guard (plan_hybrid .snake [] [("Resource", "A.Resource"), ("Resource", "A.Resource")] ["A.Resource"]).1
+    == [("Resource", "resource")]
+
+#guard (plan_hybrid .snake [] [("isPure", "B.S.isPure"), ("isPure", "T.D.isPure")] ["B.S.isPure"]).1 == []
+
+#guard (plan_hybrid .snake [] [("map", "List.map")] []).1 == []
+-- module-basename exemption: `Toolchain` is a type AND a module → left byte-exact
+#guard (plan_hybrid .snake ["Toolchain"] [("Toolchain", "A.Toolchain")] ["A.Toolchain"]).1 == []
 
 -- prefix-wise full rename: only the mapped prefixes move
 #guard rename_full [("A.foo", "foo_x")] "A.foo" == "A.foo_x"

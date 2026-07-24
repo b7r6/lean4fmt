@@ -320,16 +320,19 @@ def run_rename_decls_impl
   let err ← IO.getStderr
   for p in paths do
     let contents ← IO.FS.readFile p
-    match ← Frontend.parse_full? env p.toString contents elabFallback with
-    | some stx =>
-      if resolve then
-        -- FULL names (axis-free: the house policy snakes every renamable decl)
-        for (nm, _) in decls_of_full stx do
-          out.putStrLn nm
-      else
+    if resolve then
+      -- RESOLVED occurrences `lastComp<TAB>fullName<TAB>D|U` — the hybrid's input
+      for (_, _, nm, isDef) in ← Frontend.Session.resolve_idents env p.toString contents do
+        let full := nm.toString
+        let lastC := (full.splitOn ".").getLastD full
+        let d := if isDef then "D" else "U"
+        out.putStrLn s!"{lastC}\t{full}\t{d}"
+    else
+      match ← Frontend.parse_full? env p.toString contents elabFallback with
+      | some stx =>
         for (nm, ax) in decls_of stx do
           out.putStrLn s!"{nm}\t{axis_tag ax}"
-    | none => err.putStrLn s!"rename-decls: SKIP (no parse) {p}"
+      | none => err.putStrLn s!"rename-decls: SKIP (no parse) {p}"
 
 @[implemented_by run_rename_decls_impl]
 opaque run_rename_decls (files : List String) (resolve : Bool) (farmDir : Option String) (elabFallback : Bool) : IO Unit
@@ -425,9 +428,12 @@ def run_rename_rewrite_impl
       | _ => none)
     let paths := files.toArray.map System.FilePath.mk
     let env ← Frontend.batch_env paths
+    -- pass 2 is always the TOKEN rewrite; under --resolve the MAP was already
+    -- filtered to unambiguous+defined simple names by the hybrid plan, so the
+    -- token rewrite is both safe (no cross-package over-match) and COMPLETE
+    -- (catches binder-type spellings the InfoTree doesn't record)
     for p in paths do
-      if resolve then resolve_rewrite_file env map p
-      else rewrite_file env map elabFallback p
+      rewrite_file env map elabFallback p
 
 @[implemented_by run_rename_rewrite_impl]
 opaque run_rename_rewrite (files : List String) (mapFile : Option String) (resolve : Bool) (farmDir : Option String) (elabFallback : Bool) : IO Unit
@@ -530,7 +536,8 @@ def run_rename_apply_impl
         stdout := .piped,
         stderr := .piped }
   let mut allDecls : List (String × Lean4Fmt.Rename.axis) := []
-  let mut fullDecls : List String := []
+  let mut occs : List (String × String) := [] -- (lastComp, fullName) resolved occurrences
+  let mut defs : List String := [] -- full names DEFINED in the set
   let mut i := 0
   while i < paths.size do
     let wave := paths.extract i (Nat.min (i + jobs) paths.size)
@@ -543,8 +550,11 @@ def run_rename_apply_impl
       let _ ← child.wait
       for line in out.splitOn "\n" do
         if resolve then
-          let nm := line.trimAscii.toString
-          if !nm.isEmpty then fullDecls := fullDecls ++ [nm]
+          match line.splitOn "\t" with
+          | [lastC, full, d] =>
+            occs := occs ++ [(lastC, full)]
+            if d == "D" then defs := defs ++ [full]
+          | _ => pure ()
         else
           match line.splitOn "\t" with
           | [nm, tag] =>
@@ -553,10 +563,10 @@ def run_rename_apply_impl
             | none => pure ()
           | _ => pure ()
     i := i + jobs
-  -- the plan over the GLOBAL decl set (identity-keyed under --resolve)
+  -- the plan: HYBRID under --resolve (resolution decides, token acts), else token
   let (renames, skipped) :=
     if resolve then
-      Lean4Fmt.Rename.plan_resolved .snake fullDecls
+      Lean4Fmt.Rename.plan_hybrid .snake modules occs defs
     else
       let p := Lean4Fmt.Rename.build_plan naming modules allDecls; (p.renames, p.skipped)
   let tag := if resolve then "resolve" else preset
