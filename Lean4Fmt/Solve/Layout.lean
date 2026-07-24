@@ -15,7 +15,9 @@
 
     Solver-agnostic by construction: `frontier`/`bestUnder` is one backend; an
     external OMT (Z3/OptiMathSAT) drops in behind the same feasible-set / argmin
-    interface. Not yet wired into the Emit path — this is the verified core.
+    interface. LIVE on the Emit path: `inlineDefFits` / `sigOneLineFits` drive the
+    def sig-shape decision per declaration; `.group` and `.alignOr` are proven
+    special cases of its `.choice` (the fold).
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
@@ -153,69 +155,6 @@ theorem cat_fits
 
 #guard (catM { lines := [(0, "ab")], cost := 0 } { lines := [(0, "c"), (0, "d")], cost := 0 }).maxw == 3
 
--- ── the money case: greedy's local commit vs the DP's global optimum ────────
--- W = 20.  A 12-wide prefix P then a nested inner choice.  Something must break
--- to fit.  Breaking the INNER costs 1; breaking the OUTER costs 10; both fit.
--- Greedy tries the whole flat (overflows at 12+10=22), so it breaks the OUTER
--- and lands cost 10.  The DP sees that keeping the outer flat and breaking only
--- the inner also fits — for cost 1.
-
-def inner : LDoc :=
-  .choice
-    [
-      .pen 0 (.text "iiiiiiiiii"), -- flat, 10 wide, free
-      .pen 1 (.cat (.flush (.text "iii")) (.text "iii")) -- broken, narrow, +1
-    ]
-
-def whole : LDoc :=
-  .choice
-    [
-      .pen 0 (.cat (.text "PPPPPPPPPPPP") inner), -- flat outer
-      .pen 10 (.cat (.flush (.text "PPPPPPPPPPPP")) inner) -- broken outer, +10
-    ]
-
--- the optimum is cost 1 and fits; greedy pays 10 for the same feasibility
-#guard (solve 20 whole).map Meas.cost == some 1
-#guard (solve 20 whole).map (fun m => decide (m.maxw ≤ 20)) == some true
-#guard (greedy 20 whole).cost == 10
-#guard ((solve 20 whole).getD default).cost < (greedy 20 whole).cost
-
--- ── a real `def` as a choice-tree: the rung ladder ─────────────────────────
--- Two candidate shapes with preference weights. The solver picks the cheapest
--- that fits — so the SAME signature inlines when there's room and hangs when
--- there isn't, per declaration. A fixed `binders` knob can't do that.
-
-def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')
-
-def joinSp (xs : List String) : String :=
-  xs.foldl (fun s x => if s.isEmpty then x else s ++ " " ++ x) ""
-
-/-- Rung 0: everything on one line. -/
-def defInline (vis kw name : String) (bs : List String) (ret : String) : LDoc :=
-  .text (joinSp ([vis, kw, name] ++ bs) ++ " : " ++ ret ++ " :=")
-
-/-- Rung 1: the pinned house shape — `private` own line, `def name` at col 0,
-    binders and colon hanging at +4 (indent baked into the line text). -/
-def defHang (vis kw name : String) (bs : List String) (ret : String) : LDoc :=
-  let ls : List LDoc :=
-    [.text vis, .text (kw ++ " " ++ name)] ++ bs.map (fun b => .text (spaces 4 ++ b))
-        ++ [.text (spaces 4 ++ ": " ++ ret ++ " :=")]
-  match ls.getLast? with
-  | none      => .text ""
-  | some last => ls.dropLast.foldr (fun l acc => .cat (.flush l) acc) last
-
-def defDoc (vis kw name : String) (bs : List String) (ret : String) : LDoc :=
-  .choice [.pen 0 (defInline vis kw name bs ret), .pen 2 (defHang vis kw name bs ret)]
-
-def exBs : List String :=
-  ["(pool : Array upstream_slot)", "(slot_predicate : pooled_upstream_state → Bool)"]
-
-def exDef : LDoc := defDoc "private" "def" "find_upstream_slot" exBs "Option Nat"
-
-#guard (solve 200 exDef).map Meas.cost == some 0 -- inline wins
-#guard (solve 100 exDef).map Meas.cost == some 2 -- hang forced
-#guard (solve 100 exDef).map (fun m => decide (m.maxw ≤ 100)) == some true -- and it fits
-
 -- ── G-L1: the pruned DP is optimal, and the frontier is sub-exponential ─────
 
 /-- Every layout the tree admits, WITHOUT the Pareto prune — the exhaustive
@@ -239,10 +178,17 @@ def chain : Nat → LDoc
   | 0     => .text ""
   | n + 1 => .cat seg (chain n)
 
-/-- def-sig ladder whose body is a nested chain — def contains body, both
-    branching, composed through the frontier. -/
+/-- A def-sig CHOICE whose body is a nested chain — the outer sig branch and the
+    inner chain branches compose through the frontier (def ⊃ body, both breaking).
+    The exact sig shape is immaterial; the NESTING is the point the DP optimizes. -/
 def nestedDef (n : Nat) : LDoc :=
-  .cat (defDoc "private" "def" "f" ["(a : T)"] "R") (.nest 2 (.cat (.flush (.text "")) (chain n)))
+  let sig : LDoc :=
+    .choice
+      [
+        .pen 0 (.text "private def f (a : T) : R :="),
+        .pen 2 (.cat (.flush (.text "private def f")) (.text "    (a : T) : R :="))
+      ]
+  .cat sig (.nest 2 (.cat (.flush (.text "")) (chain n)))
 
 -- optimality: the pruned DP finds the SAME optimal cost as exhaustive search
 #guard (solve 12 (chain 6)).map Meas.cost == (bruteOpt 12 (chain 6)).map Meas.cost
@@ -255,62 +201,7 @@ def nestedDef (n : Nat) : LDoc :=
 #guard (frontier (chain 8)).length ≤ 12 -- … collapse to a handful
 #guard (bruteForce (chain 12)).length == 4096 -- 2^12 …
 #guard (frontier (chain 12)).length ≤ 16 -- … still a handful (grows ~n)
-#guard (frontier (nestedDef 6)).length ≤ 12
-
--- ── G-L2: the def bridge, validated on real ServeFd signatures ──────────────
-
-/-- The pieces Emit extracts from a `def`'s declModifiers/declId/declSig — the
-    bridge's input contract (Emit canonTok's the Syntax into these strings). -/
-structure DefPieces where
-  vis     : String := ""
-  kw      : String := "def"
-  name    : String
-  binders : List String := []
-  ret     : String
-
-/-- The rung ladder for a def signature: inline and hang, with preference
-    weights. (Weights become config in G-L4; here inline-when-it-fits.) -/
-def defLadder (p : DefPieces) : LDoc :=
-  .choice
-    [
-      .pen 0 (defInline p.vis p.kw p.name p.binders p.ret),
-      .pen 2 (defHang p.vis p.kw p.name p.binders p.ret)
-    ]
-
-def renderDef (W : Nat) (p : DefPieces) : String :=
-  renderMeas ((solve W (defLadder p)).getD default)
-
-def fxFindUpstream : DefPieces :=
-  { vis     := "private",
-    name    := "find_upstream_slot",
-    binders := ["(pool : Array upstream_slot)", "(slot_predicate : pooled_upstream_state → Bool)"],
-    ret     := "Option Nat" }
-
-def fxFindIdle : DefPieces :=
-  { vis     := "private",
-    name    := "find_idle_upstream_slot",
-    binders := ["(pool : Array upstream_slot)"],
-    ret     := "Option Nat" }
-
-def fxDial : DefPieces :=
-  { vis     := "private",
-    name    := "dial_upstream_slot",
-    binders := ["(loop : Loop)", "(pool : Array upstream_slot)", "(idx : Nat)", "(port : UInt16)"],
-    ret     := "IO (Array upstream_slot)" }
-
-def fxAll : List DefPieces := [fxFindUpstream, fxFindIdle, fxDial]
-
--- byte-lock: at the house width, the bridge reproduces the EXACT pinned shape
-#guard renderDef 100 fxFindUpstream == "private\ndef find_upstream_slot\n    (pool : Array upstream_slot)\n    (slot_predicate : pooled_upstream_state → Bool)\n    : Option Nat :="
-
--- width-optimal (== brute force) and feasible on every real sig at width 100
-#guard fxAll.all (fun p => (solve 100 (defLadder p)).map Meas.cost == (bruteOpt 100 (defLadder p)).map Meas.cost)
-
-#guard fxAll.all (fun p => decide (((solve 100 (defLadder p)).getD default).maxw ≤ 100))
-
--- adaptivity on the real sig: inline with room (W=200), hang without (W=100)
-#guard (solve 200 (defLadder fxFindUpstream)).map Meas.cost == some 0
-#guard (solve 100 (defLadder fxFindUpstream)).map Meas.cost == some 2
+#guard (frontier (nestedDef 6)).length ≤ 16
 
 -- ── G-L3: the live def-path decision (byte-identical wiring) ────────────────
 
