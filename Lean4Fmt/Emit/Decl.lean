@@ -284,11 +284,46 @@ def sigDoc
   let a := sig.getArgs
   let binders := (a[0]?.map (·.getArgs)).getD #[]
   let ti ← typeInfo walk sig
-  let mode := (← read).breaking.binders
   let cont := (← read).layout.continuationIndent
   let w := (← read).layout.lineWidth
+  -- resolve `adaptive` per-declaration through the solver: the sig rides ONE
+  -- line while its binders fit the keyword line, else the per-line stack
+  -- (Solve.sigOneLineFits). A multi-line binder never rides one line. Other
+  -- modes pass through unchanged, so onePerLine/oneLine/fill are byte-identical.
+  let mode ←
+    if (← read).breaking.binders == .adaptive then do
+      let preserve := (← read).spacing.preserveBinders
+      let mut bindersW := 0
+      let mut simple := true
+      for b in binders do
+        match Lean4Fmt.Emit.binderText? b preserve with
+        | some t => bindersW := bindersW + 1 + t.length
+        | none => simple := false
+      -- ` : τ` rides the keyword line too; a multi-line type never can (→ stack).
+      -- `reserve` is what follows the sig on its line (`:= by`, ` where`) — count
+      -- it, so oneLine wins only when the WHOLE sig line fits and no colon breaks
+      -- (keeping the house breakBefore consistent; wide-type sigs stack instead).
+      -- Use the type's ACTUAL flattenability, not typeInfo's width (which getD-0's
+      -- an unflattenable type — an active `let`/`∀`-in-type reads as 0 wide and
+      -- would be mangled onto the keyword line, a reparse-fail the gate rejects).
+      let typeContrib :=
+        match ti with
+        | some (term, _, _, false) =>
+          match Lean4Fmt.Doc.flatWidth term with
+          | some tw => 3 + tw
+          | none => w + 1
+        | some (_, _, _, true) => w + 1
+        | none => 0
+      pure <|
+        if (← read).breaking.solveDefs && simple
+            && Lean4Fmt.Solve.sigOneLineFits w prefixWidth (bindersW + typeContrib + reserve) then
+          .oneLine
+        else
+          .onePerLine
+    else
+      pure (← read).breaking.binders
   match mode with
-  | .onePerLine =>
+  | .onePerLine | .adaptive =>
     let mut d : Doc := .nil
     for b in binders do
       -- preserve any comment sitting in this binder's leading trivia (e.g. an

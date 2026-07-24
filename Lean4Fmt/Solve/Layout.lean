@@ -378,4 +378,52 @@ def inlineDefFits
 #guard inlineDefFits 100 101 == false -- over → break
 #guard (List.range 220).all (fun t => inlineDefFits 100 t == decide (t ≤ 100)) -- ≡ (total ≤ W)
 
+-- ── G-L4: the preference-map choice over sig shapes ─────────────────────────
+
+/-- The solver's selection kernel, TAGGED: return WHICH rung wins under the hard
+    width constraint at least cost (the preference weight) — ties to narrower
+    `maxw`, then list order. `bestUnder` returns the winning measure; this
+    returns its tag, the shape the caller renders. Adding a candidate layout is
+    adding one `(tag, Meas)` pair; the preference map is the cost column. This is
+    the "select the most-preferred shape that satisfies the constraint" the whole
+    campaign is for, one call. -/
+def pickShape
+    {α : Type}
+    (W : Nat)
+    (rungs : List (α × Meas))
+    : Option α :=
+  let feas := rungs.filter (fun r => r.2.maxw ≤ W)
+  let pool := if feas.isEmpty then rungs else feas
+  (pool.foldl
+    (fun best r => match best with
+      | none => some r
+      | some b =>
+        if r.2.cost < b.2.cost || (r.2.cost == b.2.cost && r.2.maxw < b.2.maxw) then some r else b)
+    none).map
+    (·.1)
+
+/-- The G-L4 sig-shape choice for a BROKEN def: `oneLine` (binders ride the
+    keyword line, the return type breaking after the colon if it must) is
+    preferred over `onePerLine` (each binder its own line, always feasible).
+    oneLine is feasible while the binders fit on the keyword line
+    (`prefixW + bindersW ≤ W`); past that they would overflow, so the solver
+    drops to the per-line stack. Returns `true` for oneLine. The adaptivity a
+    fixed `binders` knob cannot do: the SAME sig rides one line where it fits and
+    stacks where it does not, per declaration. -/
+def sigOneLineFits
+    (W prefixW bindersW : Nat)
+    : Bool :=
+  (pickShape
+    W
+    [
+      (true, { lines := [(prefixW + bindersW, "")], cost := 0 }),
+      (false, { lines := [(0, "")], cost := 1 })
+    ]).getD
+    false
+
+-- oneLine while the binders fit on the keyword line, else the per-line stack
+#guard sigOneLineFits 100 12 40 == true -- 12+40=52 ≤ 100 → oneLine
+#guard sigOneLineFits 100 12 90 == false -- 12+90=102 > 100 → onePerLine
+#guard (List.range 120).all (fun b => sigOneLineFits 100 10 b == decide (10 + b ≤ 100))
+
 end Lean4Fmt.Solve

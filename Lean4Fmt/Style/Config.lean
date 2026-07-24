@@ -120,7 +120,7 @@ def applyEntry
   | "breaking.binders" =>
     match BinderLayout.ofString? e.val with
     | some v => pure { s with breaking.binders := v }
-    | none => throw s!"line {e.line}: `{e.key}` expects oneLine/onePerLine/fill"
+    | none => throw s!"line {e.line}: `{e.key}` expects oneLine/onePerLine/fill/adaptive"
   | "breaking.attributesOwnLine" => pure { s with breaking.attributesOwnLine := ← asBool e }
   | "breaking.visibilityOwnLine" => pure { s with breaking.visibilityOwnLine := ← asBool e }
   | "breaking.bodyOwnLine" => pure { s with breaking.bodyOwnLine := ← asBool e }

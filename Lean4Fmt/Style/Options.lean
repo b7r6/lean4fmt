@@ -36,6 +36,12 @@ inductive BinderLayout
   | oneLine
   | onePerLine
   | fill
+  /-- The constraint solver chooses per-declaration (`Solve.sigOneLineFits`):
+      a broken sig rides ONE line (`oneLine`) while its binders fit the keyword
+      line, and stacks (`onePerLine`) once they do not — so a short-binder def
+      no longer explodes just because its BODY forced the break. Requires
+      `solveDefs`. -/
+  | adaptive
   deriving Repr, Inhabited, BEq
 
 /-- Where a broken operator chain puts the operator: `leading` starts the
@@ -67,6 +73,7 @@ def BinderLayout.ofString? : String → Option BinderLayout
   | "oneLine"    => some .oneLine
   | "onePerLine" => some .onePerLine
   | "fill"       => some .fill
+  | "adaptive"   => some .adaptive
   | _            => none
 
 def OpBreak.ofString? : String → Option OpBreak
