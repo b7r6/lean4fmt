@@ -108,9 +108,9 @@ failures) = 0, experiments untouched.*
 |------|-----|-------------|--------|
 | **G-L7.0a** (casing core) | 3cf1c4f | `Casing.Case`/`convert`; lower/digit→Upper split, acronym-stays-one-word, `_`/`'` preserved; edges + idempotence `#guard`-locked | guards green, module builds |
 | **G-L7.0b** (plan + dry-run) | 9914048 | `Style.Naming` schema (straylight = snake) + `Rename.buildPlan` (differs ∧ unique ∧ non-keyword, collisions vs full name set) + `--rename-plan`; three exclusions `#guard`-locked | guards green, dry-run demonstrated on real decls |
-| **G-L7.1** (apply, hardened) | — | `identReplacement` + `--rename-apply`/`--map` + `runRenameApplyImpl`; module-basename exemption (Diagnostic/Doc/Layout/Naming/Options/Style/Walk) | fixture round-trip, exemption `#guard`, exe builds, census dormant |
-| **G-L7.2** (dogfood) | — | snake-ify lean4fmt's own source, self-host, iterate library overlaps | make green, self-hosts, home 401/0/0, census dormant |
-| **G-L7.3** (house) | — | snake the Continuity tree, per-package, experiments excluded | make green tree-wide, rejects 0 |
+| **G-L7.1** (apply, hardened) | f1faaa7 | `identReplacement` + `--rename-apply` + `runRenameApply` (declsOf axis-classifies each command, global decl set, end-to-start UTF-8 splice); module-basename exemption (Diagnostic/Doc/Layout/Naming/Options/Style/Walk) | fixture round-trip (def+use move; string/comment/docstring byte-exact; reparses), exemption + dotted-rewrite `#guard`, exe builds, census dormant |
+| **G-L7.2** (dogfood) | 0c0210e | snake-ify lean4fmt's own 55 files: 288 renames / 10 skipped (7 module-basename + Case keyword + ValForm/valForm collision), re-formatted the 12 width-shifted files | make green (102 jobs), self-hosts, fixed point 0-reformat, home clean but the 2 experiments, idempotent (2nd pass 0 renames), census dormant |
+| **G-L7.3** (house) | BLOCKED | see status below | — |
 
 ## The dogfood finding (2026-07-24, the empirical basis for G-L7.1's exemption)
 
@@ -123,3 +123,41 @@ rename turned `import Lean4Fmt.Style.Options` into `...options` → `bad import`
 whole thesis of the axis working as designed — a bad rename is a failed compile,
 never corrupted source. The fix is the exemption in G-L7.1; the full set is the
 seven module-colliding decls named above.
+
+## G-L7.3 status — mechanism proven, house rollout gated on two things (2026-07-24)
+
+The apply mechanism is done and self-proven (G-L7.2 snaked the formatter's own
+55 files, self-hosted). Rolling it across the Continuity tree hit two real,
+orthogonal blockers — neither is a flaw in the rename axis:
+
+**1. The protected experiments gate their dependency closures.** `GradedMonad`
+lives *in* `core/base`; `ServeFd` pulls `evring` + `core/codec` + `freeside`.
+Both experiments declare AND consume domain names, and they may not be touched
+(user-protected formatting studies). Renaming a name an experiment references,
+without renaming the experiment too, is a guaranteed compile break — which the
+floor (`make`) would correctly reject. So `core/base`, `core/codec`, `evring`,
+`freeside` (and their transitive closure, which reaches `stdlibex`, the DAG
+floor) are OFF LIMITS until the experiments are unblocked. The safe complement
+is roughly `aleph`, `codegen`, `core/build`.
+
+**2. Multi-workspace olean resolution breaks the single-batch-env apply.**
+lean4fmt snaked cleanly because it is SELF-CONTAINED (Lean-core-only, all its
+oleans built and resolvable, one `batchEnv`). `aleph` spans five workspaces, and
+the exe's flat `lake env printenv LEAN_PATH` resolves a cross-package module
+(`Continuity.Codec.Core.Box`) to the wrong build dir (`core/trust`, which lacks
+it) instead of `core/codec` (which has it) — `batchEnv` throws at env
+construction. `make aleph` is green (lake uses the real dep graph); only the
+exe's flat discovered path is incomplete. `importModules` is one-shot per
+process, so a catch-and-retry bare-env fallback trips
+`enableInitializersExecution` — the union must succeed the first time. Doing
+multi-workspace safely needs the Driver's architecture (per-file own-env parse,
+subprocess retry of conflicts) lifted onto the rename path — a real effort, not
+a patch. The tool stays at its proven single-batchEnv state (clean for
+self-contained trees).
+
+**The paths forward** (the decision): (a) unblock the experiments (finish the
+studies / allow the rename) → the DAG floor `stdlibex` + `core` become
+renamable; (b) invest in the per-file-env + subprocess-retry hardening → the
+multi-workspace packages (`aleph`, apps) become renamable; (c) hold at
+mechanism-proven + formatter-dogfooded and roll the house out later. The
+mechanism is banked either way.
