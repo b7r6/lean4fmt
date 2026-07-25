@@ -397,7 +397,7 @@ def is_active_multiline (kind : SyntaxNodeKind) : Bool :=
     equation-style value (`| pat => body` arms, no `:=`) already laid out one arm
     per line; the caller places it under the signature at indent 2. -/
 private
-inductive ValForm
+inductive val_form
   | span (doc : Doc)
   | body (doc : Doc) (glue : Bool)
   | eqns (arms : Doc)
@@ -430,7 +430,7 @@ def glue_body_blank (d : Doc) : Doc :=
     aren't"). Idempotent: the injected blank is a leading blank line of the
     block on the next pass, and wrBlock drops those. -/
 private
-def span_body_blank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : ValForm → ValForm
+def span_body_blank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : val_form → val_form
   | .span d =>
     Id.run
       do
@@ -466,7 +466,7 @@ def span_body_blank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : ValForm → V
     body lets the caller choose the separator: inline ` := `, or (bodyOwnLine)
     `:=` then a blank then the body on its own indented line. -/
 private
-def valForm (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : emit_m ValForm := do
+def valForm (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : emit_m val_form := do
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
     let a := declVal.getArgs
     -- a same-line comment after `:=` lives in the ASSIGN ATOM's trailing
@@ -644,7 +644,7 @@ def valForm (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : emit_m ValForm
 /-- Flat width the value contributes to the `:= …` line (`none` if it can't be one
     line). span includes `:=` (+1 for the leading space); body adds ` := ` (4). -/
 private
-def ValForm.flat_width : ValForm → Option Nat
+def val_form.flat_width : val_form → Option Nat
   | .span d   => (Lean4Fmt.Doc.flat_width d).map (· + 1)
   | .body d _ => (Lean4Fmt.Doc.flat_width d).map (· + 4)
   | .eqns _   => none
