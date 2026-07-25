@@ -28,6 +28,9 @@ open Lean4Fmt.Casing
     by the plan, the rewrite, and the driver — a name's simple form. -/
 def last_comp (s : String) : String := (s.splitOn ".").getLastD s
 
+/-- Is `s` a suffix of `n`? (No `String.isSuffixOf` in this Lean core.) -/
+def is_suffix (s n : String) : Bool := s.length ≤ n.length && n.drop (n.length - s.length) == s
+
 /-- Which naming AXIS a declaration falls on — the map from decl kind to the
     `Naming` policy field. -/
 inductive axis
@@ -203,22 +206,27 @@ def plan_resolved
       collision guard checks targets against THIS: a rename onto a taken name is
       unsafe even if the taken name isn't itself renamable.
 
-    `occs` = (lastComponent, fullName) resolved occurrences. Returns
-    `(simpleName → target)` renames + skips (keyword/collision/taken). -/
+    `occs` = (lastComponent, fullName) resolved occurrences. `protect` = full names
+    off-limits (a protected file DEFINES or REFERENCES them — renaming would break
+    it, and it may not be rewritten); they stay in `exists` (still block collisions)
+    but never authorize a rename. Returns `(simpleName → target)` renames + skips. -/
 def plan_hybrid
     (c : Case)
     (modules : List String)
     (occs : List (String × String))
     (defs : List String)
     (exists_ : List String)
+    (protect : List String)
     : List (String × String) × List (String × String) :=
   let defSet := defs.eraseDups
   let existSet := exists_.eraseDups
+  let protSet := protect.eraseDups
   let simples := (occs.map (·.1)).eraseDups
   let fullsOf := fun (s : String) => ((occs.filter (·.1 == s)).map (·.2)).eraseDups
   -- unambiguous (one full name) AND authorized (a real source decl) AND not a
   -- module basename (the token rewrite hits `import`/`open` paths too, so a type
   -- sharing a module name — `Toolchain` in `Toolchain.lean` — must be exempted)
+  -- AND not in a protected file's closure (would break an untouchable study)
   let rows : List (String × String × String) :=
     simples.filterMap
       (fun s =>
@@ -226,7 +234,9 @@ def plan_hybrid
           none
         else
           match fullsOf s with
-          | [full] => if defSet.contains full then some (s, full, convert c s) else none
+          | [full] =>
+            if defSet.contains full && !protSet.contains full then some (s, full, convert c s)
+            else none
           | _      => none)
   -- two distinct safe sources snaking to one target collide (both skipped)
   let collides := fun (t : String) => (rows.filter (fun (_, _, x) => x == t)).length > 1
@@ -237,31 +247,59 @@ def plan_hybrid
   -- namespaces), so the check is identity-aware but namespace-BLIND. Checked against
   -- `existSet` (ALL local consts) so a clash with a non-renamable name still blocks.
   let taken := fun (sFull t : String) => existSet.any (fun d => d != sFull && last_comp d == t)
+  -- GENERATED-NAME reference: Lean derives names that spell a type INLINE (not
+  -- dotted) — an anonymous `instance : C T` → `instCT`, `extends T` → the `toT`
+  -- projection — and code references them explicitly (`unfold instLETrustDistance`,
+  -- `x.toTrustState`). Renaming `T` regenerates the name → orphans the reference,
+  -- which the token rewrite can't follow (`toTrustState` isn't `TrustState`). So
+  -- skip a rename whose source is the trailing component of a referenced name that
+  -- is NOT itself a source decl (i.e. generated). Dotted generated names (`T.rec`,
+  -- `T.mk`) need no guard — `T` is a component there, so they rename correctly.
+  let gen_ref := fun (s : String) =>
+    occs.any (fun (n, nFull) => n != s && is_suffix s n && !defSet.contains nFull)
   let changed := rows.filter (fun (s, _, t) => s != t)
-  let ok := fun (sFull t : String) => !keywords.contains t && !collides t && !taken sFull t
+  let ok := fun (s sFull t : String) => !keywords.contains t && !collides t && !taken sFull t && !gen_ref s
   (
-    changed.filterMap (fun (s, full, t) => if ok full t then some (s, t) else none),
-    changed.filterMap (fun (s, full, t) => if ok full t then none else some (s, t))
+    changed.filterMap (fun (s, full, t) => if ok s full t then some (s, t) else none),
+    changed.filterMap (fun (s, full, t) => if ok s full t then none else some (s, t))
   )
 
 -- ── #guard-locked: identity rewrite + resolution plan ────────────────────────
 
 -- HYBRID: unambiguous + authorized → token-renamed; ambiguous / external → left
-#guard (plan_hybrid .snake [] [("Resource", "A.Resource"), ("Resource", "A.Resource")] ["A.Resource"] ["A.Resource"]).1
+#guard (plan_hybrid .snake [] [("Resource", "A.Resource"), ("Resource", "A.Resource")] ["A.Resource"] ["A.Resource"] []).1
     == [("Resource", "resource")]
 
-#guard (plan_hybrid .snake [] [("isPure", "B.S.isPure"), ("isPure", "T.D.isPure")] ["B.S.isPure"] ["B.S.isPure"]).1 == []
+#guard (plan_hybrid .snake [] [("isPure", "B.S.isPure"), ("isPure", "T.D.isPure")] ["B.S.isPure"] ["B.S.isPure"] []).1 == []
 
-#guard (plan_hybrid .snake [] [("map", "List.map")] [] []).1 == []
+#guard (plan_hybrid .snake [] [("map", "List.map")] [] [] []).1 == []
 -- module-basename exemption: `Toolchain` is a type AND a module → left byte-exact
-#guard (plan_hybrid .snake ["Toolchain"] [("Toolchain", "A.Toolchain")] ["A.Toolchain"] ["A.Toolchain"]).1 == []
+#guard (plan_hybrid .snake ["Toolchain"] [("Toolchain", "A.Toolchain")] ["A.Toolchain"] ["A.Toolchain"] []).1 == []
 -- type↔field: a `lang` FIELD (exists but not declId-authorized, different namespace)
 -- blocks `Lang → lang` via the target-taken guard on `exists`
-#guard (plan_hybrid .snake [] [("Lang", "A.Lang")] ["A.Lang"] ["A.Lang", "A.T.lang"]).1 == []
+#guard (plan_hybrid .snake [] [("Lang", "A.Lang")] ["A.Lang"] ["A.Lang", "A.T.lang"] []).1 == []
 -- …but with no term already spelling the target, the type renames
-#guard (plan_hybrid .snake [] [("Lang", "A.Lang")] ["A.Lang"] ["A.Lang"]).1 == [("Lang", "lang")]
+#guard (plan_hybrid .snake [] [("Lang", "A.Lang")] ["A.Lang"] ["A.Lang"] []).1 == [("Lang", "lang")]
 -- generated const (an `extends` `toParent`) EXISTS but is NOT authorized → never renamed
-#guard (plan_hybrid .snake [] [("toParent", "A.S.toParent")] [] ["A.S.toParent"]).1 == []
+#guard (plan_hybrid .snake [] [("toParent", "A.S.toParent")] [] ["A.S.toParent"] []).1 == []
+-- PROTECTED closure: an authorized rename is dropped when its full is protected
+-- (a study REFERENCES `A.Resource` → renaming it would break the untouchable study)
+#guard (plan_hybrid .snake [] [("Resource", "A.Resource")] ["A.Resource"] ["A.Resource"] ["A.Resource"]).1 == []
+-- GENERATED-NAME reference: renaming a type embedded (inline, trailing) in a
+-- referenced non-decl name orphans it → skip the type. Instance name `instLE T`:
+#guard (plan_hybrid .snake []
+    [("TrustDistance", "A.TrustDistance"), ("instLETrustDistance", "A.instLETrustDistance")]
+    ["A.TrustDistance"] ["A.TrustDistance", "A.instLETrustDistance"] []).1 == []
+-- …and the `extends` projection `toParent` (`x.toTrustState`):
+#guard (plan_hybrid .snake []
+    [("TrustState", "A.TrustState"), ("toTrustState", "A.S.toTrustState")]
+    ["A.TrustState"] ["A.TrustState", "A.S.toTrustState"] []).1 == []
+-- …but a REAL decl ending in the type (a `def handleTrustState`, in `defs`) does
+-- NOT block the type — both rename (the generated-name guard keys on non-decls)
+#guard (plan_hybrid .snake []
+    [("TrustState", "A.TrustState"), ("handleTrustState", "A.handleTrustState")]
+    ["A.TrustState", "A.handleTrustState"] ["A.TrustState", "A.handleTrustState"] []).1
+    == [("TrustState", "trust_state"), ("handleTrustState", "handle_trust_state")]
 
 -- prefix-wise full rename: only the mapped prefixes move
 #guard rename_full [("A.foo", "foo_x")] "A.foo" == "A.foo_x"

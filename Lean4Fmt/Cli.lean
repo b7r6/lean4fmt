@@ -54,6 +54,13 @@ structure Options where
       (`--farm <path>`), so cross-package modules resolve without a per-worker
       rebuild. -/
   farmDir : Option String := none
+  /-- Files whose CLOSURE is off-limits (`--protect <file>`, repeatable): they
+      are resolved read-only for the names they DEFINE or REFERENCE, and every
+      such name is dropped from the rename plan — so a whole-tree pass never
+      renames a decl these files depend on. They are NEVER rewritten. This is how
+      the protected formatting-study files (ServeFd, GradedMonad, ReeseAlgebra)
+      keep the frozen packages mostly snakeable without being touched. -/
+  protect : List String := []
   files : List String := []
   deriving Repr, Inhabited
 
@@ -74,6 +81,7 @@ def parse (args : List String) : Options :=
       | "--map" :: f :: r => o := { o with mapFile := some f }; rest := r
       | "--resolve" :: r => o := { o with resolve := true }; rest := r
       | "--farm" :: f :: r => o := { o with farmDir := some f }; rest := r
+      | "--protect" :: f :: r => o := { o with protect := o.protect ++ [f] }; rest := r
       | "--write" :: r => o := { o with mode := .write }; rest := r
       | "-w" :: r => o := { o with mode := .write }; rest := r
       | "--width" :: n :: r => o := { o with width := some n.toNat! }; rest := r

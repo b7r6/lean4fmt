@@ -429,6 +429,7 @@ def run_rename_apply_impl
     (preset : String)
     (resolve : Bool)
     (elabFallback : Bool)
+    (protect : List String)
     : IO Unit := do
   let err ← IO.getStderr
   let exe := (← IO.appPath).toString
@@ -436,8 +437,9 @@ def run_rename_apply_impl
   let naming := ((Lean4Fmt.Style.by_name? preset).getD Lean4Fmt.Style.straylight).naming
   let modules := files.filterMap (fun f => (System.FilePath.mk f).fileStem)
   let jobs := (((← IO.getEnv "LEAN4FMT_JOBS").bind (·.toNat?)).getD 8).max 1
-  -- resolution: build the olean farm ONCE, hand each worker its path via --farm
-  let farm ← if resolve then Frontend.make_olean_farm files else pure none
+  -- resolution: build the olean farm ONCE (over the whole set incl. protected
+  -- files, so they resolve), hand each worker its path via --farm
+  let farm ← if resolve then Frontend.make_olean_farm (files ++ protect) else pure none
   let extra :=
     (if elabFallback then #[] else #["--elab", "off"])
         ++ (if resolve then
@@ -488,10 +490,27 @@ def run_rename_apply_impl
             | none => pure ()
           | _ => pure ()
     i := i + jobs
+  -- PROTECTED closure: resolve each `--protect` file read-only (own env + farm)
+  -- and collect EVERY full name it defines or references. These drop from the
+  -- plan, so a whole-tree pass never renames a decl an untouchable study depends
+  -- on. The files themselves are never in `paths`, so never rewritten.
+  let mut protectedFulls : List String := []
+  if resolve then
+    for pf in protect do
+      let child ← spawn1 (System.FilePath.mk pf)
+      let out ← child.stdout.readToEnd
+      let _ ← child.stderr.readToEnd
+      let _ ← child.wait
+      for line in out.splitOn "\n" do
+        match line.splitOn "\t" with
+        | [_, full, _] => protectedFulls := protectedFulls ++ [full]
+        | _ => pure ()
+    if !protect.isEmpty then
+      err.putStrLn s!"// protecting {protectedFulls.eraseDups.length} names from {protect.length} closure file(s)"
   -- the plan: HYBRID under --resolve (resolution decides, token acts), else token
   let (renames, skipped) :=
     if resolve then
-      Lean4Fmt.Rename.plan_hybrid .snake modules occs defs existing
+      Lean4Fmt.Rename.plan_hybrid .snake modules occs defs existing protectedFulls
     else
       let p := Lean4Fmt.Rename.build_plan naming modules allDecls; (p.renames, p.skipped)
   let tag := if resolve then "resolve" else preset
@@ -545,7 +564,7 @@ def run_rename_apply_impl
     IO.Process.exit 1
 
 @[implemented_by run_rename_apply_impl]
-opaque run_rename_apply (files : List String) (preset : String) (resolve : Bool) (elabFallback : Bool) : IO Unit
+opaque run_rename_apply (files : List String) (preset : String) (resolve : Bool) (elabFallback : Bool) (protect : List String) : IO Unit
 
 def main (argv : List String) : IO Unit := do
   let o := Cli.parse argv
@@ -585,7 +604,7 @@ def main (argv : List String) : IO Unit := do
   let err ← IO.getStderr
 
   if o.mode == .renameApply then
-    run_rename_apply o.files o.preset o.resolve o.elabFallback
+    run_rename_apply o.files o.preset o.resolve o.elabFallback o.protect
     return
   if o.mode == .renameDecls then
     run_rename_decls o.files o.resolve o.farmDir o.elabFallback
