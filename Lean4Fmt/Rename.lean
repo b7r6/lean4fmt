@@ -1,7 +1,7 @@
 /-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                                                              // LEAN4FMT // RENAME
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     The rename PLAN: from collected `(name, axis)` declarations + a `Naming`
     policy, decide which project-defined names get renamed to what. Pure — the
@@ -14,7 +14,7 @@
     that would clash an already-existing `foo_bar` is skipped, not silently
     merged. Import-overlaps (a target that shadows a library name) are caught by
     the build, the axis's real floor.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
 import Lean4Fmt.Casing
@@ -74,7 +74,11 @@ def build_plan
   -- target for EVERY declared name (no-change ones included, so collisions see them)
   let targets := decls.map (fun (nm, ax) => (nm, convert (axis_case policy ax) nm))
   -- dedup by source name (each name declared once)
-  let byName := targets.foldl (fun acc p => if acc.any (·.1 == p.1) then acc else acc ++ [p]) []
+  let byName :=
+    targets.foldl
+      (fun uniqueTargets target =>
+        if uniqueTargets.any (·.1 == target.1) then uniqueTargets else uniqueTargets ++ [target])
+      []
   let tgtCount := fun t => (byName.filter (·.2 == t)).length
   -- a target is BLOCKED by: a collision (two sources → one target), a keyword,
   -- or the source colliding a module basename (the local exemption)
@@ -93,7 +97,7 @@ def ident_replacement (map : List (String × String)) (name : String) : Option S
   let joined := String.intercalate "." parts
   if joined == name then none else some joined
 
--- ── #guard-locked: the plan's exclusions + the ident rewrite ─────────────────
+-- ── #guard-locked: the plan's exclusions + the ident rewrite ──────────────────
 
 private
 def snake_all : Lean4Fmt.Style.Naming :=
@@ -134,9 +138,9 @@ def snake_all : Lean4Fmt.Style.Naming :=
     are kept — which is why import/open module paths ride untouched. -/
 def rename_full (map : List (String × String)) (full : String) : String :=
   let step :=
-    fun (acc : String × List String) (c : String) =>
-      let pfx := if acc.1.isEmpty then c else acc.1 ++ "." ++ c
-      (pfx, acc.2 ++ [((map.find? (·.1 == pfx)).map (·.2)).getD c])
+    fun (result : String × List String) (component : String) =>
+      let pfx := if result.1.isEmpty then component else result.1 ++ "." ++ component
+      (pfx, result.2 ++ [((map.find? (·.1 == pfx)).map (·.2)).getD component])
   String.intercalate "." ((full.splitOn ".").foldl step ("", [])).2
 
 /-- Rewrite one source TOKEN that resolves to `full`, under the identity `map`.
@@ -235,9 +239,11 @@ def plan_hybrid
         else
           match fullsOf s with
           | [full] =>
-            if defSet.contains full && !protSet.contains full then some (s, full, convert c s)
-            else none
-          | _      => none)
+            if defSet.contains full && !protSet.contains full then
+              some (s, full, convert c s)
+            else
+              none
+          | _ => none)
   -- two distinct safe sources snaking to one target collide (both skipped)
   let collides := fun (t : String) => (rows.filter (fun (_, _, x) => x == t)).length > 1
   -- TARGET-TAKEN (the type↔field guard): a rename `S → t` is unsafe if some OTHER
@@ -255,16 +261,18 @@ def plan_hybrid
   -- skip a rename whose source is the trailing component of a referenced name that
   -- is NOT itself a source decl (i.e. generated). Dotted generated names (`T.rec`,
   -- `T.mk`) need no guard — `T` is a component there, so they rename correctly.
-  let gen_ref := fun (s : String) =>
-    occs.any (fun (n, nFull) => n != s && is_suffix s n && !defSet.contains nFull)
+  let gen_ref :=
+    fun (s : String) =>
+      occs.any (fun (n, nFull) => n != s && is_suffix s n && !defSet.contains nFull)
   let changed := rows.filter (fun (s, _, t) => s != t)
-  let ok := fun (s sFull t : String) => !keywords.contains t && !collides t && !taken sFull t && !gen_ref s
+  let ok :=
+    fun (s sFull t : String) => !keywords.contains t && !collides t && !taken sFull t && !gen_ref s
   (
     changed.filterMap (fun (s, full, t) => if ok s full t then some (s, t) else none),
     changed.filterMap (fun (s, full, t) => if ok s full t then none else some (s, t))
   )
 
--- ── #guard-locked: identity rewrite + resolution plan ────────────────────────
+-- ── #guard-locked: identity rewrite + resolution plan ─────────────────────────
 
 -- HYBRID: unambiguous + authorized → token-renamed; ambiguous / external → left
 #guard (plan_hybrid .snake [] [("Resource", "A.Resource"), ("Resource", "A.Resource")] ["A.Resource"] ["A.Resource"] []).1

@@ -37,7 +37,7 @@ namespace Lean4Fmt.Doc.Proofs
 
 open Lean4Fmt.Doc
 
--- ── char/string plumbing ────────────────────────────────────────────────────
+-- ── char/string plumbing ──────────────────────────────────────────────────────
 
 @[simp]
 theorem non_ws_l_nil : non_ws_l [] = [] := rfl
@@ -67,14 +67,14 @@ theorem non_ws_spaces (n : Nat) : non_ws (spaces n) = [] := by
   simp only [spaces, non_ws_of_list, non_ws_l]
   induction n with
   | zero => rfl
-  | succ k ih => simpa [List.replicate_succ] using ih
+  | succ predecessor inductionHypothesis => simpa [List.replicate_succ] using inductionHypothesis
 
 @[simp]
 theorem non_ws_newlines (n : Nat) : non_ws (newlines n) = [] := by
   simp only [newlines, non_ws_of_list, non_ws_l]
   induction n with
   | zero => rfl
-  | succ k ih => simpa [List.replicate_succ] using ih
+  | succ predecessor inductionHypothesis => simpa [List.replicate_succ] using inductionHypothesis
 
 @[simp]
 theorem non_ws_empty : non_ws "" = [] := rfl
@@ -87,8 +87,8 @@ theorem non_ws_newline : non_ws "\n" = [] := by decide
 
 theorem non_ws_l_nil_of_spaces (cs : List Char) (h : cs.all (· == ' ')) : non_ws_l cs = [] := by
   simp only [non_ws_l, List.filter_eq_nil_iff]
-  intro a ha
-  have : a = ' ' := by simpa using List.all_eq_true.mp h a ha
+  intro char charMem
+  have : char = ' ' := by simpa using List.all_eq_true.mp h char charMem
   subst this
   decide
 
@@ -97,22 +97,22 @@ theorem non_ws_l_drop_while_space
         : non_ws_l (cs.dropWhile (· == ' ')) = non_ws_l cs := by
   induction cs with
   | nil => rfl
-  | cons c cs ih =>
-    by_cases hc : c = ' '
-    · subst hc
+  | cons head tail inductionHypothesis =>
+    by_cases char_is_space : head = ' '
+    · subst char_is_space
       have : (!(' ' : Char).isWhitespace) = false := by decide
-      simpa [List.dropWhile_cons, non_ws_l, List.filter_cons, this] using ih
-    · simp [List.dropWhile_cons, hc]
+      simpa [List.dropWhile_cons, non_ws_l, List.filter_cons, this] using inductionHypothesis
+    · simp [List.dropWhile_cons, char_is_space]
 
 theorem non_ws_l_drop_while_ws
         (cs : List Char)
         : non_ws_l (cs.dropWhile Char.isWhitespace) = non_ws_l cs := by
   induction cs with
   | nil => rfl
-  | cons c cs ih =>
-    by_cases hc : c.isWhitespace
-    · simpa [List.dropWhile_cons, non_ws_l, List.filter_cons, hc] using ih
-    · simp [List.dropWhile_cons, hc]
+  | cons head tail inductionHypothesis =>
+    by_cases char_is_whitespace : head.isWhitespace
+    · simpa [List.dropWhile_cons, non_ws_l, List.filter_cons, char_is_whitespace] using inductionHypothesis
+    · simp [List.dropWhile_cons, char_is_whitespace]
 
 theorem non_ws_l_reverse (cs : List Char) : non_ws_l cs.reverse = (non_ws_l cs).reverse := by
   simp [non_ws_l, List.filter_reverse]
@@ -121,12 +121,12 @@ theorem non_ws_l_trim_end_ws (cs : List Char) : non_ws_l (trim_end_ws cs) = non_
   unfold trim_end_ws
   rw [non_ws_l_reverse, non_ws_l_drop_while_ws, non_ws_l_reverse, List.reverse_reverse]
 
--- ── splitLines / wrBlock plumbing ───────────────────────────────────────────
+-- ── splitLines / wrBlock plumbing ─────────────────────────────────────────────
 
 theorem split_lines_ne_nil (cs : List Char) : split_lines cs ≠ [] := by
   cases cs with
   | nil => simp [split_lines]
-  | cons c cs =>
+  | cons head tail =>
     simp only [split_lines]
     repeat' split
     all_goals simp
@@ -137,40 +137,40 @@ theorem split_lines_non_ws
         : ((split_lines cs).map non_ws_l).flatten = non_ws_l cs := by
   induction cs with
   | nil => simp [split_lines]
-  | cons c cs ih =>
+  | cons head tail inductionHypothesis =>
     simp only [split_lines]
-    cases h : split_lines cs with
-    | nil => exact absurd h (split_lines_ne_nil cs)
-    | cons l ls =>
-      rw [h] at ih
-      simp only [List.map_cons, List.flatten_cons] at ih
-      by_cases hc : c = '\n'
-      · subst hc
+    cases splitLinesEquation : split_lines tail with
+    | nil => exact absurd splitLinesEquation (split_lines_ne_nil tail)
+    | cons line lines =>
+      rw [splitLinesEquation] at inductionHypothesis
+      simp only [List.map_cons, List.flatten_cons] at inductionHypothesis
+      by_cases char_is_newline : head = '\n'
+      · subst char_is_newline
         simp only [reduceIte, List.map_cons, List.flatten_cons, non_ws_l_nil, List.nil_append]
-        rw [ih]
-        show non_ws_l cs = non_ws_l ('\n' :: cs)
+        rw [inductionHypothesis]
+        show non_ws_l tail = non_ws_l ('\n' :: tail)
         have : (!('\n' : Char).isWhitespace) = false := by decide
         simp [non_ws_l, List.filter_cons, this]
-      · simp only [if_neg hc, List.map_cons, List.flatten_cons]
-        show non_ws_l (c :: l) ++ (ls.map non_ws_l).flatten = non_ws_l (c :: cs)
-        cases hw : (!c.isWhitespace) with
+      · simp only [if_neg char_is_newline, List.map_cons, List.flatten_cons]
+        show non_ws_l (head :: line) ++ (lines.map non_ws_l).flatten = non_ws_l (head :: tail)
+        cases whitespaceEquation : (!head.isWhitespace) with
         | false =>
-          simp only [non_ws_l, List.filter_cons, hw, Bool.false_eq_true, if_false]
-          exact ih
+          simp only [non_ws_l, List.filter_cons, whitespaceEquation, Bool.false_eq_true, if_false]
+          exact inductionHypothesis
         | true =>
-          simp only [non_ws_l, List.filter_cons, hw, if_true, List.cons_append]
-          exact congrArg (c :: ·) ih
+          simp only [non_ws_l, List.filter_cons, whitespaceEquation, if_true, List.cons_append]
+          exact congrArg (head :: ·) inductionHypothesis
 
 theorem flatten_map_drop_blank
         (ls : List (List Char))
         : (((ls.dropWhile is_blank_line).map non_ws_l)).flatten = (ls.map non_ws_l).flatten := by
   induction ls with
   | nil => rfl
-  | cons l ls ih =>
-    by_cases hb : is_blank_line l = true
-    · rw [List.dropWhile_cons_of_pos hb]
-      simp [ih, non_ws_l_nil_of_spaces l hb]
-    · rw [List.dropWhile_cons_of_neg (by simp [hb])]
+  | cons line lines inductionHypothesis =>
+    by_cases line_is_blank : is_blank_line line = true
+    · rw [List.dropWhile_cons_of_pos line_is_blank]
+      simp [inductionHypothesis, non_ws_l_nil_of_spaces line line_is_blank]
+    · rw [List.dropWhile_cons_of_neg (by simp [line_is_blank])]
 
 /-- T4 (writer hygiene / content): `wr`'s extension over the old output is
     exactly `nonWs s` — the pending newlines and indent it flushes contribute
@@ -183,18 +183,18 @@ theorem wr_out
         (s : String)
         : non_ws (wr st indent s).out = non_ws st.out ++ non_ws s := by
   unfold wr
-  by_cases h : st.pend > 0 <;> simp [h]
+  by_cases has_pending_lines : st.pend > 0 <;> simp [has_pending_lines]
 
 /-- Dedenting drops only spaces — the content of a continuation line survives
     its re-anchoring intact (the wrBlock content-eater made impossible). -/
 theorem non_ws_l_dedent (base : Nat) (l : List Char) : non_ws_l (dedent base l) = non_ws_l l := by
   unfold dedent
   split
-  · next h =>
-      simp only [Bool.and_eq_true] at h
+  · next dedentCondition =>
+      simp only [Bool.and_eq_true] at dedentCondition
       have h2 : non_ws_l l = non_ws_l (l.take base) ++ non_ws_l (l.drop base) := by
         rw [← non_ws_l_append, List.take_append_drop]
-      rw [h2, non_ws_l_nil_of_spaces _ h.2, List.nil_append]
+      rw [h2, non_ws_l_nil_of_spaces _ dedentCondition.2, List.nil_append]
   · exact non_ws_l_drop_while_space l
 
 theorem wr_line_out
@@ -204,8 +204,8 @@ theorem wr_line_out
         : non_ws (wr_line st indent base l).out = non_ws st.out ++ non_ws_l l := by
   unfold wr_line
   split
-  · next he =>
-      have h0 : dedent base l = [] := by simpa [List.isEmpty_iff] using he
+  · next dedentIsEmpty =>
+      have h0 : dedent base l = [] := by simpa [List.isEmpty_iff] using dedentIsEmpty
       have hl : non_ws_l l = [] := by rw [← non_ws_l_dedent base l, h0]; rfl
       simp [hl]
   · simp [wr_out, non_ws_l_dedent]
@@ -217,7 +217,8 @@ theorem wr_lines_out
         : non_ws (wr_lines indent base ls st).out = non_ws st.out ++ (ls.map non_ws_l).flatten := by
   induction ls generalizing st with
   | nil => simp [wr_lines]
-  | cons l ls ih => simp [wr_lines, ih, wr_line_out, List.append_assoc]
+  | cons line lines inductionHypothesis =>
+    simp [wr_lines, inductionHypothesis, wr_line_out, List.append_assoc]
 
 /-- The block writer preserves content exactly: trimming, blank-line dropping,
     and dedenting all touch only whitespace (the spaces-only dedent guard is
@@ -232,19 +233,19 @@ theorem wr_block_out
           = non_ws_l raw.toList := by
     rw [flatten_map_drop_blank, split_lines_non_ws, non_ws_l_trim_end_ws]
   unfold wr_block
-  cases h : (split_lines (trim_end_ws raw.toList)).dropWhile is_blank_line with
+  cases linesEquation : (split_lines (trim_end_ws raw.toList)).dropWhile is_blank_line with
   | nil =>
-    rw [h] at hchain
+    rw [linesEquation] at hchain
     simp only [List.map_nil, List.flatten_nil] at hchain
     show non_ws st.out = non_ws st.out ++ non_ws raw
     rw [show non_ws raw = non_ws_l raw.toList from rfl, ← hchain, List.append_nil]
-  | cons l rest =>
-    rw [h] at hchain
+  | cons line rest =>
+    rw [linesEquation] at hchain
     simp only [List.map_cons, List.flatten_cons] at hchain
     rw [wr_lines_out, wr_out, non_ws_of_list, List.append_assoc, hchain]
     rfl
 
--- ── T1: content preservation ────────────────────────────────────────────────
+-- ── T1: content preservation ──────────────────────────────────────────────────
 
 /-- The table-emission fold appends exactly the padded rows' content. -/
 theorem emit_table_content
@@ -255,19 +256,19 @@ theorem emit_table_content
         (st : rst)
         : non_ws (emit_table maxPend indent sep widths strRows st).out
             = non_ws st.out ++ ((strRows.map fun r => non_ws (render_row_str sep widths r)).flatten) := by
-  suffices h : ∀ (first : Bool) (st : rst),
+  suffices table_content : ∀ (first : Bool) (st : rst),
       non_ws ((strRows.foldl (fun (p : rst × Bool) r =>
         let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
         (wr st indent (render_row_str sep widths r), false)) (st, first)).1).out
       = non_ws st.out ++ ((strRows.map fun r => non_ws (render_row_str sep widths r)).flatten) by
-    exact h true st
+    exact table_content true st
   induction strRows with
-  | nil => intro first st; simp
-  | cons r rs ih =>
-    intro first st
+  | nil => intro first state; simp
+  | cons row rows inductionHypothesis =>
+    intro first state
     simp only [List.foldl_cons, List.map_cons, List.flatten_cons]
-    rw [ih]
-    by_cases h : first <;> simp [h, wr_out, List.append_assoc]
+    rw [inductionHypothesis]
+    by_cases is_first_row : first <;> simp [is_first_row, wr_out, List.append_assoc]
 
 mutual
 
@@ -293,10 +294,10 @@ theorem go_content (width maxPend : Nat) (d : Doc) (indent : Nat) (flat : Bool)
         go_content width maxPend a indent flat st, List.append_assoc]
   | .line =>
     simp only [go, content]
-    by_cases h : flat <;> simp [h, wr_out]
+    by_cases is_flat_mode : flat <;> simp [is_flat_mode, wr_out]
   | .softline =>
     simp only [go, content]
-    by_cases h : flat <;> simp [h]
+    by_cases is_flat_mode : flat <;> simp [is_flat_mode]
   | .hardline => simp [go, content]
   | .blank _ => simp [go, content]
   | .group d' =>
@@ -344,9 +345,9 @@ theorem goFill_content (width maxPend : Nat) (items : List Doc) (indent : Nat)
       simpa [non_ws] using this
     simp only [goFill, contentList]
     rw [goFill_content width maxPend is indent flat false _]
-    by_cases hf : first
-    · simp [hf, wr_out, hcell, List.append_assoc]
-    · simp only [hf]
+    by_cases is_first_item : first
+    · simp [is_first_item, wr_out, hcell, List.append_assoc]
+    · simp only [is_first_item]
       repeat' split
       all_goals simp_all [wr_out, hcell, List.append_assoc]
 
@@ -394,17 +395,17 @@ theorem render_content
         : non_ws (render style d) = content d := by
   have h := go_content style.layout.lineWidth (style.blankLines.maxConsecutive + 1) d 0 false {}
   simp only [render]
-  by_cases he : (go style.layout.lineWidth (style.blankLines.maxConsecutive + 1)
+  by_cases output_ends_with_newline : (go style.layout.lineWidth (style.blankLines.maxConsecutive + 1)
       d 0 false {}).out.endsWith "\n"
-  · simp only [he, if_true]
+  · simp only [output_ends_with_newline, if_true]
     simpa [non_ws] using h
-  · simp only [he, if_false, Bool.false_eq_true]
+  · simp only [output_ends_with_newline, if_false, Bool.false_eq_true]
     rw [non_ws_append]
     have hnl : non_ws "\n" = [] := by decide
     rw [hnl, List.append_nil]
     simpa [non_ws] using h
 
--- ── T2: flat exactness ──────────────────────────────────────────────────────
+-- ── T2: flat exactness ────────────────────────────────────────────────────────
 
 mutual
 
@@ -454,10 +455,10 @@ mutual
     | .cat a b =>
       simp only [flat_width] at hw
       split at hw
-      · next x y hx hy =>
+      · next leftWidth rightWidth leftWidthEq rightWidthEq =>
           simp only [Option.some.injEq] at hw
-          simp [flatRender, String.length_append, flatRender_length a x hx,
-            flatRender_length b y hy, hw]
+          simp [flatRender, String.length_append, flatRender_length a leftWidth leftWidthEq,
+            flatRender_length b rightWidth rightWidthEq, hw]
       · exact absurd hw (by simp)
     | .line =>
       simp only [flat_width, Option.some.injEq] at hw
@@ -477,10 +478,10 @@ mutual
     | .fillSep (i :: is) =>
       simp only [flat_width] at hw
       split at hw
-      · next w ws hi his =>
+      · next itemWidth restWidth itemWidthEq restWidthEq =>
           simp only [Option.some.injEq] at hw
-          simp [flatRender, String.length_append, flatRender_length i w hi,
-            flatRenderSep_length is ws his, hw]
+          simp [flatRender, String.length_append, flatRender_length i itemWidth itemWidthEq,
+            flatRenderSep_length is restWidth restWidthEq, hw]
       · exact absurd hw (by simp)
 
   theorem flatRenderSep_length
@@ -493,11 +494,11 @@ mutual
     | i :: is' =>
       simp only [flatWidthSep] at hw
       split at hw
-      · next w ws hi his =>
+      · next itemWidth restWidth itemWidthEq restWidthEq =>
           simp only [Option.some.injEq] at hw
           subst hw
-          simp [flatRenderSep, String.length_append, flatRender_length i w hi,
-            flatRenderSep_length is' ws his]
+          simp [flatRenderSep, String.length_append, flatRender_length i itemWidth itemWidthEq,
+            flatRenderSep_length is' restWidth restWidthEq]
       · exact absurd hw (by simp)
 
 end
@@ -507,11 +508,13 @@ end
 theorem split_lines_no_nl (cs : List Char) (h : '\n' ∉ cs) : split_lines cs = [cs] := by
   induction cs with
   | nil => rfl
-  | cons c cs ih =>
-    have hc : c ≠ '\n' := fun hc => h (hc ▸ List.mem_cons_self ..)
-    have hcs : '\n' ∉ cs := fun hm => h (List.mem_cons_of_mem _ hm)
-    simp only [split_lines, ih hcs]
-    simp [hc]
+  | cons head tail inductionHypothesis =>
+    have head_not_newline : head ≠ '\n' :=
+      fun head_is_newline => h (head_is_newline ▸ List.mem_cons_self ..)
+    have tail_has_no_newline : '\n' ∉ tail :=
+      fun newline_mem => h (List.mem_cons_of_mem _ newline_mem)
+    simp only [split_lines, inductionHypothesis tail_has_no_newline]
+    simp [head_not_newline]
 
 theorem mem_trim_end_ws {c : Char} {cs : List Char} (h : c ∈ trim_end_ws cs) : c ∈ cs := by
   unfold trim_end_ws at h
@@ -528,13 +531,13 @@ theorem drop_while_head_not
         : p y = false := by
   induction l with
   | nil => simp [List.dropWhile] at h
-  | cons a l ih =>
+  | cons head tail inductionHypothesis =>
     rw [List.dropWhile_cons] at h
     split at h
-    · exact ih h
+    · exact inductionHypothesis h
     · next hpa =>
-        injection h with h1 _
-        subst h1
+        injection h with headEquation _
+        subst headEquation
         simpa using hpa
 
 /-- A nonempty trailing-trimmed line is not blank (its last char is non-ws). -/
@@ -543,16 +546,52 @@ theorem trim_end_ws_not_blank
         (hne : trim_end_ws cs ≠ [])
         : is_blank_line (trim_end_ws cs) = false := by
   unfold trim_end_ws at hne ⊢
-  cases h : cs.reverse.dropWhile Char.isWhitespace with
-  | nil => simp [h] at hne
-  | cons y ys =>
-    have hy : Char.isWhitespace y = false := drop_while_head_not h
-    have hy' : y ≠ ' ' := fun he => by subst he; simp at hy
-    simp only [h, is_blank_line]
+  cases reversedTailEquation : cs.reverse.dropWhile Char.isWhitespace with
+  | nil => simp [reversedTailEquation] at hne
+  | cons head tail =>
+    have head_not_whitespace : Char.isWhitespace head = false :=
+      drop_while_head_not reversedTailEquation
+    have head_not_space : head ≠ ' ' := fun head_is_space => by
+      subst head_is_space
+      simp at head_not_whitespace
+    simp only [reversedTailEquation, is_blank_line]
     rw [Bool.eq_false_iff]
     intro hall
-    have := (List.all_eq_true.mp hall) y (by simp)
-    exact hy' (by simpa using this)
+    have := (List.all_eq_true.mp hall) head (by simp)
+    exact head_not_space (by simpa using this)
+
+/-- The verbatim branch of flat rendering is exact once its width is known. -/
+theorem go_flat_verbatim
+        (width maxPend : Nat)
+        (raw : String)
+        (base indent n : Nat)
+        (st : rst)
+        (hw : flat_width (.verbatim raw base) = some n)
+        (hp : st.pend = 0)
+        : go width maxPend (.verbatim raw base) indent true st
+            = { out := st.out ++ flatRender (.verbatim raw base), col := st.col + n, pend := 0 } := by
+  simp only [flat_width] at hw
+  split at hw
+  · exact absurd hw (by simp)
+  · next no_newline =>
+      simp only [Option.some.injEq] at hw
+      have no_newline_mem : '\n' ∉ trim_end_ws raw.toList :=
+        fun newline_mem =>
+          no_newline (List.any_eq_true.mpr ⟨'\n', mem_trim_end_ws newline_mem, by simp⟩)
+      simp only [go, wr_block, split_lines_no_nl _ no_newline_mem]
+      cases trimmed : trim_end_ws raw.toList with
+      | nil =>
+        rw [trimmed] at hw
+        obtain ⟨out, column, pending⟩ := st; subst hp
+        simp_all [is_blank_line, flatRender, trimmed]
+      | cons head tail =>
+        have not_blank : is_blank_line (head :: tail) = false := by
+          have := trim_end_ws_not_blank (cs := raw.toList) (by simp [trimmed])
+          rwa [trimmed] at this
+        rw [trimmed] at hw
+        obtain ⟨out, column, pending⟩ := st; subst hp
+        simp_all [List.dropWhile_cons, wr_lines, wr, flatRender, trimmed]
+        omega
 
 mutual
 
@@ -562,10 +601,8 @@ mutual
     that makes `group`'s fit check (`effCol + flatWidth ≤ width`) an oracle:
     what it measures is precisely what gets emitted. -/
   theorem go_flat
-          (width maxPend : Nat)
+          (width maxPend indent n : Nat)
           (d : Doc)
-          (indent : Nat)
-          (n : Nat)
           (st : rst)
           (hw : flat_width d = some n)
           (hp : st.pend = 0)
@@ -573,109 +610,54 @@ mutual
               = { out := st.out ++ flatRender d, col := st.col + n, pend := 0 } := by
     match d with
     | .nil =>
-      simp only [flat_width, Option.some.injEq] at hw
-      obtain ⟨o, c, p⟩ := st
-      subst hp
-      simp [go, flatRender, ← hw]
+      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, flatRender, ← hw]
     | .text s =>
-      simp only [flat_width, Option.some.injEq] at hw
-      obtain ⟨o, c, p⟩ := st
-      subst hp
-      simp [go, wr, flatRender, ← hw]
+      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, wr, flatRender, ← hw]
     | .textRaw s =>
-      simp only [flat_width] at hw
-      split at hw
+      simp only [flat_width] at hw; split at hw
       · exact absurd hw (by simp)
       · next hnl =>
-          simp only [Option.some.injEq] at hw
-          obtain ⟨o, c, p⟩ := st
-          subst hp
-          simp [go, hnl, flatRender, ← hw]
-    | .verbatim s b =>
-      simp only [flat_width] at hw
-      split at hw
-      · exact absurd hw (by simp)
-      · next hnl =>
-          simp only [Option.some.injEq] at hw
-          have hnomem : '\n' ∉ trim_end_ws s.toList :=
-            fun hm => hnl (List.any_eq_true.mpr ⟨'\n', mem_trim_end_ws hm, by simp⟩)
-          simp only [go, wr_block, split_lines_no_nl _ hnomem]
-          cases htr : trim_end_ws s.toList with
-          | nil =>
-            rw [htr] at hw
-            obtain ⟨o, c, p⟩ := st
-            subst hp
-            simp_all [is_blank_line, flatRender, htr]
-          | cons x xs =>
-            have hnb : is_blank_line (x :: xs) = false := by
-              have := trim_end_ws_not_blank (cs := s.toList) (by simp [htr])
-              rwa [htr] at this
-            rw [htr] at hw
-            obtain ⟨o, c, p⟩ := st
-            subst hp
-            simp_all [List.dropWhile_cons, wr_lines, wr, flatRender, htr]
-            omega
+          simp only [Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, hnl, flatRender, ← hw]
+    | .verbatim raw base => exact go_flat_verbatim width maxPend raw base indent n st hw hp
     | .cat a b =>
-      simp only [flat_width] at hw
-      split at hw
-      · next x y hx hy =>
-          simp only [Option.some.injEq] at hw
-          simp only [go]
-          rw [go_flat width maxPend a indent x st hx hp, go_flat width maxPend b indent y _ hy rfl]
+      simp only [flat_width] at hw; split at hw
+      · next leftWidth rightWidth leftWidthEq rightWidthEq =>
+          simp only [Option.some.injEq] at hw; simp only [go]
+          rw [go_flat width maxPend a indent leftWidth st leftWidthEq hp,
+            go_flat width maxPend b indent rightWidth _ rightWidthEq rfl]
           simp [flatRender, String.append_assoc, ← hw, Nat.add_assoc]
       · exact absurd hw (by simp)
     | .line =>
-      simp only [flat_width, Option.some.injEq] at hw
-      obtain ⟨o, c, p⟩ := st
-      subst hp
-      simp [go, wr, flatRender, ← hw]
+      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, wr, flatRender, ← hw]
     | .softline =>
-      simp only [flat_width, Option.some.injEq] at hw
-      obtain ⟨o, c, p⟩ := st
-      subst hp
-      simp [go, flatRender, ← hw]
+      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, flatRender, ← hw]
     | .hardline => simp [flat_width] at hw
     | .blank _ => simp [flat_width] at hw
     | .alignTable _ _ => simp [flat_width] at hw
     | .group d' =>
-      simp only [flat_width] at hw
-      simp only [go, Bool.true_or]
-      simpa [flatRender] using go_flat width maxPend d' indent n st hw hp
+      simp only [flat_width] at hw; simp only [go, Bool.true_or]; simpa [flatRender] using go_flat width maxPend d' indent n st hw hp
     | .nest m d' =>
-      simp only [flat_width] at hw
-      simp only [go]
-      simpa [flatRender] using go_flat width maxPend d' _ n st hw hp
+      simp only [flat_width] at hw; simp only [go]; simpa [flatRender] using go_flat width maxPend d' _ n st hw hp
     | .align d' =>
-      simp only [flat_width] at hw
-      simp only [go]
-      simpa [flatRender] using go_flat width maxPend d' st.col n st hw hp
+      simp only [flat_width] at hw; simp only [go]; simpa [flatRender] using go_flat width maxPend d' st.col n st hw hp
     | .flatten d' =>
-      simp only [flat_width] at hw
-      simp only [go]
-      simpa [flatRender] using go_flat width maxPend d' indent n st hw hp
+      simp only [flat_width] at hw; simp only [go]; simpa [flatRender] using go_flat width maxPend d' indent n st hw hp
     | .align_or _ _ fb =>
-      simp only [flat_width] at hw
-      simp only [go, if_true]
-      simpa [flatRender] using go_flat width maxPend fb indent n st hw hp
+      simp only [flat_width] at hw; simp only [go, if_true]; simpa [flatRender] using go_flat width maxPend fb indent n st hw hp
     | .fillSep [] =>
-      simp only [flat_width, Option.some.injEq] at hw
-      obtain ⟨o, c, p⟩ := st
-      subst hp
-      simp [go, goFill, flatRender, ← hw]
+      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, goFill, flatRender, ← hw]
     | .fillSep (i :: is) =>
-      simp only [flat_width] at hw
-      split at hw
-      · next w ws hi his =>
-          simp only [Option.some.injEq] at hw
-          subst hw
-          obtain ⟨o, c, p⟩ := st
-          subst hp
+      simp only [flat_width] at hw; split at hw
+      · next itemWidth restWidth itemWidthEq restWidthEq =>
+          simp only [Option.some.injEq] at hw; subst hw
+          obtain ⟨output, column, pending⟩ := st; subst hp
           simp only [go, goFill]
-          rw [go_flat width maxPend i indent w {} hi rfl]
-          have hlen : (flatRender i).length = w := flatRender_length i w hi
+          rw [go_flat width maxPend i indent itemWidth {} itemWidthEq rfl]
+          have renderedLength : (flatRender i).length = itemWidth :=
+            flatRender_length i itemWidth itemWidthEq
           simp only [wr, gt_iff_lt, Nat.lt_irrefl, if_false, reduceIte, if_true]
-          rw [goFill_flat width maxPend is indent ws _ his rfl]
-          simp [flatRender, String.append_assoc, hlen, rst.mk.injEq]
+          rw [goFill_flat width maxPend is indent restWidth _ restWidthEq rfl]
+          simp [flatRender, String.append_assoc, renderedLength, rst.mk.injEq]
           omega
       · exact absurd hw (by simp)
 
@@ -693,29 +675,29 @@ mutual
     match is with
     | [] =>
       simp only [flatWidthSep, Option.some.injEq] at hw
-      obtain ⟨o, c, p⟩ := st
+      obtain ⟨output, column, pending⟩ := st
       subst hp
       simp [goFill, flatRenderSep, ← hw]
     | i :: is' =>
       simp only [flatWidthSep] at hw
       split at hw
-      · next w ws hi his =>
+      · next itemWidth restWidth itemWidthEq restWidthEq =>
           simp only [Option.some.injEq] at hw
           subst hw
-          obtain ⟨o, c, p⟩ := st
+          obtain ⟨output, column, pending⟩ := st
           subst hp
           simp only [goFill, Bool.not_true, Bool.false_and, Bool.false_eq_true, if_false, reduceIte]
-          rw [go_flat width maxPend i indent w {} hi rfl]
-          have hlen : (flatRender i).length = w := flatRender_length i w hi
+          rw [go_flat width maxPend i indent itemWidth {} itemWidthEq rfl]
+          have hlen : (flatRender i).length = itemWidth := flatRender_length i itemWidth itemWidthEq
           simp only [wr, gt_iff_lt, Nat.lt_irrefl, if_false, reduceIte]
-          rw [goFill_flat width maxPend is' indent ws _ his rfl]
+          rw [goFill_flat width maxPend is' indent restWidth _ restWidthEq rfl]
           simp [flatRenderSep, String.append_assoc, String.length_append, hlen, rst.mk.injEq]
           omega
       · exact absurd hw (by simp)
 
 end
 
--- ── T2, one-line corollary ──────────────────────────────────────────────────
+-- ── T2, one-line corollary ────────────────────────────────────────────────────
 
 mutual
   /-- Well-formed docs: `.text` payloads are newline-free (the Doc contract —
@@ -757,25 +739,25 @@ mutual
       · exact absurd hw (by simp)
       · next hnl =>
           simp only [flatRender]
-          intro hm
-          exact hnl (List.any_eq_true.mpr ⟨'\n', hm, by simp⟩)
+          intro newlineMem
+          exact hnl (List.any_eq_true.mpr ⟨'\n', newlineMem, by simp⟩)
     | .verbatim s _ =>
       simp only [flat_width] at hw
       split at hw
       · exact absurd hw (by simp)
       · next hnl =>
           simp only [flatRender, String.toList_ofList]
-          intro hm
-          exact hnl (List.any_eq_true.mpr ⟨'\n', mem_trim_end_ws hm, by simp⟩)
+          intro newlineMem
+          exact hnl (List.any_eq_true.mpr ⟨'\n', mem_trim_end_ws newlineMem, by simp⟩)
     | .cat a b =>
       simp only [flat_width] at hw
       split at hw
-      · next x y hx hy =>
+      · next leftWidth rightWidth leftWidthEq rightWidthEq =>
           have ⟨wa, wb⟩ : WF a ∧ WF b := wf
           simp only [flatRender, String.toList_append, List.mem_append]
-          rintro (h | h)
-          · exact flatRender_noNl a x wa hx h
-          · exact flatRender_noNl b y wb hy h
+          rintro (left_newline_mem | right_newline_mem)
+          · exact flatRender_noNl a leftWidth wa leftWidthEq left_newline_mem
+          · exact flatRender_noNl b rightWidth wb rightWidthEq right_newline_mem
       · exact absurd hw (by simp)
     | .line => simp only [flatRender]; decide
     | .group d' => exact flatRender_noNl d' n wf (by simpa [flat_width] using hw)
@@ -787,12 +769,12 @@ mutual
     | .fillSep (i :: is) =>
       simp only [flat_width] at hw
       split at hw
-      · next w ws hi his =>
+      · next itemWidth restWidth itemWidthEq restWidthEq =>
           have ⟨wi, wis⟩ : WF i ∧ WFList is := wf
           simp only [flatRender, String.toList_append, List.mem_append]
-          rintro (h | h)
-          · exact flatRender_noNl i w wi hi h
-          · exact flatRenderSep_noNl is ws wis his h
+          rintro (item_newline_mem | rest_newline_mem)
+          · exact flatRender_noNl i itemWidth wi itemWidthEq item_newline_mem
+          · exact flatRenderSep_noNl is restWidth wis restWidthEq rest_newline_mem
       · exact absurd hw (by simp)
 
   theorem flatRenderSep_noNl
@@ -806,13 +788,13 @@ mutual
     | i :: is' =>
       simp only [flatWidthSep] at hw
       split at hw
-      · next w ws hi his =>
+      · next itemWidth restWidth itemWidthEq restWidthEq =>
           have ⟨wi, wis⟩ : WF i ∧ WFList is' := wf
           simp only [flatRenderSep, String.toList_append, List.mem_append]
-          rintro ((h | h) | h)
-          · revert h; decide
-          · exact flatRender_noNl i w wi hi h
-          · exact flatRenderSep_noNl is' ws wis his h
+          rintro ((separator_newline_mem | item_newline_mem) | rest_newline_mem)
+          · revert separator_newline_mem; decide
+          · exact flatRender_noNl i itemWidth wi itemWidthEq item_newline_mem
+          · exact flatRenderSep_noNl is' restWidth wis restWidthEq rest_newline_mem
       · exact absurd hw (by simp)
 
 end
@@ -840,15 +822,15 @@ theorem go_flat_exact
     flatRender_noNl d n wf hw
   ⟩
 
--- ── T3: seam content preservation ───────────────────────────────────────────
+-- ── T3: seam content preservation ─────────────────────────────────────────────
 
 @[simp]
 theorem content_append (a b : Doc) : content (a ++ b) = content a ++ content b := rfl
 
 theorem non_ws_l_nil_of_ws_line (l : List Char) (h : ws_line l) : non_ws_l l = [] := by
   simp only [non_ws_l, List.filter_eq_nil_iff]
-  intro a ha
-  have := List.all_eq_true.mp h a ha
+  intro char charMem
+  have := List.all_eq_true.mp h char charMem
   simp only [Bool.or_eq_true, beq_iff_eq] at this
   rcases this with rfl | rfl <;> decide
 
@@ -866,12 +848,13 @@ theorem seam_lines_content
         : content (seam_lines base blanks ls) = (ls.map non_ws_l).flatten := by
   induction ls generalizing blanks with
   | nil => simp [seam_lines]
-  | cons l ls ih =>
+  | cons line lines inductionHypothesis =>
     simp only [seam_lines, List.map_cons, List.flatten_cons]
     split
-    · next h => rw [ih, non_ws_l_nil_of_ws_line l h, List.nil_append]
+    · next line_is_whitespace =>
+        rw [inductionHypothesis, non_ws_l_nil_of_ws_line line line_is_whitespace, List.nil_append]
     · simp only [content_append, content_seam_sep, List.nil_append, content]
-      rw [ih, non_ws_of_list, non_ws_l_trim_end_ws, non_ws_l_dedent]
+      rw [inductionHypothesis, non_ws_of_list, non_ws_l_trim_end_ws, non_ws_l_dedent]
 
 theorem flatten_map_drop_last
         (f : List Char → List Char)
@@ -898,28 +881,32 @@ theorem leading_sep?_content
   · exact absurd h (by simp)
   split at h
   · exact absurd h (by simp)
-  next hh hl =>
+  next firstSplitCondition secondSplitCondition =>
     simp only [Option.some.injEq] at h
     subst h
     rw [seam_lines_content]
-    simp only [Bool.not_eq_eq_eq_not, Bool.not_true, Bool.not_eq_false] at hh hl
+    simp only [Bool.not_eq_eq_eq_not, Bool.not_true, Bool.not_eq_false] at firstSplitCondition
+    simp only [Bool.not_eq_eq_eq_not, Bool.not_true, Bool.not_eq_false] at secondSplitCondition
     have hchain := split_lines_non_ws lead.toList
-    cases hls : split_lines lead.toList with
-    | nil => exact absurd hls (split_lines_ne_nil lead.toList)
-    | cons l0 rest =>
-      rw [hls] at hchain hh hl
+    cases splitLinesEquation : split_lines lead.toList with
+    | nil => exact absurd splitLinesEquation (split_lines_ne_nil lead.toList)
+    | cons firstLine rest =>
+      rw [splitLinesEquation] at hchain firstSplitCondition secondSplitCondition
       simp only [List.drop_succ_cons, List.drop_zero]
-      simp only [List.headD_cons] at hh
-      simp only [List.map_cons, List.flatten_cons, non_ws_l_nil_of_ws_line l0 hh, List.nil_append] at hchain
+      simp only [List.headD_cons] at firstSplitCondition
+      simp only [List.map_cons, List.flatten_cons,
+        non_ws_l_nil_of_ws_line firstLine firstSplitCondition, List.nil_append] at hchain
       cases rest with
       | nil => simpa [non_ws] using hchain
-      | cons r1 rs =>
-        have hne : (r1 :: rs) ≠ [] := by simp
-        have hlast : (l0 :: r1 :: rs).getLastD [] = (r1 :: rs).getLast hne := by
+      | cons secondLine remainingLines =>
+        have hne : (secondLine :: remainingLines) ≠ [] := by simp
+        have hlast :
+            (firstLine :: secondLine :: remainingLines).getLastD []
+                = (secondLine :: remainingLines).getLast hne := by
           simp [List.getLastD_eq_getLast?, List.getLast?_eq_getLast]
-        rw [hlast] at hl
-        rw [flatten_map_drop_last non_ws_l (r1 :: rs) hne, non_ws_l_nil_of_ws_line _ hl,
-          List.append_nil] at hchain
+        rw [hlast] at secondSplitCondition
+        rw [flatten_map_drop_last non_ws_l (secondLine :: remainingLines) hne,
+          non_ws_l_nil_of_ws_line _ secondSplitCondition, List.append_nil] at hchain
         simpa [non_ws] using hchain
 
 end Lean4Fmt.Doc.Proofs

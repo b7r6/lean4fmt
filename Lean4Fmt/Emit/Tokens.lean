@@ -22,12 +22,12 @@ namespace Lean4Fmt.Emit
 
 /-- The leaf tokens of a subtree, in order (atoms + idents with source bytes). -/
 partial
-def leaf_tokens (stx : Lean.Syntax) (acc : Array Lean.Syntax := #[]) : Array Lean.Syntax :=
+def leaf_tokens (stx : Lean.Syntax) (found : Array Lean.Syntax := #[]) : Array Lean.Syntax :=
   match stx with
-  | .atom ..       => acc.push stx
-  | .ident ..      => acc.push stx
-  | .node _ _ args => args.foldl (fun a c => leaf_tokens c a) acc
-  | .missing       => acc
+  | .atom ..       => found.push stx
+  | .ident ..      => found.push stx
+  | .node _ _ args => args.foldl (fun result child => leaf_tokens child result) found
+  | .missing       => found
 
 /-- Any `choice` node in the subtree (ambiguous parse: children are ALL the
     alternatives — flattening would duplicate tokens). -/
@@ -57,11 +57,65 @@ def gap_rule (prev next : String) : Option Bool :=
     some true
   else if next == "(" && (identLike prev || prev == ")") then some true else none
 
+private
+structure token_join_state where
+  output     : String := ""
+  previous   : Option Lean.Syntax := none
+  skippedGap : String := ""
+
+private
+def append_token_after_previous?
+    (flatten : Bool)
+    (state : token_join_state)
+    (leaf : Lean.Syntax)
+    (token : String)
+    (previous : Lean.Syntax)
+    : Option token_join_state :=
+  Id.run do
+    let trailing? := Lean4Fmt.Syntax.trailing? previous
+    let leading? := Lean4Fmt.Syntax.leading? leaf
+    if trailing?.isNone || leading?.isNone then
+      return none
+    let gap := trailing?.getD "" ++ state.skippedGap ++ leading?.getD ""
+    if !gap.toList.all (·.isWhitespace) || (!flatten && gap.any (· == '\n')) then
+      return none
+    let separator :=
+      match gap_rule (bare_src previous) token with
+      | some true  => " "
+      | some false => ""
+      | none       => if gap.isEmpty then "" else " "
+    return some
+      {
+        output := state.output ++ separator ++ token
+        previous := some leaf
+        skippedGap := ""
+      }
+
+private
+def advance_token_join?
+    (flatten : Bool)
+    (state : token_join_state)
+    (leaf : Lean.Syntax)
+    : Option token_join_state :=
+  let token := bare_src leaf
+  if token.isEmpty then
+    some
+      { state with
+        skippedGap := state.skippedGap ++ (Lean4Fmt.Syntax.leading? leaf).getD ""
+            ++ (Lean4Fmt.Syntax.trailing? leaf).getD "" }
+  else if token.any (· == '\n') then
+    none
+  else
+    match state.previous with
+    | none          => some { output := token, previous := some leaf, skippedGap := "" }
+    | some previous => append_token_after_previous? flatten state leaf token previous
+
 /-- Canonical single-line respacing of a construct: leaf tokens joined with
     canonical gaps (pair-rule table, else ws-gap → one space / zero gap →
     glued). `none` when a token is multi-line, a gap carries non-whitespace
     (an inline block comment), or there are no tokens. -/
-def token_join? (stx : Lean.Syntax) : Option String :=
+private
+def token_join_impl? (stx : Lean.Syntax) (flatten : Bool) : Option String :=
   Id.run
     do
       if has_choice stx then
@@ -75,47 +129,18 @@ def token_join? (stx : Lean.Syntax) : Option String :=
       let ls := leaf_tokens stx
       if ls.isEmpty then
         return none
-      let mut out := ""
-      let mut prev : Option Lean.Syntax := none
+      let mut state : token_join_state := {}
       -- trivia carried by SKIPPED empty leaves (e.g. the synthetic `[anonymous]`
       -- idents of a cdot expansion, whose trailing holds the real inter-token
       -- space) — folded into the next real gap, else `(· + ·)` would relex-glue
-      let mut skipGap := ""
-      for l in ls do
-        let t := bare_src l
-        if t.isEmpty then
-          skipGap :=
-            skipGap ++ (Lean4Fmt.Syntax.leading? l).getD "" ++ (Lean4Fmt.Syntax.trailing? l).getD ""
-          continue
-        if t.any (· == '\n') then
-          return none
-        match prev with
-        | none => out := t
-        | some p =>
-          -- the inter-token gap = prev token's trailing ++ this token's leading.
-          -- A zero gap is only trusted with POSITIVE evidence (both trivia
-          -- lookups present): a token with synthetic info would otherwise be
-          -- GLUED to its neighbor and relex differently (caught as MANGLED).
-          let tr? := Lean4Fmt.Syntax.trailing? p
-          let ld? := Lean4Fmt.Syntax.leading? l
-          if tr?.isNone || ld?.isNone then
-            return none
-          let gap := tr?.getD "" ++ skipGap ++ ld?.getD ""
-          if !gap.toList.all (·.isWhitespace) then
-            return none -- inline comment
-          if gap.any (· == '\n') then
-            return none -- not single-line
-          let sep :=
-            match gap_rule (bare_src p) t with
-            | some true  => " "
-            | some false => ""
-            | none       => if gap.isEmpty then "" else " "
-          out := out ++ sep ++ t
-        prev := some l
-        skipGap := ""
-      if out.isEmpty then
+      for leaf in ls do
+        let some nextState := advance_token_join? flatten state leaf | return none
+        state := nextState
+      if state.output.isEmpty then
         return none
-      return some out
+      return some state.output
+
+def token_join? (stx : Lean.Syntax) : Option String := token_join_impl? stx false
 
 /-- A MULTI-LINE newline-SEMANTIC descendant: by/do (the newline separates
     tactics/statements), let (the newline is the `in`), structInst (comma-less
@@ -142,51 +167,7 @@ def has_newline_semantic (s : Lean.Syntax) : Bool :=
     `hasNewlineSemantic`; the flatten-side head-ws law, enforced at the one
     owner instead of per call site). -/
 def token_join_flat? (stx : Lean.Syntax) : Option String :=
-  Id.run
-    do
-      if has_choice stx then
-        return none
-      if has_newline_semantic stx then
-        return none
-      if Lean4Fmt.Syntax.has_quotation_kind stx then
-        return none
-      if Lean4Fmt.Syntax.has_template_opener (bare_src stx) then
-        return none
-      let ls := leaf_tokens stx
-      if ls.isEmpty then
-        return none
-      let mut out := ""
-      let mut prev : Option Lean.Syntax := none
-      let mut skipGap := "" -- trivia from skipped empty leaves (see tokenJoin?)
-      for l in ls do
-        let t := bare_src l
-        if t.isEmpty then
-          skipGap :=
-            skipGap ++ (Lean4Fmt.Syntax.leading? l).getD "" ++ (Lean4Fmt.Syntax.trailing? l).getD ""
-          continue
-        if t.any (· == '\n') then
-          return none -- multi-line TOKEN: content
-        match prev with
-        | none => out := t
-        | some p =>
-          let tr? := Lean4Fmt.Syntax.trailing? p
-          let ld? := Lean4Fmt.Syntax.leading? l
-          if tr?.isNone || ld?.isNone then
-            return none
-          let gap := tr?.getD "" ++ skipGap ++ ld?.getD ""
-          if !gap.toList.all (·.isWhitespace) then
-            return none
-          let sep :=
-            match gap_rule (bare_src p) t with
-            | some true  => " "
-            | some false => ""
-            | none       => if gap.isEmpty then "" else " "
-          out := out ++ sep ++ t
-        prev := some l
-        skipGap := ""
-      if out.isEmpty then
-        return none
-      return some out
+  if has_newline_semantic stx then none else token_join_impl? stx true
 
 /-- Canonical single-line token text: tokenJoin? with a bareSrc fallback —
     the standard spelling for EMITTED head pieces. The fallback (choice nodes,

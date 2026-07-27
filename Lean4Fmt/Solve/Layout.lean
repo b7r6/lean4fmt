@@ -1,7 +1,7 @@
 /-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                                                      // LEAN4FMT // SOLVE // LAYOUT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     Optimal layout as constraint optimization (Bernardy's measure-algebra DP),
     the principled replacement for greedy `.group` line-breaking.
@@ -18,7 +18,7 @@
     interface. LIVE on the Emit path: `inlineDefFits` / `sigOneLineFits` drive the
     def sig-shape decision per declaration; `.group` and `.alignOr` are proven
     special cases of its `.choice` (the fold).
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
 namespace Lean4Fmt.Solve
@@ -73,13 +73,17 @@ def pen_m (c : Nat) (a : meas) : meas := { a with cost := a.cost + c }
     drop it. This prune is the whole tractability argument. -/
 def dominates (x y : meas) : Bool := x.maxw ≤ y.maxw && x.last ≤ y.last && x.cost ≤ y.cost
 
-def insert_pareto (m : meas) (acc : List meas) : List meas :=
-  if acc.any (fun n => dominates n m) then acc else m :: acc.filter (fun n => !dominates m n)
+def insert_pareto (m : meas) (frontier : List meas) : List meas :=
+  if frontier.any (fun n => dominates n m) then
+    frontier
+  else
+    m :: frontier.filter (fun n => !dominates m n)
 
 /-- Reduce a candidate set to its Pareto frontier. -/
 def prune (ms : List meas) : List meas := ms.foldr insert_pareto []
 
-def cross_cat (fa fb : List meas) : List meas := fa.foldr (fun a acc => fb.map (cat_m a) ++ acc) []
+def cross_cat (fa fb : List meas) : List meas :=
+  fa.foldr (fun a products => fb.map (cat_m a) ++ products) []
 
 /-- The layout problem: a tree of choice points. `choice` is the constraint
     variable (which alternative); `pen` attaches a preference weight. `group`
@@ -103,7 +107,7 @@ def frontier : ldoc → List meas
   | .flush a     => prune ((frontier a).map flush_m)
   | .nest n a    => prune ((frontier a).map (nest_m n))
   | .pen c a     => prune ((frontier a).map (pen_m c))
-  | .choice alts => prune (alts.foldr (fun d acc => frontier d ++ acc) [])
+  | .choice alts => prune (alts.foldr (fun d candidates => frontier d ++ candidates) [])
 
 /-- Pick the min-cost layout whose every line fits `W` (the hard constraint).
     If none fits, degrade to the narrowest — the never-worse-than-input floor,
@@ -147,7 +151,7 @@ theorem cat_fits
         (hb : aLast + bMax ≤ W)
         : aMax ≤ W ∧ aLast + bMax ≤ W := by omega
 
--- ── sanity: the measure algebra ─────────────────────────────────────────────
+-- ── sanity: the measure algebra ───────────────────────────────────────────────
 
 #guard lines_maxw [(0, "ab"), (2, "cd")] == 4
 #guard lines_last [(0, "ab"), (2, "cd")] == 4
@@ -155,7 +159,7 @@ theorem cat_fits
 
 #guard (cat_m { lines := [(0, "ab")], cost := 0 } { lines := [(0, "c"), (0, "d")], cost := 0 }).maxw == 3
 
--- ── G-L1: the pruned DP is optimal, and the frontier is sub-exponential ─────
+-- ── G-L1: the pruned DP is optimal, and the frontier is sub-exponential ───────
 
 /-- Every layout the tree admits, WITHOUT the Pareto prune — the exhaustive
     ground truth `solve` must match on cost. -/
@@ -166,7 +170,7 @@ def brute_force : ldoc → List meas
   | .flush a     => (brute_force a).map flush_m
   | .nest n a    => (brute_force a).map (nest_m n)
   | .pen c a     => (brute_force a).map (pen_m c)
-  | .choice alts => alts.foldr (fun d acc => brute_force d ++ acc) []
+  | .choice alts => alts.foldr (fun d candidates => brute_force d ++ candidates) []
 
 def brute_opt (W : Nat) (d : ldoc) : Option meas := best_under W (brute_force d)
 
@@ -203,7 +207,7 @@ def nested_def (n : Nat) : ldoc :=
 #guard (frontier (chain 12)).length ≤ 16 -- … still a handful (grows ~n)
 #guard (frontier (nested_def 6)).length ≤ 16
 
--- ── G-L3: the live def-path decision (byte-identical wiring) ────────────────
+-- ── G-L3: the live def-path decision (byte-identical wiring) ──────────────────
 
 /-- Route a def's INLINE-vs-BREAK decision through the solver: the whole-decl
     inline rung (sig + body on one line, measured width `total`) against an
@@ -225,7 +229,7 @@ def inline_def_fits (W total : Nat) : Bool :=
 #guard inline_def_fits 100 101 == false -- over → break
 #guard (List.range 220).all (fun t => inline_def_fits 100 t == decide (t ≤ 100)) -- ≡ (total ≤ W)
 
--- ── G-L4: the preference-map choice over sig shapes ─────────────────────────
+-- ── G-L4: the preference-map choice over sig shapes ───────────────────────────
 
 /-- The solver's selection kernel, TAGGED: return WHICH rung wins under the hard
     width constraint at least cost (the preference weight) — ties to narrower
@@ -267,7 +271,7 @@ def sig_one_line_fits (W prefixW bindersW : Nat) : Bool :=
 #guard sig_one_line_fits 100 12 90 == false -- 12+90=102 > 100 → onePerLine
 #guard (List.range 120).all (fun b => sig_one_line_fits 100 10 b == decide (10 + b ≤ 100))
 
--- ── G-L5: the fold — `.group` and `.alignOr` are degenerate `.choice` ────────
+-- ── G-L5: the fold — `.group` and `.alignOr` are degenerate `.choice` ─────────
 --
 -- A Wadler pretty-printer's `.group` is flat-or-break decided with ONE-token
 -- lookahead; `.alignOr` is a fixed cascade of align options. Both are special

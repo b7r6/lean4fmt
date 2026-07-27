@@ -16,6 +16,7 @@ inductive mode
   | check         -- exit 1 if any file would change
   | write         -- overwrite in place
   | stats         -- coverage accounting: active/verbatim/trivia bytes per file + total
+  | lint          -- report diagnostic-only house-style hazards
   | renamePlan    -- read `NAME AXIS` lines on stdin, print the casing rename plan
   | renameApply   -- orchestrate the rename over the given files (subprocess/file)
   | renameDecls   -- worker: print `NAME<TAB>AXIS` for one file's declarations
@@ -39,6 +40,9 @@ structure Options where
   /-- Diagnostic log threshold: trace|debug|info|warn|error. `debug` shows
       every verbatim opt-out (the coverage trail). -/
   logLevel : String := "warn"
+  /-- Emit one canonical JSON object per file in lint mode. Intended for
+      manifests/shards; suppresses human diagnostic logging. -/
+  json : Bool := false
   /-- Discover each input's lake workspace (nearest lakefile up the tree) and
       append its `lake env` LEAN_PATH to the olean search path. `--lake off`
       keeps the explicit-LEAN_PATH-only behavior. -/
@@ -66,36 +70,38 @@ structure Options where
 
 /-- Parse argv into `Options`. -/
 def parse (args : List String) : Options :=
-  Id.run do
-    let mut o : Options := {}
-    let mut rest := args
-    repeat
-      match rest with
-      | "--check" :: r => o := { o with mode := .check }; rest := r
-      | "--stats" :: r => o := { o with mode := .stats }; rest := r
-      | "--rename-plan" :: r => o := { o with mode := .renamePlan }; rest := r
-      | "--rename-apply" :: r => o := { o with mode := .renameApply }; rest := r
-      | "--rename-decls" :: r => o := { o with mode := .renameDecls }; rest := r
-      | "--rename-rewrite" :: r => o := { o with mode := .renameRewrite }; rest := r
-      | "--resolve-dump" :: r => o := { o with mode := .resolveDump }; rest := r
-      | "--map" :: f :: r => o := { o with mapFile := some f }; rest := r
-      | "--resolve" :: r => o := { o with resolve := true }; rest := r
-      | "--farm" :: f :: r => o := { o with farmDir := some f }; rest := r
-      | "--protect" :: f :: r => o := { o with protect := o.protect ++ [f] }; rest := r
-      | "--write" :: r => o := { o with mode := .write }; rest := r
-      | "-w" :: r => o := { o with mode := .write }; rest := r
-      | "--width" :: n :: r => o := { o with width := some n.toNat! }; rest := r
-      | "--style" :: s :: r => o := { o with preset := s }; rest := r
-      | "--log-level" :: l :: r => o := { o with logLevel := l }; rest := r
-      | "--elab" :: v :: r => o := { o with elabFallback := v != "off" }; rest := r
-      | "--no-retry" :: r => o := { o with retry := false }; rest := r
-      | "--lake" :: v :: r => o := { o with lakeEnv := v != "off" }; rest := r
-      | f :: r => o := { o with files := o.files ++ [f] }; rest := r
-      | [] => break
-    return o
+  go {} args
+  where
+    go (options : Options) : List String → Options
+      | "--check" :: rest => go { options with mode := .check } rest
+      | "--stats" :: rest => go { options with mode := .stats } rest
+      | "--lint" :: rest => go { options with mode := .lint } rest
+      | "--rename-plan" :: rest => go { options with mode := .renamePlan } rest
+      | "--rename-apply" :: rest => go { options with mode := .renameApply } rest
+      | "--rename-decls" :: rest => go { options with mode := .renameDecls } rest
+      | "--rename-rewrite" :: rest => go { options with mode := .renameRewrite } rest
+      | "--resolve-dump" :: rest => go { options with mode := .resolveDump } rest
+      | "--map" :: file :: rest => go { options with mapFile := some file } rest
+      | "--resolve" :: rest => go { options with resolve := true } rest
+      | "--farm" :: dir :: rest => go { options with farmDir := some dir } rest
+      | "--protect" :: file :: rest =>
+        go { options with protect := options.protect ++ [file] } rest
+      | "--write" :: rest => go { options with mode := .write } rest
+      | "-w" :: rest => go { options with mode := .write } rest
+      | "--width" :: width :: rest =>
+        go { options with width := some width.toNat! } rest
+      | "--style" :: preset :: rest => go { options with preset } rest
+      | "--log-level" :: level :: rest => go { options with logLevel := level } rest
+      | "--json" :: rest => go { options with json := true } rest
+      | "--elab" :: value :: rest =>
+        go { options with elabFallback := value != "off" } rest
+      | "--no-retry" :: rest => go { options with retry := false } rest
+      | "--lake" :: value :: rest => go { options with lakeEnv := value != "off" } rest
+      | file :: rest => go { options with files := options.files ++ [file] } rest
+      | [] => options
 
 def usage : String :=
-  "Usage: lean4fmt [--check | --write | --stats] [--width N] [--style NAME] [--elab auto|off] [--lake auto|off] <file...>\n\n"
+  "Usage: lean4fmt [--check | --write | --stats | --lint] [--json] [--width N] [--style NAME] [--elab auto|off] [--lake auto|off] <file...>\n\n"
       ++ "Multiple files in one invocation are supported (each is parsed against its own\n"
       ++ "imports). If a file's syntax-extension initializers ever conflict in-process,\n"
       ++ "fall back to one file per process: find . -name '*.lean' | xargs -n1 lean4fmt"

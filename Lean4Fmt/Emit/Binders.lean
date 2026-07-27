@@ -51,42 +51,50 @@ def binder_text? (b : Lean.Syntax) (preserve : Bool := false) : Option String :=
         return none
       return some (l ++ interior ++ r)
 
+private
+structure binder_build_state where
+  head    : String := ""
+  valid   : Bool := true
+  typeDoc : Doc := .nil
+
+private
+def broken_binder_doc (walk : Lean4Fmt.Emit.Walk) (binder : Lean.Syntax) : emit_m Doc := do
+  let kind := binder.getKind
+  if (kind == ``Lean.Parser.Term.explicitBinder || kind == ``Lean.Parser.Term.implicitBinder
+      || kind == ``Lean.Parser.Term.strictImplicitBinder || kind == ``Lean.Parser.Term.instBinder)
+      && !Lean4Fmt.Syntax.interior_has_line_comment binder then
+    let arguments := binder.getArgs
+    if arguments.size ≥ 3 then
+      let left := (bare_src arguments[0]!).trimAscii.toString
+      let right := (bare_src arguments[arguments.size - 1]!).trimAscii.toString
+      let mut state : binder_build_state := {}
+      for child in arguments.extract 1 (arguments.size - 1) do
+        let text := (bare_src child).trimAscii.toString
+        if text.isEmpty then continue
+        if !text.any (· == '\n') then
+          state := { state with
+            head := if state.head.isEmpty then text else state.head ++ " " ++ text }
+        else
+          let childArguments := child.getArgs
+          if childArguments.size == 2
+              && (bare_src childArguments[0]!).trimAscii.toString == ":" then
+            let typeDoc ← walk childArguments[1]!
+            if Lean4Fmt.Doc.hasMultilineVerbatim typeDoc then
+              state := { state with valid := false }
+            else
+              state := { state with typeDoc := .text " : " ++ typeDoc }
+          else
+            state := { state with valid := false }
+      if state.valid && !state.head.isEmpty then
+        return .text (left ++ state.head) ++ state.typeDoc ++ .text right
+  verbatim binder
+
 /-- A binder doc: active single-line text when `binderText?` can hold it;
     a MULTI-LINE binder walks its type (chains/apps lay out actively inside
     the brackets); verbatim only when the shape offers no seam. -/
 def binder_doc (walk : Lean4Fmt.Emit.Walk) (b : Lean.Syntax) : emit_m Doc := do
   match binder_text? b (← read).spacing.preserveBinders with
   | some t => pure (.text t)
-  | none =>
-    -- [l, names…, (":" type)?, r] — names single-line, type WALKED
-    let k := b.getKind
-    if (k == ``Lean.Parser.Term.explicitBinder || k == ``Lean.Parser.Term.implicitBinder
-        || k == ``Lean.Parser.Term.strictImplicitBinder || k == ``Lean.Parser.Term.instBinder)
-        && !Lean4Fmt.Syntax.interior_has_line_comment b then
-      let a := b.getArgs
-      if a.size ≥ 3 then
-        let l := (bare_src a[0]!).trimAscii.toString
-        let r := (bare_src a[a.size-1]!).trimAscii.toString
-        -- the interior: leading name tokens single-line, then a type slot
-        -- whose LAST child is the type term (walked)
-        let mut head := ""
-        let mut ok := true
-        let mut tyDoc : Doc := .nil
-        for c in a.extract 1 (a.size - 1) do
-          let t := (bare_src c).trimAscii.toString
-          if t.isEmpty then continue
-          if !t.any (· == '\n') then
-            head := if head.isEmpty then t else head ++ " " ++ t
-          else
-            -- multi-line piece: the `: τ` slot — walk the type term
-            let ca := c.getArgs
-            if ca.size == 2 && (bare_src ca[0]!).trimAscii.toString == ":" then
-              let d ← walk ca[1]!
-              if Lean4Fmt.Doc.hasMultilineVerbatim d then ok := false
-              else tyDoc := .text " : " ++ d
-            else ok := false
-        if ok && !head.isEmpty then
-          return .text (l ++ head) ++ tyDoc ++ .text r
-    verbatim b
+  | none => broken_binder_doc walk b
 
 end Lean4Fmt.Emit

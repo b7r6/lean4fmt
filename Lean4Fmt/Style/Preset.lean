@@ -29,6 +29,20 @@ def straylight : Style := {
   -- the ServeFd house convention: snake-everything but namespaces (types too —
   -- `upstream_slot`, `pooled_upstream_state`; the `WorkerState` outliers normalize)
   naming := { namespaces := .upperCamel, types := .snake, theorems := .snake, terms := .snake }
+  -- systems terms of art survive the three-character floor; lazy one-letter
+  -- locals do not acquire a blanket exemption.
+  linting := {
+    symbolMinChars := 3
+    branchDensityMax := 12
+    handlerParameterMax := 6
+    requireStanzaComments := true
+    requireTraditionalInstances := true
+    requirePositionalLoopNames := true
+    requireSemanticPatternBinders := true
+    symbolAllow := [(2, ["fd", "ud"])]
+    symbolDeny := ["acc", "tmp", "foo", "bar", "baz"]
+    fieldAllow := [(2, ["st"])]
+  }
 }
 
 /-- Placeholder — tuned to minimize mathlib4 churn (§9). Currently = Straylight
@@ -38,6 +52,7 @@ def mathlib : Style := { straylight with
   breaking := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := true, bodyOwnLine := false, glueFun := true, opBreak := .trailing, listFill := true }
   alignment := { structFields := .never, matchArms := .never, recordFields := .never, trailingComments := .never }
   blankLines := { straylight.blankLines with policy := .preserve }
+  linting := {}
 }
 
 /-- The `aniva` style (Pantograph-derived), PRESCRIPTIVE: one canonical fixed

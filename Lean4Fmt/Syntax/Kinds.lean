@@ -285,8 +285,8 @@ partial
 def quot_term_ranges? (stx : Lean.Syntax) : Option (Array (Nat × Nat)) :=
   go stx (some #[])
   where
-    go (s : Lean.Syntax) (acc : Option (Array (Nat × Nat))) : Option (Array (Nat × Nat)) :=
-      match acc with
+    go (s : Lean.Syntax) (ranges : Option (Array (Nat × Nat))) : Option (Array (Nat × Nat)) :=
+      match ranges with
       | none => none
       | some a =>
         match s with
@@ -295,7 +295,7 @@ def quot_term_ranges? (stx : Lean.Syntax) : Option (Array (Nat × Nat)) :=
             match s.getPos?, s.getTailPos? with
             | some p, some q => some (a.push (p.byteIdx, q.byteIdx))
             | _, _ => none
-          else args.foldl (fun acc c => go c acc) (some a)
+          else args.foldl (fun found child => go child found) (some a)
         | _ => some a
 
 /-- A DSL template opener (`[ident|`) anywhere in the text — the lexical
@@ -305,9 +305,9 @@ def has_template_opener (s : String) : Bool :=
   Id.run do
     let a : Array Char := s.toList.toArray
     let n := a.size
-    for i in [0:n] do
-      if a[i]! == '[' && i + 1 < n && (a[i+1]!.isAlpha || a[i+1]! == '_') then
-        let mut j := i + 1
+    for idx in [0:n] do
+      if a[idx]! == '[' && idx + 1 < n && (a[idx+1]!.isAlpha || a[idx+1]! == '_') then
+        let mut j := idx + 1
         while _hj : j < n && (a[j]!.isAlphanum || a[j]! == '_' || a[j]! == '.') do
           j := j + 1
         if _hj : j < n then

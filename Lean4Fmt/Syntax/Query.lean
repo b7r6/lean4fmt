@@ -21,7 +21,7 @@ def leaf_toks : Lean.Syntax → Array String
   | .atom _ v      => if v.isEmpty then #[] else #[v]
   | .ident _ _ n _ => #[n.toString]
   | .missing       => #[]
-  | .node _ _ args => args.foldl (fun acc x => acc ++ leaf_toks x) #[]
+  | .node _ _ args => args.foldl (fun tokens child => tokens ++ leaf_toks child) #[]
 
 /-- The trivia (leading+trailing) of a leaf's `SourceInfo`, as raw text. -/
 private
@@ -34,7 +34,7 @@ partial
 def trivia_text : Lean.Syntax → String
   | .atom info _      => trivia_of_info info
   | .ident info _ _ _ => trivia_of_info info
-  | .node _ _ args    => args.foldl (fun acc x => acc ++ trivia_text x) ""
+  | .node _ _ args    => args.foldl (fun text child => text ++ trivia_text child) ""
   | .missing          => ""
 
 /-- Non-whitespace content of ALL trivia — i.e. the comment characters (trivia is
@@ -52,7 +52,7 @@ def comment_content (stx : Lean.Syntax) : String :=
 partial
 def kind_spine (stx : Lean.Syntax) : Array Name :=
   match stx with
-  | .node _ kind args => args.foldl (fun acc x => acc ++ kind_spine x) #[kind]
+  | .node _ kind args => args.foldl (fun kinds child => kinds ++ kind_spine child) #[kind]
   | _                 => #[]
 
 /-- First identifier appearing in a subtree (the target of `namespace`/`open`). -/
@@ -60,7 +60,9 @@ partial
 def first_ident : Lean.Syntax → Name
   | .ident _ _ n _ => n
   | .node _ _ args =>
-    args.foldl (fun acc x => if acc.isAnonymous then first_ident x else acc) .anonymous
+    args.foldl
+      (fun found child => if found.isAnonymous then first_ident child else found)
+      .anonymous
   | _ => .anonymous
 
 /-- Safe child access. -/

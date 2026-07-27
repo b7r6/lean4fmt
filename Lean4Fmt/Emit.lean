@@ -29,6 +29,133 @@ namespace Lean4Fmt.Emit
 
 open Lean Lean4Fmt.Doc Lean4Fmt.Style
 
+private
+def command_kinds : Array Name :=
+  #[
+    ``Lean.Parser.Command.structure,
+    ``Lean.Parser.Command.inductive,
+    ``Lean.Parser.Command.mutual,
+    ``Lean.Parser.Command.open,
+    ``Lean.Parser.Command.namespace,
+    ``Lean.Parser.Command.end,
+    ``Lean.Parser.Command.section,
+    ``Lean.Parser.Command.universe,
+    ``Lean.Parser.Command.variable,
+    ``Lean.Parser.Command.elab,
+    `Batteries.Tactic.Alias.alias,
+    ``Lean.Parser.Command.eval,
+    ``Lean.Parser.Command.in
+  ]
+
+private
+def do_kinds : Array Name :=
+  #[
+    ``Lean.Parser.Term.do,
+    ``Lean.Parser.Term.doNested,
+    ``Lean.Parser.Term.doFor,
+    `Lean.Parser.Term.doWhile,
+    `Lean.Parser.Term.doUnless,
+    ``Lean.Parser.Term.doLet,
+    ``Lean.Parser.Term.doLetRec,
+    ``Lean.Parser.Term.doLetElse,
+    ``Lean.Parser.Term.doLetArrow,
+    ``Lean.Parser.Term.doReassign,
+    ``Lean.Parser.Term.doReassignArrow,
+    ``Lean.Parser.Term.doExpr,
+    ``Lean.Parser.Term.doReturn,
+    ``Lean.Parser.Term.doIf,
+    ``Lean.Parser.Term.doMatch
+  ]
+
+private
+def tactic_kinds_primary : Array Name :=
+  #[
+    ``Lean.Parser.Term.byTactic,
+    ``Lean.Parser.Tactic.exact,
+    ``Lean.Parser.Tactic.apply,
+    ``Lean.Parser.Tactic.refine,
+    ``Lean.Parser.Tactic.rwSeq,
+    ``Lean.Parser.Tactic.unfold,
+    ``Lean.Parser.Tactic.induction,
+    ``Lean.Parser.Tactic.cases,
+    ``Lean.Parser.Tactic.tacticHave__,
+    `Lean.Parser.Tactic.tacticHaveI__,
+    `Lean.Parser.Tactic.tacticLetI__,
+    ``Lean.Parser.Tactic.replace,
+    `Lean.cdot,
+    ``Lean.Parser.Tactic.tacticRfl,
+    ``Lean.Parser.Tactic.omega,
+    ``Lean.Parser.Tactic.decide,
+    ``Lean.Parser.Tactic.nativeDecide,
+    ``Lean.Parser.Tactic.constructor,
+    ``Lean.Parser.Tactic.tacticTrivial,
+    ``Lean.Parser.Tactic.contradiction,
+    ``Lean.Parser.Tactic.assumption,
+    ``Lean.Parser.Tactic.tacticAnd_intros,
+    ``Lean.Parser.Tactic.simpAll,
+    ``Lean.Parser.Tactic.intro,
+    ``Lean.Parser.Tactic.intros,
+    ``Lean.Parser.Tactic.simp,
+    `Mathlib.Tactic.tacticSimp_rw___,
+    `Lean.Parser.Tactic.«tacticNext_=>_»,
+    ``Lean.Parser.Tactic.case,
+    ``Lean.Parser.Tactic.allGoals,
+    `Lean.Parser.Tactic.tacticRepeat_,
+    `Lean.Parser.Tactic.Conv.conv,
+    `Lean.calcTactic,
+    `Lean.calc
+  ]
+
+private
+def tactic_kinds_secondary : Array Name :=
+  #[
+    ``Lean.Parser.Tactic.split,
+    `Lean.Parser.Tactic.obtain,
+    `Lean.Parser.Tactic.rcases,
+    ``Lean.Parser.Tactic.show,
+    `Lean.Parser.Tactic.subst,
+    `Lean.Parser.Tactic.«tacticExists_,,»,
+    ``Lean.Parser.Tactic.change,
+    `«tacticBy_cases_:_»,
+    `Lean.Parser.Tactic.tacticSuffices_,
+    `Lean.Parser.Tactic.«tactic_<;>_»,
+    ``Lean.Parser.Tactic.simpAll,
+    `Lean.Parser.Tactic.dsimp,
+    `Lean.Parser.Tactic.simpa,
+    `Lean.Parser.Tactic.simpaUsingBang,
+    `Lean.Parser.Tactic.tacticRwa__,
+    `Lean.Parser.Tactic.first,
+    `Lean.Parser.Tactic.match,
+    `Lean.Parser.Tactic.tacticLet__,
+    `Lean.Parser.Tactic.congr,
+    `Lean.Parser.Tactic.renameI,
+    `Lean.Parser.Tactic.bvDecide,
+    `Lean.Parser.Tactic.left,
+    `Lean.Parser.Tactic.right,
+    `Lean.Parser.Tactic.revert,
+    `Lean.Parser.Tactic.injection,
+    `Lean.Parser.Tactic.tacticInfer_instance,
+    `Lean.Parser.Tactic.tacticExfalso,
+    `Lean.Parser.Tactic.«tacticNomatch_,,»,
+    `Lean.Parser.Tactic.paren,
+    `Lean.Parser.Tactic.generalize,
+    `Lean.Parser.Tactic.classical,
+    `Lean.Parser.Term.byTactic'
+  ]
+
+private
+def is_tactic_kind (kind : Name) : Bool :=
+  tactic_kinds_primary.contains kind || tactic_kinds_secondary.contains kind
+
+private
+def ident_doc (stx : Lean.Syntax) (identifier : Name) : Doc :=
+
+  -- preserve guillemets on keyword-named identifiers.
+  let text := Lean4Fmt.Emit.bare_src stx
+  -- suppress synthetic anonymous identifiers introduced by cdot expansion.
+  .text
+    (if text.isEmpty then (if identifier == .anonymous then "" else identifier.toString) else text)
+
 mutual
 
 /-- The single recursive walker. Dispatches to category emitters; falls back to
@@ -40,157 +167,71 @@ partial def walkCore
             : emit_m Doc := do
   match stx with
   | .missing => pure .nil
-  | .atom _ v => pure (.text v)
-  | .ident _ _ n _ =>
-    -- SOURCE bytes, not `n.toString`: a keyword-named ident (`«have»`,
-    -- `«let»`) round-trips through toString WITHOUT its guillemets and
-    -- reparses as the keyword (found on Pantograph — MANGLED)
-    let t := Lean4Fmt.Emit.bare_src stx
-    -- an EMPTY-SOURCE anonymous ident is SYNTHETIC (cdot expansion): its
-    -- toString would INJECT the literal text "[anonymous]" into the output
-    -- (gate-caught on mathlib Determinant, tokens +1) — emit nothing
-    pure (.text (if t.isEmpty then (if n == Lean.Name.anonymous then "" else n.toString) else t))
-  | .node _ kind _ =>
-    if kind == ``Lean.Parser.Module.module then Module.emit walk stx
-    else if kind == ``Lean.Parser.Command.declaration
-         || kind == `lemma then   -- mathlib's `lemma` command: theorem-shaped
-      Decl.emit walk stx
-    else if kind == ``Lean.Parser.Command.structure || kind == ``Lean.Parser.Command.inductive
-         || kind == ``Lean.Parser.Command.mutual
-         || kind == ``Lean.Parser.Command.open
-         || kind == ``Lean.Parser.Command.namespace
-         || kind == ``Lean.Parser.Command.end
-         || kind == ``Lean.Parser.Command.section
-         || kind == ``Lean.Parser.Command.universe
-         || kind == ``Lean.Parser.Command.variable
-         || kind == ``Lean.Parser.Command.elab
-         || kind == `Batteries.Tactic.Alias.alias
-         || kind == ``Lean.Parser.Command.eval
-         || kind == ``Lean.Parser.Command.in then
-      Command.emit walk stx
-    else if (← read).breaking.preserveLineBreaks && kind == ``Lean.Parser.Term.do
-        && !(Lean4Fmt.Emit.bare_src stx).any (· == '\n')
-        && !(Lean4Fmt.Emit.bare_src stx).isEmpty then
-      pure (.text (Lean4Fmt.Emit.bare_src stx))
-    else if kind == ``Lean.Parser.Term.do
-         || kind == ``Lean.Parser.Term.doNested
-         || kind == ``Lean.Parser.Term.doFor
-         || kind == `Lean.Parser.Term.doWhile
-         || kind == `Lean.Parser.Term.doUnless
-         || kind == ``Lean.Parser.Term.doLet
-         || kind == ``Lean.Parser.Term.doLetRec
-         || kind == ``Lean.Parser.Term.doLetElse
-         || kind == ``Lean.Parser.Term.doLetArrow
-         || kind == ``Lean.Parser.Term.doReassign
-         || kind == ``Lean.Parser.Term.doReassignArrow
-         || kind == ``Lean.Parser.Term.doExpr
-         || kind == ``Lean.Parser.Term.doReturn
-         || kind == ``Lean.Parser.Term.doIf
-         || kind == ``Lean.Parser.Term.doMatch then
-      DoNotation.emit walk stx
-    else if kind == ``Lean.Parser.Term.byTactic
-         || kind == ``Lean.Parser.Tactic.exact
-         || kind == ``Lean.Parser.Tactic.apply
-         || kind == ``Lean.Parser.Tactic.refine
-         || kind == ``Lean.Parser.Tactic.rwSeq
-         || kind == ``Lean.Parser.Tactic.unfold
-         || kind == ``Lean.Parser.Tactic.induction
-         || kind == ``Lean.Parser.Tactic.cases
-         || kind == ``Lean.Parser.Tactic.tacticHave__
-         || kind == `Lean.Parser.Tactic.tacticHaveI__
-         || kind == `Lean.Parser.Tactic.tacticLetI__
-         || kind == ``Lean.Parser.Tactic.replace
-         || kind == `Lean.cdot
-         || kind == ``Lean.Parser.Tactic.tacticRfl
-         || kind == ``Lean.Parser.Tactic.omega
-         || kind == ``Lean.Parser.Tactic.decide
-         || kind == ``Lean.Parser.Tactic.nativeDecide
-         || kind == ``Lean.Parser.Tactic.constructor
-         || kind == ``Lean.Parser.Tactic.tacticTrivial
-         || kind == ``Lean.Parser.Tactic.contradiction
-         || kind == ``Lean.Parser.Tactic.assumption
-         || kind == ``Lean.Parser.Tactic.tacticAnd_intros
-         || kind == ``Lean.Parser.Tactic.simpAll
-         || kind == ``Lean.Parser.Tactic.intro
-         || kind == ``Lean.Parser.Tactic.intros
-         || kind == ``Lean.Parser.Tactic.simp
-         || kind == `Mathlib.Tactic.tacticSimp_rw___
-         || kind == `Lean.Parser.Tactic.«tacticNext_=>_»
-         || kind == ``Lean.Parser.Tactic.case
-         || kind == ``Lean.Parser.Tactic.allGoals
-         || kind == `Lean.Parser.Tactic.tacticRepeat_
-         || kind == `Lean.Parser.Tactic.Conv.conv
-         || kind == `Lean.calcTactic
-         || kind == `Lean.calc
-         || kind == ``Lean.Parser.Tactic.split
-         || kind == `Lean.Parser.Tactic.obtain
-         || kind == `Lean.Parser.Tactic.rcases
-         || kind == ``Lean.Parser.Tactic.show
-         || kind == `Lean.Parser.Tactic.subst
-         || kind == `Lean.Parser.Tactic.«tacticExists_,,»
-         || kind == ``Lean.Parser.Tactic.change
-         || kind == `«tacticBy_cases_:_»
-         || kind == `Lean.Parser.Tactic.tacticSuffices_
-         || kind == `Lean.Parser.Tactic.«tactic_<;>_»
-         || kind == ``Lean.Parser.Tactic.simpAll
-         || kind == `Lean.Parser.Tactic.dsimp
-         || kind == `Lean.Parser.Tactic.simpa
-         || kind == `Lean.Parser.Tactic.simpaUsingBang
-         || kind == `Lean.Parser.Tactic.tacticRwa__
-         || kind == `Lean.Parser.Tactic.first
-         || kind == `Lean.Parser.Tactic.match
-         || kind == `Lean.Parser.Tactic.tacticLet__
-         || kind == `Lean.Parser.Tactic.congr
-         || kind == `Lean.Parser.Tactic.renameI
-         || kind == `Lean.Parser.Tactic.bvDecide
-         || kind == `Lean.Parser.Tactic.left
-         || kind == `Lean.Parser.Tactic.right
-         || kind == `Lean.Parser.Tactic.revert
-         || kind == `Lean.Parser.Tactic.injection
-         || kind == `Lean.Parser.Tactic.tacticInfer_instance
-         || kind == `Lean.Parser.Tactic.tacticExfalso
-         || kind == `Lean.Parser.Tactic.«tacticNomatch_,,»
-         || kind == `Lean.Parser.Tactic.paren
-         || kind == `Lean.Parser.Tactic.generalize
-         || kind == `Lean.Parser.Tactic.classical
-         || kind == `Lean.Parser.Term.byTactic' then
-      Tactic.emit walk stx
-    -- expression constructs → Term (flat, comment-guarded; else verbatim).
-    -- preserveLineBreaks: TERMS ride byte-exact wholesale — single-line via
-    -- the active-text default, multi-line via verbatim. The author's break
-    -- decisions inside expressions are load-bearing; structure (decls, do,
-    -- tactics, seams) stays active.
-    else if (← read).breaking.preserveLineBreaks
-        && (kind == ``Lean.Parser.Term.match || Lean4Fmt.Syntax.is_bin_op kind
-            || kind.toString.startsWith "Lean.Parser.Term"
-            || kind.toString.startsWith "term"
-            || kind.toString.startsWith "«term") then
-      let t := Lean4Fmt.Emit.bare_src stx
-      if !t.isEmpty && !t.any (· == '\n') then pure (.text t)
-      else verbatim stx
-    else if Lean4Fmt.Syntax.is_bin_op kind
-         || Lean4Fmt.Syntax.is_binder_comma kind
-         || Lean4Fmt.Syntax.walk_term_kinds.contains kind then
-      Term.emit walk stx
-    -- default: a SINGLE-LINE construct rides as active text — byte-exact
-    -- (bareSrc is the source bytes, inter-token trivia included) and
-    -- content-safe either way (T1 covers text and verbatim alike); only
-    -- multi-line constructs need opaque re-anchoring (§4.1). This is what
-    -- makes literals, types, and custom notations ACTIVE without per-kind
-    -- ports — the opt-out log shows only the multi-line residue.
+  | .atom _ value => pure (.text value)
+  | .ident _ _ identifier _ => pure (ident_doc stx identifier)
+  | .node _ kind _ => walk_node stx kind
+
+/-- Route a syntax node to its category emitter or canonical fallback. -/
+partial def walk_node
+    (stx : Lean.Syntax)
+    (kind : Name)
+    : emit_m Doc := do
+  if kind == ``Lean.Parser.Module.module then
+    Module.emit walk stx
+  else if kind == ``Lean.Parser.Command.declaration || kind == `lemma then
+    Decl.emit walk stx
+  else if command_kinds.contains kind then
+    Command.emit walk stx
+  else if (← read).breaking.preserveLineBreaks && kind == ``Lean.Parser.Term.do
+      && !(Lean4Fmt.Emit.bare_src stx).any (· == '\n')
+      && !(Lean4Fmt.Emit.bare_src stx).isEmpty then
+    pure (.text (Lean4Fmt.Emit.bare_src stx))
+  else if do_kinds.contains kind then
+    DoNotation.emit walk stx
+  else if is_tactic_kind kind then
+    Tactic.emit walk stx
+  else if (← read).breaking.preserveLineBreaks
+      && (kind == ``Lean.Parser.Term.match || Lean4Fmt.Syntax.is_bin_op kind
+          || kind.toString.startsWith "Lean.Parser.Term"
+          || kind.toString.startsWith "term"
+          || kind.toString.startsWith "«term") then
+    let text := Lean4Fmt.Emit.bare_src stx
+    if !text.isEmpty && !text.any (· == '\n') then pure (.text text) else verbatim stx
+  else if Lean4Fmt.Syntax.is_bin_op kind
+      || Lean4Fmt.Syntax.is_binder_comma kind
+      || Lean4Fmt.Syntax.walk_term_kinds.contains kind then
+    Term.emit walk stx
+  else
+    let text := Lean4Fmt.Emit.bare_src stx
+    if !text.isEmpty && !text.any (· == '\n') then
+      match Lean4Fmt.Emit.token_join? stx with
+      | some joined => pure (.text joined)
+      | none => pure (.text (Lean4Fmt.Emit.canon_ws_piecewise stx text))
     else
-      let t := Lean4Fmt.Emit.bare_src stx
-      if !t.isEmpty && !t.any (· == '\n') then
-        -- canonical respacing (zero-passthrough): ws gaps collapse to one
-        -- space; when tokenJoin? can't (choice nodes, synthetic-info gaps,
-        -- interior comments), the LEXICAL ws-collapse still applies — token
-        -- and comment bytes survive, interior space runs do not. Quotation
-        -- kinds are content byte-exact (pin); templates are guarded inside
-        -- canonVerbatimWs itself.
-        match Lean4Fmt.Emit.token_join? stx with
-        | some t' => pure (.text t')
-        | none => pure (.text (Lean4Fmt.Emit.canon_ws_piecewise stx t))
-      else verbatim stx
+      verbatim stx
+
+/-- Commit a token join and discard the stale diagnostic from the bailed node. -/
+private partial def commit_token_join
+    (stx : Lean.Syntax)
+    (text : String)
+    : emit_m Doc := do
+  let pos := (stx.getPos?.map (·.byteIdx)).getD 0
+  modify fun diagnostics =>
+    if diagnostics.size > 0 && diagnostics[diagnostics.size - 1]!.pos == pos
+        && diagnostics[diagnostics.size - 1]!.rule == "verbatim" then
+      diagnostics.pop
+    else
+      diagnostics
+  pure (.text text)
+
+private partial def finish_verbatim
+    (stx : Lean.Syntax)
+    (doc : Doc)
+    (text : String)
+    : emit_m Doc := do
+  if text.any (· == '\n') || (← read).breaking.preserveLineBreaks then return doc
+  let some joined := Lean4Fmt.Emit.token_join? stx | return doc
+  commit_token_join stx joined
 
 /-- `walkCore` + the single-line bail interception: a DISPATCHED emitter that
     bails whole-node (`.verbatim`, one line) still gets the canonical token
@@ -203,19 +244,8 @@ partial def walk
             : emit_m Doc := do
   let d ← walkCore stx
   match d with
-  | .verbatim s _ =>
-    if s.any (· == '\n') || (← read).breaking.preserveLineBreaks then return d
-    match Lean4Fmt.Emit.token_join? stx with
-    | some t =>
-      -- walkCore's bail logged an opt-out for THIS node, but the respaced
-      -- text ships — pop the stale entry so the trail reports emissions
-      -- (it was the misreport the census had to caveat)
-      let pos := (stx.getPos?.map (·.byteIdx)).getD 0
-      modify fun ds =>
-        if ds.size > 0 && ds[ds.size - 1]!.pos == pos
-            && ds[ds.size - 1]!.rule == "verbatim" then ds.pop else ds
-      return .text t
-    | none => return d
+  -- discard the stale opt-out when a single-line bail ships as respaced text.
+  | .verbatim text _ => finish_verbatim stx d text
   | _ => return d
 
 end

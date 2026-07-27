@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "rules": {
+    "house/branch-density": 0,
+    "house/function-size": 0,
+    "house/handler-parameter-pack": 0,
+    "house/match-arm-bind-chain": 0,
+    "house/match-arm-operations": 0,
+    "house/ruler-width": 0,
+    "house/stanza-comment": 0,
+    "house/state-bundle": 0,
+    "parse": 0,
+    "symbol-instance": 0,
+    "symbol-loop-index": 0,
+    "symbol-length": 7537,
+    "symbol-name": 0,
+    "trivia/trailing-whitespace": 0
+  }
+}

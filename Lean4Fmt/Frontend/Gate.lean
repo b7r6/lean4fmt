@@ -41,11 +41,143 @@ def parse_full?
     (path contents : String)
     (elabFallback : Bool := true)
     : IO (Option Lean.Syntax) := do
-  match ← parse_module? env path contents with
-  | some stx => pure (some stx)
-  | none =>
-    if elabFallback then Session.parse_module? env path contents
-    else pure none
+  let some stx ← parse_module? env path contents |
+    if elabFallback then Session.parse_module? env path contents else pure none
+  pure (some stx)
+
+private
+structure rejection_context where
+  path     : String
+  active   : String
+  active2  : String
+  source   : Lean.Syntax
+  output   : Lean.Syntax
+  tokensOk : Bool
+  spineOk  : Bool
+  fixedOk  : Bool
+
+/-- Materialize a rejected candidate for the opt-in drill workflow. -/
+private unsafe
+def dump_rejection (context : rejection_context) : IO Unit := do
+  let some dir ← IO.getEnv "L4F_DRILL_DIR" | return
+  let slug := context.path.replace "/" "_"
+  IO.FS.createDirAll ⟨dir⟩
+  IO.FS.writeFile ⟨s!"{dir}/{slug}.1.lean"⟩ context.active
+  if !context.fixedOk then IO.FS.writeFile ⟨s!"{dir}/{slug}.2.lean"⟩ context.active2
+  if !context.tokensOk then
+    let sourceTokens := Lean4Fmt.Syntax.leaf_toks context.source
+    let outputTokens := Lean4Fmt.Syntax.leaf_toks context.output
+    let mut idx := 0
+    while idx < Nat.min sourceTokens.size outputTokens.size
+        && sourceTokens[idx]! == outputTokens[idx]! do
+      idx := idx + 1
+    IO.eprintln
+      s!"TOKDIFF {context.path} @{idx}: {(sourceTokens.extract (idx - 2) (idx + 4)).toList} vs {(outputTokens.extract (idx - 2) (idx + 4)).toList} (sizes {sourceTokens.size}/{outputTokens.size})"
+  if context.tokensOk && !context.spineOk then
+    let sourceSpine := Lean4Fmt.Syntax.kind_spine context.source
+    let outputSpine := Lean4Fmt.Syntax.kind_spine context.output
+    let mut idx := 0
+    while idx < Nat.min sourceSpine.size outputSpine.size
+        && sourceSpine[idx]! == outputSpine[idx]! do
+      idx := idx + 1
+    IO.eprintln
+      s!"SPINEDIFF {context.path} @{idx}: {(sourceSpine.extract (idx - 2) (idx + 4)).toList} vs {(outputSpine.extract (idx - 2) (idx + 4)).toList} (sizes {sourceSpine.size}/{outputSpine.size})"
+
+private
+def parse_failure
+    (contents : String)
+    (elabFallback : Bool)
+    : String × Array Lean4Fmt.Rules.Diagnostic :=
+  let message :=
+    if elabFallback then
+      "not formatted: could not parse (unresolved imports or unsupported syntax)"
+    else
+      "not formatted: needs the elaborating frontend (rerun with --elab auto)"
+  (contents, #[{ severity := .warning, rule := "parse", message }])
+
+private unsafe
+def reject_reparse
+    (path contents active : String)
+    (diags : Array Lean4Fmt.Rules.Diagnostic)
+    : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
+  -- expose the invalid candidate to the opt-in drill workflow.
+  if let some dir ← IO.getEnv "L4F_DRILL_DIR" then
+    IO.FS.createDirAll ⟨dir⟩
+    IO.FS.writeFile ⟨s!"{dir}/{path.replace "/" "_"}.noparse.lean"⟩ active
+
+  -- return the source with a visible safety-gate diagnostic.
+  pure
+    (
+      contents,
+      diags.push
+        { severity := .warning,
+          rule     := "gate",
+          message  := "not formatted: output failed to reparse (gate fallback)" }
+    )
+
+private unsafe
+def align_source_frontend
+    (env : Environment)
+    (path contents active : String)
+    (elabFallback : Bool)
+    (source : Lean.Syntax)
+    : IO Lean.Syntax := do
+  if elabFallback
+      && (← parse_module? env path active).isNone
+      && (← parse_module? env path contents).isSome then
+    pure ((← Session.parse_module? env path contents).getD source)
+  else
+    pure source
+
+private
+def rejection_reason (tokensOk spineOk commentsOk headerOk : Bool) : String :=
+  if !tokensOk then
+    "tokens"
+  else if !spineOk then
+    "tree"
+  else if !commentsOk then "comments" else if !headerOk then "header" else "fixed-point"
+
+private unsafe
+def validate_candidate
+    (env : Environment)
+    (path contents active : String)
+    (style : Lean4Fmt.Style.Style)
+    (elabFallback : Bool)
+    (source output : Lean.Syntax)
+    (diags : Array Lean4Fmt.Rules.Diagnostic)
+    : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
+  -- align both inputs on the elaborating frontend when the output requires it.
+  let source ← align_source_frontend env path contents active elabFallback source
+  let (active2, _) := Lean4Fmt.Emit.format style output.updateLeading
+
+  -- prove preservation of tokens, tree shape, comments, header, and fixed point.
+  let tokensOk := Lean4Fmt.Syntax.leaf_toks source == Lean4Fmt.Syntax.leaf_toks output
+  let spineOk := Lean4Fmt.Syntax.kind_spine source == Lean4Fmt.Syntax.kind_spine output
+  let commentsOk := Lean4Fmt.Syntax.comment_content source == Lean4Fmt.Syntax.comment_content output
+  let headerOk := header_toks source == header_toks output
+  let fixedOk := active2 == active
+  if tokensOk && spineOk && commentsOk && headerOk && fixedOk then
+    return (active, diags)
+
+  -- record the failed proof and conservatively return the original source.
+  let why := rejection_reason tokensOk spineOk commentsOk headerOk
+  dump_rejection
+    { path,
+      active,
+      active2,
+      source,
+      output,
+      tokensOk,
+      spineOk,
+      fixedOk }
+  pure
+    (
+      contents,
+      diags.push
+        { severity := .warning,
+          rule     := "gate",
+          message  := s!"not formatted: gate rejected output ({why})" }
+    )
 
 /-- The safety gate: return the text to emit — the actively-formatted output when
     it provably preserves meaning and is a fixed point, else the original — paired
@@ -60,104 +192,19 @@ def format_safe
     (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
     (elabFallback : Bool := true)
     : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
-  match ← parse_full? env path contents elabFallback with
-  | none =>
-    let msg :=
-      if elabFallback then
-        "not formatted: could not parse (unresolved imports or unsupported syntax)"
-      else
-        "not formatted: needs the elaborating frontend (rerun with --elab auto)"
-    pure (contents, #[{ severity := .warning, rule := "parse", message := msg }])
-  | some stx =>
-    let lintDiags := Lean4Fmt.Rules.lint stx
-    let (active, emitDiags) := Lean4Fmt.Emit.format style stx.updateLeading
-    let diags := lintDiags ++ emitDiags
-    if active == contents then pure (contents, diags)
-    else
-      match ← parse_full? env path active elabFallback with
-      | none =>
-        -- gate fallback is NEVER silent: an emitter bug that breaks the reparse
-        -- would otherwise masquerade as a byte-identical "OK" in --check
-        -- (drill note: this class has NO parenthesized tag in its message —
-        -- outcome greps must include 'failed to reparse')
-        if let some dir ← IO.getEnv "L4F_DRILL_DIR" then
-          IO.FS.createDirAll ⟨dir⟩
-          IO.FS.writeFile ⟨s!"{dir}/{path.replace "/" "_"}.noparse.lean"⟩ active
-        pure
-          (
-            contents,
-            diags.push
-              { severity := .warning,
-                rule     := "gate",
-                message  := "not formatted: output failed to reparse (gate fallback)" }
-          )
-      | some stx2 =>
-        -- FRONTEND ALIGNMENT: a reformat can change which parser path a file
-        -- takes (a sig-break moved a scoped-notation atom and the cheap
-        -- parser gave up where it handled the source) — and the cheap and
-        -- elaborating frontends can TOKENIZE such atoms differently, so
-        -- comparing across paths spuriously rejects (gate-caught on mathlib
-        -- PiSystem: source cheap / output Session → phantom "tokens").
-        -- When the OUTPUT needed the elaborating frontend, re-parse the
-        -- SOURCE through it too and compare like with like; if that parse
-        -- fails, keep the conservative reject.
-        let stx ← do
-          if elabFallback
-              && (← parse_module? env path active).isNone
-              && (← parse_module? env path contents).isSome then
-            pure ((← Session.parse_module? env path contents).getD stx)
-          else pure stx
-        let (active2, _) := Lean4Fmt.Emit.format style stx2.updateLeading
-        let toksOk := Lean4Fmt.Syntax.leaf_toks stx == Lean4Fmt.Syntax.leaf_toks stx2 -- tokens preserved
-        let spineOk := Lean4Fmt.Syntax.kind_spine stx == Lean4Fmt.Syntax.kind_spine stx2 -- tree shape kept: in
-        -- whitespace-sensitive regions (tactic bullets, branches) identical
-        -- tokens can parse to a DIFFERENT tree — re-scoped meaning the token
-        -- check alone cannot see
-        let cmtOk := Lean4Fmt.Syntax.comment_content stx == Lean4Fmt.Syntax.comment_content stx2 -- comments kept
-        let hdrOk := header_toks stx == header_toks stx2 -- imports in header
-        let fixOk := active2 == active -- fixed point
-        if toksOk && spineOk && cmtOk && hdrOk && fixOk then pure (active, diags)
-        else
-          let why :=
-            if !toksOk then
-              "tokens"
-            else if !spineOk then
-              "tree"
-            else if !cmtOk then "comments" else if !hdrOk then "header" else "fixed-point"
-          -- L4F_DRILL_DIR: the drill loop's window into the otherwise
-          -- unobservable pre-gate text — dump the rejected output (and the
-          -- pass-2 text on fixed-point rejects), print the first token/spine
-          -- divergence. Off unless the env var is set (this retires the
-          -- hand-patched scratch-Gate dance the campaign log complains about).
-          if let some dir ← IO.getEnv "L4F_DRILL_DIR" then
-            let slug := path.replace "/" "_"
-            IO.FS.createDirAll ⟨dir⟩
-            IO.FS.writeFile ⟨s!"{dir}/{slug}.1.lean"⟩ active
-            if !fixOk then IO.FS.writeFile ⟨s!"{dir}/{slug}.2.lean"⟩ active2
-            if !toksOk then
-              let t1 := Lean4Fmt.Syntax.leaf_toks stx
-              let t2 := Lean4Fmt.Syntax.leaf_toks stx2
-              let mut i := 0
-              while i < Nat.min t1.size t2.size && t1[i]! == t2[i]! do
-                i := i + 1
-              IO.eprintln
-                s!"TOKDIFF {path} @{i}: {(t1.extract (i - 2) (i + 4)).toList} vs {(t2.extract (i - 2) (i + 4)).toList} (sizes {t1.size}/{t2.size})"
-            if toksOk && !spineOk then
-              let k1 := Lean4Fmt.Syntax.kind_spine stx
-              let k2 := Lean4Fmt.Syntax.kind_spine stx2
-              let mut i := 0
-              while i < Nat.min k1.size k2.size && k1[i]! == k2[i]! do
-                i := i + 1
-              IO.eprintln
-                s!"SPINEDIFF {path} @{i}: {(k1.extract (i - 2) (i + 4)).toList} vs {(k2.extract (i - 2) (i + 4)).toList} (sizes {k1.size}/{k2.size})"
-          pure
-            (
-              contents,
-              diags.push
-                { severity := .warning,
-                  rule     := "gate",
-                  message  := s!"not formatted: gate rejected output ({why})" }
-            )
+  let some source ← parse_full? env path contents elabFallback |
+    return parse_failure contents elabFallback
+
+  -- lint and render the parsed source.
+  let lintDiags := Lean4Fmt.Rules.lint style source contents
+  let (active, emitDiags) := Lean4Fmt.Emit.format style source.updateLeading
+  let diags := lintDiags ++ emitDiags
+  if active == contents then return (contents, diags)
+
+  -- reject broken output or prove the complete safety-gate predicate.
+  let some output ← parse_full? env path active elabFallback |
+    return ← reject_reparse path contents active diags
+  validate_candidate env path contents active style elabFallback source output diags
 
 /-- Build the environment for a file (loads its imports) and format it. -/
 unsafe

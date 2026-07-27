@@ -1,0 +1,482 @@
+/-
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                                              // LEAN4FMT // RULES // NAMING LAWS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    Focused checks for syntax-derived binding roles. Classification is policy
+    input, not an exemption: patterns, match arms, and tactics remain diagnostic
+    until an explicit tree-local policy changes that decision.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-/
+
+import Lean4Fmt.Rules.Naming
+
+namespace Lean4Fmt.Rules.Naming
+
+open Lean Lean4Fmt.Style
+
+/-- The binding manifest has one authoritative classification per parser kind. -/
+example : (binding_kind_inventory.map (·.1)).Nodup := by native_decide
+
+/-- Every manifest entry is recovered exactly by the public classifier. -/
+example : binding_kind_inventory.all (fun entry => role_of_kind entry.1 == some entry.2) = true := by
+  native_decide
+
+example : role_of_kind ``Lean.Parser.Command.declId = some .declaration := by decide
+example : role_of_kind ``Lean.Parser.Term.explicitBinder = some .localBinder := by decide
+example : role_of_kind ``Lean.Parser.Term.letPatDecl = some .patternBinder := by decide
+example : role_of_kind ``Lean.Parser.Term.matchAlt = some .matchBinder := by decide
+example : role_of_kind ``Lean.Parser.Term.doForDecl = some .loopIndex := by decide
+example : role_of_kind ``Lean.Parser.Term.instBinder = some .instanceBinder := by decide
+example : role_of_kind ``Lean.Parser.Tactic.intro = some .tacticBinder := by decide
+example : role_of_kind `Lean.Parser.Tactic.«tacticNext_=>_» = some .tacticBinder := by decide
+example : role_of_kind `«tacticBy_cases_:_» = some .tacticBinder := by decide
+example : role_of_kind `Lean.Parser.Tactic.tacticSuffices_ = some .tacticBinder := by decide
+example : role_of_kind ``Lean.Parser.Tactic.generalize = some .tacticBinder := by decide
+example : role_of_kind ``Lean.Parser.Tactic.inductionAltLHS = some .tacticBinder := by decide
+example : role_of_kind `Lean.Parser.Tactic.rcasesPat.one = some .tacticBinder := by decide
+example : role_of_kind ``Lean.Parser.Tactic.tacticHave__ = some .tacticBinder := by decide
+example : role_of_kind `Lean.Parser.Tactic.tacticLet__ = some .tacticBinder := by decide
+example : role_of_kind `Lean.Parser.Tactic.tacticHaveI__ = some .tacticBinder := by decide
+example : role_of_kind `Lean.Parser.Tactic.tacticLetI__ = some .tacticBinder := by decide
+example : role_of_kind ``Lean.Parser.Tactic.replace = some .tacticBinder := by decide
+example : role_of_kind `Lean.Parser.Tactic.tacticHave' = some .tacticBinder := by decide
+example : role_of_kind `Lean.Parser.Tactic.tacticLet'__ = some .tacticBinder := by decide
+example : role_of_kind ``Lean.Parser.Tactic.letrec = some .tacticBinder := by decide
+example : role_of_kind ``Lean.Parser.Tactic.elimTarget = some .tacticBinder := by decide
+example : role_of_kind `Lean.Parser.Tactic.injection = some .tacticBinder := by decide
+
+example : diagnostic_by_default .patternBinder = true := by decide
+example : diagnostic_by_default .matchBinder = true := by decide
+example : diagnostic_by_default .tacticBinder = true := by decide
+
+example : traditional_instance_name "α" = true := by native_decide
+example : traditional_instance_name "α₁" = true := by native_decide
+example : traditional_instance_name "א₂" = true := by native_decide
+example : traditional_instance_name "inst" = false := by native_decide
+example : traditional_instance_name "αName" = false := by native_decide
+
+private
+def strict_style : Style := { (default : Style) with
+  linting.symbolMinChars := 20
+  linting.allowGreekSymbols := false
+  linting.allowHebrewSymbols := false
+  linting.allowTraditionalInstances := false
+}
+
+private
+def symbol_length_count (stx : Syntax) : Nat :=
+  (lint strict_style stx).foldl
+    (fun count diagnostic => if diagnostic.rule == "symbol-length" then count + 1 else count)
+    0
+
+private
+def role_count (stx : Syntax) (role : String) : Nat :=
+  (lint strict_style stx).foldl
+    (fun count diagnostic =>
+      if diagnostic.rule == "symbol-length" && diagnostic.role == role then count + 1 else count)
+    0
+
+private
+def semantic_pattern_style : Style := { strict_style with
+  linting.requireSemanticPatternBinders := true
+}
+
+private
+def semantic_pattern_rule_count (stx : Syntax) : Nat :=
+  (lint semantic_pattern_style stx).foldl
+    (fun count diagnostic =>
+      if diagnostic.rule == "symbol-pattern-binder" then count + 1 else count)
+    0
+
+private
+def instance_style : Style := { strict_style with linting.requireTraditionalInstances := true }
+
+private
+def instance_rule_count (stx : Syntax) : Nat :=
+  (lint instance_style stx).foldl
+    (fun count diagnostic => if diagnostic.rule == "symbol-instance" then count + 1 else count)
+    0
+
+private
+def greek_instance_shape : Syntax := Unhygienic.run `(term| fun [β₂ : Target Ty] => β₂)
+
+/-- The binder is harvested exactly once; its type constructor and argument are references. -/
+example : role_count greek_instance_shape "instance-binder" = 1 := by native_decide
+
+example : instance_rule_count greek_instance_shape = 0 := by native_decide
+
+private
+def positional_style : Style := { strict_style with linting.requirePositionalLoopNames := true }
+
+private
+def positional_rule_count (stx : Syntax) : Nat :=
+  (lint positional_style stx).foldl
+    (fun count diagnostic => if diagnostic.rule == "symbol-loop-index" then count + 1 else count)
+    0
+
+private
+def nested_range_shape : Syntax :=
+  Unhygienic.run
+    `(term| do
+      for idx in [ 0 : rows ] do
+        for jdx in [ 0 : columns ] do
+          pure (idx, jdx))
+
+private
+def collection_loop_shape : Syntax := Unhygienic.run `(term| do for event in events do pure event)
+
+example : positional_loop_name 0 = "idx" := by decide
+example : positional_loop_name 1 = "jdx" := by decide
+example : positional_loop_name 2 = "kdx" := by decide
+example : positional_loop_name 7 = "kdx" := by decide
+
+example : positional_loop_iterable (Unhygienic.run `(term| [ 0 : count ])) = true := by
+  native_decide
+
+example : positional_loop_iterable (Unhygienic.run `(term| events)) = false := by native_decide
+example : positional_rule_count nested_range_shape = 0 := by native_decide
+example : positional_rule_count collection_loop_shape = 0 := by native_decide
+
+private
+def intro_shape : Syntax := Unhygienic.run `(term| by intro introducedName; exact introducedName)
+
+private
+def rename_shape : Syntax := Unhygienic.run `(term| by rename_i renamedName; exact renamedName)
+
+private
+def case_shape : Syntax :=
+  Unhygienic.run `(term| by case constructorName branchValue => exact branchValue)
+
+private
+def next_shape : Syntax :=
+  Unhygienic.run `(term| by next firstBranchValue secondBranchValue => exact firstBranchValue)
+
+private
+def injection_shape : Syntax := Unhygienic.run `(term| by injection src with lhs _ rhs; exact lhs)
+
+private
+def anonymous_injection_shape : Syntax := Unhygienic.run `(term| by injection src)
+
+private
+def by_cases_shape : Syntax :=
+  Unhygienic.run `(term| by by_cases decisionProof : p; exact decisionProof)
+
+private
+def anonymous_by_cases_shape : Syntax := Unhygienic.run `(term| by by_cases p; assumption)
+
+private
+def suffices_shape : Syntax := Unhygienic.run `(term| by suffices goalProof : p by exact goalProof)
+
+private
+def generalize_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      generalize equationProof : p = generalizedValue at h
+      exact generalizedValue)
+
+private
+def cases_alternative_shape : Syntax :=
+  Unhygienic.run `(term| by cases p with | z branchValue => exact branchValue)
+
+private
+def induction_alternative_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      induction p generalizing h with
+      | z => exact h
+      | s predecessor hypothesis => exact hypothesis)
+
+private
+def rcases_shape : Syntax :=
+  Unhygienic.run `(term| by rcases p with ⟨leftValue, rfl, _, -, rightValue⟩; exact leftValue)
+
+private
+def rfl_prefix_shape : Syntax := Unhygienic.run `(term| by rcases p with rfl'; exact rfl')
+
+private
+def obtain_shape : Syntax :=
+  Unhygienic.run `(term| by obtain ⟨firstValue, secondValue⟩ : q := p; exact firstValue)
+
+private
+def nested_obtain_shape : Syntax :=
+  Unhygienic.run `(term| by obtain ⟨fst, ⟨snd, thd⟩⟩ : typ := src; exact fst)
+
+private
+def sentinel_obtain_shape : Syntax :=
+  Unhygienic.run `(term| by obtain ⟨rfl, _, -⟩ := src; assumption)
+
+private
+def rintro_shape : Syntax :=
+  Unhygienic.run `(term| by rintro (introducedValue : q); exact introducedValue)
+
+private
+def tactic_have_shape : Syntax :=
+  Unhygienic.run `(term| by have proofName : q := p; exact proofName)
+
+private
+def tactic_let_shape : Syntax := Unhygienic.run `(term| by let valueName : q := p; exact valueName)
+
+private
+def tactic_replace_shape : Syntax :=
+  Unhygienic.run `(term| by replace proofName : q := p; exact proofName)
+
+private
+def tactic_have_instance_shape : Syntax :=
+  Unhygienic.run `(term| by haveI instanceValue : q := p; exact p)
+
+private
+def tactic_let_instance_shape : Syntax :=
+  Unhygienic.run `(term| by letI instanceValue : q := p; exact p)
+
+private
+def tactic_pattern_shape : Syntax :=
+  Unhygienic.run `(term| by have ⟨leftValue, rightValue⟩ := p; exact leftValue)
+
+private
+def tactic_equation_pattern_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      have (eq := equationProof) ⟨leftValue, rightValue⟩ := p
+      exact leftValue)
+
+private
+def tactic_rhs_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      have proofName : q := (let rhsValue := p; rhsValue)
+      exact proofName)
+
+private
+def tactic_function_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      have proofFunction (inputValue : q) : q := inputValue
+      exact proofFunction p)
+
+private
+def tactic_equations_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      have proofFunction : Nat → Nat
+        | 0 => 0
+        | remainingValue + 1 => proofFunction remainingValue
+      exact proofFunction 0)
+
+private
+def anonymous_tactic_have_shape : Syntax := Unhygienic.run `(term| by have : q := p; exact this)
+
+private
+def term_let_shape : Syntax := Unhygienic.run `(term| let localValue := p; localValue)
+
+private
+def primed_have_shape : Syntax :=
+  Unhygienic.run `(term| by have' proofName : q := p; exact proofName)
+
+private
+def primed_let_shape : Syntax := Unhygienic.run `(term| by let' valueName : q := p; exact valueName)
+
+private
+def tactic_let_rec_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      let rec recursiveFunction (inputValue : Nat) : Nat :=
+        let rhsValue := inputValue
+        rhsValue
+      exact recursiveFunction 0)
+
+private
+def tactic_mutual_let_rec_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      let rec firstFunction (firstInput : Nat) : Nat := secondFunction firstInput,
+        secondFunction (secondInput : Nat) : Nat := firstFunction secondInput
+      exact firstFunction 0)
+
+private
+def tactic_equation_let_rec_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      let rec recursiveFunction : Nat → Nat
+        | 0 => 0
+        | remainingValue + 1 => recursiveFunction remainingValue
+      exact recursiveFunction 0)
+
+private
+def term_let_rec_shape : Syntax :=
+  Unhygienic.run
+    `(term| let rec recursiveFunction (inputValue : Nat) : Nat := inputValue; recursiveFunction 0)
+
+private
+def cases_equation_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      cases equationProof : p with
+      | z introducedBranchValue => exact introducedBranchValue)
+
+private
+def anonymous_cases_target_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      cases p with
+      | z introducedBranchValue => exact introducedBranchValue)
+
+private
+def rcases_equation_shape : Syntax :=
+  Unhygienic.run
+    `(term| by
+      rcases equationProof : p with ⟨introducedLeftPatternValue, introducedRightPatternValue⟩
+      exact introducedLeftPatternValue)
+
+private
+def pattern_shape : Syntax :=
+  Unhygienic.run `(term| let (leftValue, rightValue) := (1, 2); leftValue + rightValue)
+
+private
+def match_shape : Syntax :=
+  Unhygienic.run `(term| match (1, 2) with | (firstValue, secondValue) => firstValue + secondValue)
+
+/-- Tactic binders are harvested from real parser shapes; references are not. -/
+example : symbol_length_count intro_shape = 1 := by native_decide
+
+example : symbol_length_count rename_shape = 1 := by native_decide
+
+/-- A `case` selector is not a binding site; only its introduced binder is. -/
+example : symbol_length_count case_shape = 1 := by native_decide
+
+example : role_count next_shape "tactic-binder" = 2 := by native_decide
+
+/-- The injected equalities are binders; the injected source proof is a reference. -/
+example : role_count injection_shape "tactic-binder" = 2 := by native_decide
+
+example : role_count anonymous_injection_shape "tactic-binder" = 0 := by native_decide
+
+/-- A named `by_cases` hypothesis is a binder; its proposition is a reference. -/
+example : symbol_length_count by_cases_shape = 1 := by native_decide
+
+/-- The anonymous form introduces no source-level name to diagnose. -/
+example : symbol_length_count anonymous_by_cases_shape = 0 := by native_decide
+
+/-- A named `suffices` goal is a binder; its type and proof references are not. -/
+example : symbol_length_count suffices_shape = 1 := by native_decide
+
+/-- `generalize` introduces its equation and value names, but not its source or location terms. -/
+example : symbol_length_count generalize_shape = 2 := by native_decide
+
+/-- Alternative selectors and the `cases` target are references; trailing names are binders. -/
+example : symbol_length_count cases_alternative_shape = 1 := by native_decide
+
+/-- `induction` targets, selectors, and `generalizing` names remain references. -/
+example : symbol_length_count induction_alternative_shape = 2 := by native_decide
+
+/-- `rcases` pattern names bind; its target and the `rfl`/`_`/`-` sentinels do not. -/
+example : symbol_length_count rcases_shape = 2 := by native_decide
+
+/-- Only exact `rfl` is special; an ordinary identifier with that prefix still binds. -/
+example : symbol_length_count rfl_prefix_shape = 1 := by native_decide
+
+/-- `obtain` pattern names bind; its type and right-hand side remain references. -/
+example : symbol_length_count obtain_shape = 2 := by native_decide
+
+/-- An `obtain` pattern owns its names exactly once under the tactic role. -/
+example : role_count obtain_shape "tactic-binder" = 2 := by native_decide
+
+example : role_count obtain_shape "pattern-binder" = 0 := by native_decide
+
+example : role_count obtain_shape "local-binder" = 0 := by native_decide
+
+/-- Nested tuple structure and type/RHS references are not mistaken for binders. -/
+example : role_count nested_obtain_shape "tactic-binder" = 3 := by native_decide
+
+/-- `rfl`, wildcard, and clear-pattern sentinels introduce no source-level names. -/
+example : role_count sentinel_obtain_shape "tactic-binder" = 0 := by native_decide
+
+/-- Typed `rintro` patterns expose their binder but not their annotation. -/
+example : symbol_length_count rintro_shape = 1 := by native_decide
+
+/-- Tactic declaration heads consume the ancestor's role claim exactly once. -/
+example : role_count tactic_have_shape "tactic-binder" = 1 := by native_decide
+
+example : role_count tactic_have_shape "local-binder" = 0 := by native_decide
+
+example : role_count tactic_let_shape "tactic-binder" = 1 := by native_decide
+
+example : role_count tactic_replace_shape "tactic-binder" = 1 := by native_decide
+
+example : role_count tactic_have_instance_shape "tactic-binder" = 1 := by native_decide
+
+example : role_count tactic_let_instance_shape "tactic-binder" = 1 := by native_decide
+
+/-- Tactic declaration patterns are claimed as tactic binders, one finding per name. -/
+example : role_count tactic_pattern_shape "tactic-binder" = 2 := by native_decide
+
+/-- An equation-style pattern adds its explicit equation binder exactly once. -/
+example : role_count tactic_equation_pattern_shape "tactic-binder" = 3 := by native_decide
+
+/-- The claim is consumed at the tactic head; declarations in its RHS remain local. -/
+example : role_count tactic_rhs_shape "tactic-binder" = 1 := by native_decide
+
+example : role_count tactic_rhs_shape "local-binder" = 1 := by native_decide
+
+/-- Function parameters nested under a tactic declaration retain their local-binder role. -/
+example : role_count tactic_function_shape "tactic-binder" = 1 := by native_decide
+
+example : role_count tactic_function_shape "local-binder" = 1 := by native_decide
+
+/-- Equation declarations claim their head while arm patterns retain their match role. -/
+example : role_count tactic_equations_shape "tactic-binder" = 1 := by native_decide
+
+example : role_count tactic_equations_shape "match-binder" = 1 := by native_decide
+
+/-- Anonymous tactic declarations introduce no source-level name to diagnose. -/
+example : role_count anonymous_tactic_have_shape "tactic-binder" = 0 := by native_decide
+
+/-- Term-mode declarations do not inherit a tactic claim. -/
+example : role_count term_let_shape "local-binder" = 1 := by native_decide
+
+example : role_count term_let_shape "tactic-binder" = 0 := by native_decide
+
+/-- Primed declaration tactics share the same exact one-shot claim algebra. -/
+example : role_count primed_have_shape "tactic-binder" = 1 := by native_decide
+
+example : role_count primed_let_shape "tactic-binder" = 1 := by native_decide
+
+/-- A recursive tactic head is claimed; its parameter and RHS declaration remain local. -/
+example : role_count tactic_let_rec_shape "tactic-binder" = 1 := by native_decide
+
+example : role_count tactic_let_rec_shape "local-binder" = 2 := by native_decide
+
+/-- Every mutual-recursion member consumes one claim, while parameters remain local. -/
+example : role_count tactic_mutual_let_rec_shape "tactic-binder" = 2 := by native_decide
+
+example : role_count tactic_mutual_let_rec_shape "local-binder" = 2 := by native_decide
+
+/-- Equation-style recursive heads are tactic binders; arm patterns remain match binders. -/
+example : role_count tactic_equation_let_rec_shape "tactic-binder" = 1 := by native_decide
+
+example : role_count tactic_equation_let_rec_shape "match-binder" = 1 := by native_decide
+
+/-- Term-mode recursion cannot inherit a tactic claim. -/
+example : role_count term_let_rec_shape "tactic-binder" = 0 := by native_decide
+
+example : role_count term_let_rec_shape "local-binder" = 2 := by native_decide
+
+/-- Elimination targets expose only their optional equation binder. -/
+example : role_count cases_equation_shape "tactic-binder" = 1 := by native_decide
+
+/-- Anonymous elimination targets introduce no source-level equation name. -/
+example : role_count anonymous_cases_target_shape "tactic-binder" = 0 := by native_decide
+
+/-- `rcases` target expressions remain references while the optional equation name binds. -/
+example : role_count rcases_equation_shape "tactic-binder" = 1 := by native_decide
+
+/-- Existing pattern and match coverage remains one finding per short binder. -/
+example : symbol_length_count pattern_shape = 2 := by native_decide
+
+example : symbol_length_count match_shape = 2 := by native_decide
+
+example : semantic_pattern_rule_count pattern_shape = 2 := by native_decide
+
+example : semantic_pattern_rule_count match_shape = 2 := by native_decide
+
+end Lean4Fmt.Rules.Naming

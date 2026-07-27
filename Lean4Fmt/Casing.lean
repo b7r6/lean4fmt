@@ -1,7 +1,7 @@
 /-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                                                              // LEAN4FMT // CASING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     Identifier casing normalization (snake_case ↔ camelCase ↔ UpperCamelCase),
     the verified core of the rename axis. Unlike layout, a rename CHANGES tokens
@@ -15,7 +15,7 @@
     the collection + consistent project-wide rewrite + build validation ride on
     top. Known limit: an all-caps acronym run stays one word (`HTTPServer` →
     `httpserver`), documented rather than mis-split.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
 namespace Lean4Fmt.Casing
@@ -47,45 +47,53 @@ def cap (s : String) : String :=
 /-- Split one `_`-free piece on lower/digit → Upper boundaries; each word
     lowercased. An all-caps acronym run stays ONE word (the documented limit). -/
 private
-def split_piece (s : String) : List String :=
-  let (cur, acc) :=
-    s.toList.foldl
-      (fun (st : List Char × List String) c =>
-        let (cur, acc) := st
-        let brk := c.isUpper && (cur.getLast?.map (fun p => p.isLower || p.isDigit)).getD false
-        if brk then ([c], acc ++ [String.ofList cur]) else (cur ++ [c], acc))
+def split_piece (source : String) : List String :=
+  let (current, words) :=
+    source.toList.foldl
+      (fun (state : List Char × List String) char =>
+        let (current, words) := state
+        let should_break :=
+          char.isUpper
+              && (current.getLast?.map (fun previous => previous.isLower || previous.isDigit)).getD
+                false
+        if should_break then
+          ([char], words ++ [String.ofList current])
+        else
+          (current ++ [char], words))
       ([], [])
-  (acc ++ (if cur.isEmpty then [] else [String.ofList cur])).map (·.map Char.toLower)
+  (words ++ (if current.isEmpty then [] else [String.ofList current])).map (·.map Char.toLower)
 
 /-- Split an identifier into lowercased words, honoring BOTH snake_case (split on
     `_`) and camel/UpperCamel (split on case boundaries). -/
-def split_words (s : String) : List String := (s.splitOn "_").flatMap split_piece |>.filter (· ≠ "")
+def split_words (source : String) : List String :=
+  (source.splitOn "_").flatMap split_piece |>.filter (· ≠ "")
 
 /-- Join words in the target case. -/
-def to_case (c : Case) (ws : List String) : String :=
-  match c with
-  | .snake => String.intercalate "_" ws
+def to_case (target_case : Case) (words : List String) : String :=
+  match target_case with
+  | .snake => String.intercalate "_" words
   | .camel =>
-    match ws with
-    | []        => ""
-    | w :: rest => w ++ String.join (rest.map cap)
-  | .upperCamel => String.join (ws.map cap)
-  | .preserve => String.join ws
+    match words with
+    | []           => ""
+    | word :: rest => word ++ String.join (rest.map cap)
+  | .upperCamel => String.join (words.map cap)
+  | .preserve => String.join words
 
 /-- Convert an identifier to the target case, preserving a leading `_` run (the
     Lean private/root convention) and a trailing `'` run (primes) as affixes. -/
-def convert (c : Case) (s : String) : String :=
-  if c == .preserve then
-    s
+def convert (target_case : Case) (source : String) : String :=
+  if target_case == .preserve then
+    source
   else
-    let cs := s.toList
-    let lead := cs.takeWhile (· == '_')
-    let rest := cs.drop lead.length
+    let chars := source.toList
+    let lead := chars.takeWhile (· == '_')
+    let rest := chars.drop lead.length
     let trail := (rest.reverse.takeWhile (· == '\'')).reverse
     let core := (rest.reverse.drop trail.length).reverse
-    String.ofList lead ++ to_case c (split_words (String.ofList core)) ++ String.ofList trail
+    String.ofList lead ++ to_case target_case (split_words (String.ofList core))
+        ++ String.ofList trail
 
--- ── the round-trips, #guard-locked ──────────────────────────────────────────
+-- ── the round-trips, #guard-locked ────────────────────────────────────────────
 
 #guard convert .camel "find_upstream_slot" == "findUpstreamSlot"
 #guard convert .snake "findUpstreamSlot" == "find_upstream_slot"

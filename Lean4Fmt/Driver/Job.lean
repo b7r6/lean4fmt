@@ -42,7 +42,7 @@ structure result where
   deriving Inhabited
 
 /-- Whether formatting would change the file. -/
-def result.changed (r : result) : Bool := r.output != r.original
+def result.changed (jobResult : result) : Bool := jobResult.output != jobResult.original
 
 /-- The shared-nothing per-file work unit (read → parse → lint → format → gate).
     Self-contained: everything it needs is its arguments and the filesystem read;
@@ -81,8 +81,14 @@ def run_job
     with a parse diagnostic (a superset-env conflict, an own-notation file the
     union could not help, or a genuinely broken file — the retry sorts them). -/
 private
-def result.retryable (r : result) : Bool :=
-  r.output == r.original && r.diagnostics.any (·.rule == "parse")
+def result.retryable (jobResult : result) : Bool :=
+  jobResult.output == jobResult.original && jobResult.diagnostics.any (·.rule == "parse")
+
+private
+structure retry_state where
+  results  : Array result
+  cursor   : Nat := 0
+  children : Array (IO.Process.Child ⟨.null, .piped, .piped⟩) := #[]
 
 /-- The scheduler seam. The main pass is SEQUENTIAL today — the single place a
     core-pinned worker pool (Driver.Pool) or batched uring loop (Driver.Io) will
@@ -108,59 +114,65 @@ def run_all
   -- runtime's core-sized pool; the env is `leakEnv`-persistent, shared
   -- read-only — the LSP sharing model). `runJob` catches its own errors, so a
   -- task failure here is a runtime fault, reported per file rather than thrown.
-  let tasks ← paths.mapM (fun p => IO.asTask (run_job env style p elabFallback none))
-  let mut results : Array result := #[]
-  for p in paths, t in tasks do
-    match t.get with
-    | .ok r => results := results.push r
-    | .error e =>
-      results :=
-        results.push
-          { path        := p,
-            original    := "",
-            output      := "",
-            diagnostics := #[{ severity := .error, rule := "io", message := toString e }] }
-  let some (exe, extraArgs) := retry | return results
-  let conflicted := (Array.range results.size).filter (fun i => results[i]!.retryable)
-  if conflicted.isEmpty then return results
+  let tasks ← paths.mapM (fun path => IO.asTask (run_job env style path elabFallback none))
+  let mut state : retry_state := { results := #[] }
+  for path in paths, task in tasks do
+    match task.get with
+    | .ok jobResult => state := { state with results := state.results.push jobResult }
+    | .error message =>
+      state :=
+        { state with
+          results := state.results.push
+            { path,
+              original := "",
+              output := "",
+              diagnostics := #[{ severity := .error, rule := "io", message := toString message }] } }
+  let some (exe, extraArgs) := retry | return state.results
+  let conflicted :=
+    (Array.range state.results.size).filter (fun idx => state.results[idx]!.retryable)
+  if conflicted.isEmpty then return state.results
   let jobs := (((← IO.getEnv "LEAN4FMT_JOBS").bind (·.toNat?)).getD 8).max 1
-  let spawnRetry (p : System.FilePath) : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
+  let spawnRetry (path : System.FilePath) : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
     IO.Process.spawn
-      { cmd := exe, args := #["--no-retry"] ++ extraArgs ++ #[p.toString],
+      { cmd := exe, args := #["--no-retry"] ++ extraArgs ++ #[path.toString],
         stdin := .null, stdout := .piped, stderr := .piped }
-  let mut i := 0
-  while i < conflicted.size do
-    let wave := conflicted.extract i (Nat.min (i + jobs) conflicted.size)
-    let mut children : Array (IO.Process.Child ⟨.null, .piped, .piped⟩) := #[]
+  while state.cursor < conflicted.size do
+    let wave := conflicted.extract state.cursor (Nat.min (state.cursor + jobs) conflicted.size)
+    state := { state with children := #[] }
     for idx in wave do
-      children := children.push (← spawnRetry results[idx]!.path)
-    for (idx, child) in wave.zip children do
+      state := { state with
+        children := state.children.push (← spawnRetry state.results[idx]!.path) }
+    for (idx, child) in wave.zip state.children do
       -- stdout is the gated output (bounded: one source file); stderr is a few
       -- diagnostic lines — read stdout first, the safe order for these sizes
       let out ← child.stdout.readToEnd
       let errOut ← child.stderr.readToEnd
-      let rc ← child.wait
-      if rc == 0 && !out.isEmpty then
-        let r := results[idx]!
+      let exitCode ← child.wait
+      if exitCode == 0 && !out.isEmpty then
+        let jobResult := state.results[idx]!
         let stillUnparsed := (errOut.splitOn "not formatted:").length > 1
-        results := results.set! idx
-          { r with output := out, diagnostics := if stillUnparsed then r.diagnostics else #[] }
-    i := i + jobs
-  return results
+        state := { state with
+          results :=
+            state.results.set! idx
+              { jobResult with
+                output := out
+                diagnostics := if stillUnparsed then jobResult.diagnostics else #[] } }
+    state := { state with cursor := state.cursor + jobs }
+  return state.results
 
 /-- Expand file/dir inputs into the `.lean` file set to process (directories are
     walked, `.lake` build trees skipped), deduplicated and in a deterministic
     (sorted) order so runs are reproducible. -/
 def expand (inputs : Array System.FilePath) : IO (Array System.FilePath) := do
-  let mut acc : Array System.FilePath := #[]
-  for p in inputs do
-    if ← p.isDir then acc := acc ++ (← find_lean p)
-    else acc := acc.push p
-  let sorted := acc.qsort (fun a b => a.toString < b.toString)
+  let mut files : Array System.FilePath := #[]
+  for inputPath in inputs do
+    if ← inputPath.isDir then files := files ++ (← find_lean inputPath)
+    else files := files.push inputPath
+  let sorted := files.qsort (fun left right => left.toString < right.toString)
   -- dedup (adjacent, since sorted)
   let mut out : Array System.FilePath := #[]
-  for p in sorted do
-    if out.back?.map (· == p) != some true then out := out.push p
+  for path in sorted do
+    if out.back?.map (· == path) != some true then out := out.push path
   return out
 
 end Lean4Fmt.Driver

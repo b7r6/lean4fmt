@@ -56,6 +56,12 @@ def imports_env (imports : Array Import) : IO Environment := do
 def imports_key (imports : Array Import) : String :=
   String.intercalate ";" (((imports.map (·.module.toString)).qsort (· < ·)).toList)
 
+private
+def syntax_stats (style : Lean4Fmt.Style.Style) (stx : Lean.Syntax) : Nat × Nat × Nat × Nat :=
+  let (doc, _) := Lean4Fmt.Emit.run style stx.updateLeading
+  let (active, verbatim, trivia) := Lean4Fmt.Doc.stats doc
+  (active, verbatim, trivia, Lean4Fmt.Syntax.policy_content_bytes stx)
+
 /-- One environment for a whole batch: union every file's header imports and
     import ONCE per invocation. Parsing a file against a SUPERSET env is safe for
     the gate's guarantees — source and output are token-compared under the SAME
@@ -79,6 +85,12 @@ def apply_farm (farm : Option String) : IO Unit :=
   | some f => Lean.searchPathRef.modify (fun sp => (⟨f⟩ : System.FilePath) :: sp)
   | none   => pure ()
 
+private
+structure root_search_state where
+  directory : Option System.FilePath
+  root      : Option System.FilePath := none
+  steps     : Nat := 0
+
 /-- The module symbol table: a MERGED SYMLINK FARM of every package's built
     oleans, put FIRST on the search path — the correct multi-workspace resolution
     that both the rename and (the zero-config) formatting want. `findOLean`
@@ -94,17 +106,14 @@ unsafe
 def make_olean_farm (files : List String) : IO (Option String) := do
   let some f0 := files.head? | return none
   let p0 ← try IO.FS.realPath ⟨f0⟩ catch _ => pure ⟨f0⟩
-  let mut dir? := p0.parent
-  let mut root? : Option System.FilePath := none
-  let mut steps := 0
-  while h : dir?.isSome ∧ steps < 64 do
-    let dir := dir?.get h.1
+  let mut search : root_search_state := { directory := p0.parent }
+  while h : search.directory.isSome ∧ search.steps < 64 do
+    let dir := search.directory.get h.1
     if ← (dir / ".git").pathExists then
-      root? := some dir
-      dir? := none
-    else dir? := dir.parent
-    steps := steps + 1
-  let some root := root? | return none
+      search := { search with root := some dir, directory := none }
+    else search := { search with directory := dir.parent }
+    search := { search with steps := search.steps + 1 }
+  let some root := search.root | return none
   let dirs ← try
       let r ← IO.Process.output
         { cmd := "find",
@@ -135,9 +144,6 @@ def stats_for
     : IO (Option (Nat × Nat × Nat × Nat)) := do
   match ← parse_full? env path contents elabFallback with
   | none => pure none
-  | some stx =>
-    let (doc, _) := Lean4Fmt.Emit.run style stx.updateLeading
-    let (a, v, t) := Lean4Fmt.Doc.stats doc
-    pure (some (a, v, t, Lean4Fmt.Syntax.policy_content_bytes stx))
+  | some stx => pure (some (syntax_stats style stx))
 
 end Lean4Fmt.Frontend

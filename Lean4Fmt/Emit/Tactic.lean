@@ -65,6 +65,12 @@ def last_by_descendant? (s : Lean.Syntax) : Option Lean.Syntax :=
     line, `t1; t2; t3`); empty separator slots (newlines) split groups. `none`
     on a trailing `;` or a structural surprise. -/
 private
+structure SeqGroupState where
+  groups   : Array (Array Lean.Syntax) := #[]
+  current  : Array Lean.Syntax := #[]
+  joinNext : Bool := false
+
+private
 def seq_groups_core?
     (seqKind seq1Kind : Lean.Name)
     (seq : Lean.Syntax)
@@ -77,25 +83,24 @@ def seq_groups_core?
       if s1.getKind != seq1Kind then
         return none
       let some inner := s1.getArgs[0]? | return none
-      let mut groups : Array (Array Lean.Syntax) := #[]
-      let mut cur : Array Lean.Syntax := #[]
-      let mut joinNext := false
+      let mut state : SeqGroupState := {}
       for c in inner.getArgs do
         if (Lean4Fmt.Emit.bare_src c).trimAscii.toString.isEmpty then continue -- newline slot
         if c.isAtom then
           if (Lean4Fmt.Emit.bare_src c).trimAscii.toString == ";" then
-            if cur.isEmpty then return none
-            joinNext := true
+            if state.current.isEmpty then return none
+            state := { state with joinNext := true }
             continue
           else return none
-        if joinNext then
-          cur := cur.push c
-          joinNext := false
+        if state.joinNext then
+          state := { state with current := state.current.push c, joinNext := false }
         else
-          if !cur.isEmpty then groups := groups.push cur
-          cur := #[c]
-      if joinNext then return none          -- dangling `;`
-      if !cur.isEmpty then groups := groups.push cur
+          let groups :=
+            if state.current.isEmpty then state.groups else state.groups.push state.current
+          state := { state with groups, current := #[c] }
+      if state.joinNext then return none          -- dangling `;`
+      let groups :=
+        if state.current.isEmpty then state.groups else state.groups.push state.current
       if groups.isEmpty then return none
       return some groups
 
@@ -115,18 +120,18 @@ private
 def group_text? (g : Array Lean.Syntax) : Option String :=
   Id.run do
     let mut txt := ""
-    for j in [0:g.size] do
-      let it := g[j]!
+    for idx in [0:g.size] do
+      let it := g[idx]!
       if Lean4Fmt.Syntax.interior_has_line_comment it then
         return none
       let t := (Lean4Fmt.Emit.token_join? it).getD ((Lean4Fmt.Emit.bare_src it).trimAscii.toString)
       if t.isEmpty || t.any (· == '\n') then
         return none
-      if j + 1 < g.size then
+      if idx + 1 < g.size then
         let tr := (Lean4Fmt.Syntax.trailing? it).getD ""
         if !tr.trimAscii.toString.isEmpty || tr.any (· == '\n') then
           return none
-      if j > 0 then
+      if idx > 0 then
         let ld := (Lean4Fmt.Syntax.leading? it).getD ""
         if !ld.trimAscii.toString.isEmpty || ld.any (· == '\n') then
           return none
@@ -157,12 +162,12 @@ def seq_groups_doc?
     (lastOwned : Bool)
     : Lean4Fmt.Emit.emit_m (Option Doc) := do
   let mut body : Doc := .nil
-  for h : i in [0:groups.size] do
-    let g := groups[i]
+  for h : idx in [0:groups.size] do
+    let g := groups[idx]
     let first := g[0]!
     let glast := g[g.size - 1]!
     let trailT := ((Lean4Fmt.Syntax.trailing? glast).getD "").trimAscii.toString
-    let last := i + 1 == groups.size
+    let last := idx + 1 == groups.size
     if !last && trailT.any (· == '\n') then
       return none
     if last && !lastOwned && !trailT.isEmpty then
@@ -171,7 +176,7 @@ def seq_groups_doc?
     let lead := (Lean4Fmt.Syntax.leading? first).getD ""
     -- first group: comment-free blank runs after the block opener are LAYOUT
     -- (dropped; the style re-adds its own) — see seqLinesDoc?
-    let sep ← if i == 0 && lead.toList.all (·.isWhitespace) then pure Doc.hardline
+    let sep ← if idx == 0 && lead.toList.all (·.isWhitespace) then pure Doc.hardline
       else match Lean4Fmt.Emit.leading_sep? lead with
         | some s => pure s
         | none => return none
@@ -240,46 +245,62 @@ def list_items? (slice : Array Lean.Syntax) : Option (Array Doc) :=
     width-aware commaLists, so a long list BREAKS instead of forcing the whole
     tactic (and its enclosing body) verbatim. `none` on a multi-line piece
     outside a bracket list. -/
+private
+def closing_bracket? (args : Array Lean.Syntax) (start : Nat) : Option Nat :=
+  let rec loop (idx : Nat) : Option Nat :=
+    if h : idx < args.size then
+      if args[idx].isAtom && (Lean4Fmt.Emit.bare_src args[idx]).trimAscii.toString == "]" then
+        some idx
+      else
+        loop (idx + 1)
+    else
+      none
+  loop start
+
+private
+structure LineWordsState where
+  docs : Array Doc := #[]
+  idx  : Nat := 0
+
 private partial
 def line_words? (stx : Lean.Syntax) (fill : Bool := false) : Option (Array Doc) :=
   Id.run do
     let a := stx.getArgs
-    let mut out : Array Doc := #[]
-    let mut i := 0
-    while i < a.size do
-      let c := a[i]!
+    let mut state : LineWordsState := {}
+    while state.idx < a.size do
+      let c := a[state.idx]!
       if c.isAtom && (Lean4Fmt.Emit.bare_src c).trimAscii.toString == "[" then
-        let mut close : Option Nat := none
-        let mut j := i + 1
-        while j < a.size do
-          if a[j]!.isAtom && (Lean4Fmt.Emit.bare_src a[j]!).trimAscii.toString == "]" then
-            close := some j
-            break
-          j := j + 1
-        let some jc := close | return none
-        let some items := list_items? (a.extract (i + 1) jc) | return none
-        out :=
-          out.push
+        let some closeIdx := closing_bracket? a (state.idx + 1) | return none
+        let some items := list_items? (a.extract (state.idx + 1) closeIdx) | return none
+        let docs :=
+          state.docs.push
             (if fill then
               Lean4Fmt.Doc.fill_list "[" "]" items
             else
               Lean4Fmt.Doc.comma_list "[" "]" items)
-        i := jc + 1
+        state := { docs, idx := closeIdx + 1 }
         continue
       let t := (Lean4Fmt.Emit.bare_src c).trimAscii.toString
       if t.isEmpty then
-        i := i + 1
+        state := { state with idx := state.idx + 1 }
+        continue
+      if c.getKind == ``Lean.Parser.Tactic.location then
+        let location := Lean4Fmt.Emit.canon_tok c
+        if location.isEmpty || location.any (· == '\n') then
+          return none
+        state := { state with docs := state.docs.push (.text location), idx := state.idx + 1 }
         continue
       let hasBracket :=
         c.getArgs.any fun x => x.isAtom && (Lean4Fmt.Emit.bare_src x).trimAscii.toString == "["
       if !t.any (· == '\n') && !hasBracket then
-        out := out.push (.text ((Lean4Fmt.Emit.token_join? c).getD t))
+        state :=
+          { state with docs := state.docs.push (.text ((Lean4Fmt.Emit.token_join? c).getD t)) }
       else
         match line_words? c fill with
-        | some ws => out := out ++ ws
+        | some words => state := { state with docs := state.docs ++ words }
         | none => return none
-      i := i + 1
-    return some out
+      state := { state with idx := state.idx + 1 }
+    return some state.docs
 
 /-- Find the `using <term>` tail of a simpa-family tactic (a null node
     `["using"/"using!", term]`, searched shallowly), returning the tactic with
@@ -288,21 +309,26 @@ def line_words? (stx : Lean.Syntax) (fill : Bool := false) : Option (Array Doc) 
 private partial
 def prune_using? (s : Lean.Syntax) : Option (Lean.Syntax × Lean.Syntax) :=
   match s with
-  | .node info k args =>
-    Id.run do
-      for h : i in [0:args.size] do
-        let c := args[i]
-        if c.getKind == `null && c.getArgs.size == 2 then
-          if let .atom _ v := c.getArgs[0]! then
-            if v.startsWith "using" then
-              let term := c.getArgs[1]!
-              let pruned := Lean.Syntax.node info k (args.set! i (Lean.mkNullNode #[c.getArgs[0]!]))
+  | .node info k args => visitNode info k args
+  | _                 => none
+
+  where
+    visitNode (info : Lean.SourceInfo) (kind : Lean.SyntaxNodeKind) (args : Array Lean.Syntax) :
+        Option (Lean.Syntax × Lean.Syntax) := Id.run do
+      for h : idx in [0:args.size] do
+        let child := args[idx]
+        if child.getKind == `null && child.getArgs.size == 2 then
+          if let .atom _ value := child.getArgs[0]! then
+            if value.startsWith "using" then
+              let term := child.getArgs[1]!
+              let pruned :=
+                Lean.Syntax.node info kind (args.set! idx (Lean.mkNullNode #[child.getArgs[0]!]))
               return some (pruned, term)
-        match prune_using? c with
-        | some (pc, t) => return some (Lean.Syntax.node info k (args.set! i pc), t)
+        match prune_using? child with
+        | some (prunedChild, term) =>
+          return some (Lean.Syntax.node info kind (args.set! idx prunedChild), term)
         | none => pure ()
       return none
-  | _ => none
 
 /-- Join line words with single spaces. -/
 private
@@ -328,12 +354,12 @@ def head_block_doc?
   if a.size < 2 then
     return none
   let mut head := ""
-  for h : i in [0:a.size - 1] do
-    let c := a[i]!
+  for h : idx in [0:a.size - 1] do
+    let c := a[idx]!
     -- first child's leading = the FORM's own leading — the enclosing seam
     -- owns it (see exampleDoc?); interior comments still bail
     let ownLead :=
-      if i == 0 then
+      if idx == 0 then
         Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? c).getD "")
       else
         0
@@ -348,611 +374,813 @@ def head_block_doc?
   let some bD ← arm_seq_doc? walk a[a.size - 1]! conv | return none
   return some (.text head ++ bD)
 
+private
+inductive Dispatch where
+  | handled (doc : Doc)
+  | unhandled
+
+private
+def fallback (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Dispatch := do
+  return .handled (← Lean4Fmt.Emit.verbatim stx)
+
+private
+def dispatch_exact
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  let kind := stx.getKind
+  if kind != ``Lean.Parser.Tactic.exact && kind != ``Lean.Parser.Tactic.apply
+      && kind != ``Lean.Parser.Tactic.refine then
+    return .unhandled
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← fallback stx)
+  let args := stx.getArgs
+  if args.size != 2 then
+    return (← fallback stx)
+  let keyword := (Lean4Fmt.Emit.bare_src args[0]!).trimAscii.toString
+  let termDoc ← walk args[1]!
+  let layout : Doc := .text keyword ++ .group (.nest 2 (.line ++ termDoc))
+  if (match termDoc with | .verbatim _ _ => true | _ => false)
+      || Lean4Fmt.Doc.has_midline_reanchor layout then
+    return (← fallback stx)
+  return .handled layout
+
+private
+def dispatch_binding
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  let kind := stx.getKind
+  if kind != ``Lean.Parser.Tactic.tacticHave__
+      && kind != `Lean.Parser.Tactic.tacticLet__
+      && kind != `Lean.Parser.Tactic.tacticHaveI__
+      && kind != `Lean.Parser.Tactic.tacticLetI__
+      && kind != ``Lean.Parser.Tactic.replace then
+    return .unhandled
+  let args := stx.getArgs
+  if args.size != 3 && args.size != 2 then
+    return (← fallback stx)
+  let keyword := (Lean4Fmt.Emit.bare_src args[0]!).trimAscii.toString
+  let config := if args.size == 3 then Lean4Fmt.Emit.canon_tok args[1]! else ""
+  if config.any (· == '\n') then
+    return (← fallback stx)
+  let declDoc ← walk args[args.size - 1]!
+  if !(declDoc matches .verbatim _ _) then
+    return .handled
+      (.text (keyword ++ " ") ++ (if config.isEmpty then Doc.nil else .text (config ++ " "))
+          ++ declDoc)
+  return (← fallback stx)
+
+private
+def dispatch_simp
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  let kind := stx.getKind
+  if kind != ``Lean.Parser.Tactic.simp && kind != ``Lean.Parser.Tactic.simpAll
+      && kind != `Lean.Parser.Tactic.dsimp && kind != `Lean.Parser.Tactic.simpa
+      && kind != `Lean.Parser.Tactic.simpaUsingBang
+      && kind != `Lean.Parser.Tactic.tacticRwa__
+      && kind != `Mathlib.Tactic.tacticSimp_rw___ then
+    return .unhandled
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← fallback stx)
+  if ((Lean4Fmt.Emit.bare_src stx).splitOn "]").getLast!.any (· == '\n') then
+    let some (pruned, term) := prune_using? stx | return (← fallback stx)
+    if !(Lean4Fmt.Emit.bare_src term).any (· == '\n') then
+      return (← fallback stx)
+    let some words := line_words? pruned ((← read).breaking.listFill) | return (← fallback stx)
+    if words.isEmpty then
+      return (← fallback stx)
+    let termDoc ← walk term
+    let layout := join_words words ++ .group (.nest 2 (.line ++ termDoc))
+    if (match termDoc with | .verbatim _ _ => true | _ => false)
+        || Lean4Fmt.Doc.has_midline_reanchor layout then
+      return (← fallback stx)
+    return .handled layout
+  let some words := line_words? stx ((← read).breaking.listFill) | return (← fallback stx)
+  if words.isEmpty then
+    return (← fallback stx)
+  return .handled (join_words words)
+
+private
+def dispatch_unfold (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Dispatch := do
+  if stx.getKind != ``Lean.Parser.Tactic.unfold then
+    return .unhandled
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← fallback stx)
+  let mut line := ""
+  for child in stx.getArgs do
+    let token :=
+      (Lean4Fmt.Emit.token_join? child).getD ((Lean4Fmt.Emit.bare_src child).trimAscii.toString)
+    if token.any (· == '\n') then
+      return (← fallback stx)
+    if !token.isEmpty then line := if line.isEmpty then token else line ++ " " ++ token
+  if line.isEmpty then
+    return (← fallback stx)
+  return .handled (.text line)
+
+private
+structure ChainState where
+  elements : Array Lean.Syntax := #[]
+  cursor   : Lean.Syntax
+  head     : Doc := .nil
+  tail     : Doc := .nil
+
+private
+def dispatch_chain
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  if stx.getKind != `Lean.Parser.Tactic.«tactic_<;>_» then
+    return .unhandled
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← fallback stx)
+  let mut state : ChainState := { cursor := stx }
+  for _ in [0:64] do
+    if state.cursor.getKind == `Lean.Parser.Tactic.«tactic_<;>_»
+        && state.cursor.getArgs.size == 3 then
+      state :=
+        { state with
+          elements := state.elements.push state.cursor.getArgs[2]!
+          cursor := state.cursor.getArgs[0]! }
+  if state.cursor.getKind == `Lean.Parser.Tactic.«tactic_<;>_» then
+    return (← fallback stx)
+  let chain := (state.elements.push state.cursor).reverse
+  for h : idx in [0:chain.size] do
+    let elementDoc ← walk chain[idx]
+    if Lean4Fmt.Doc.hasMultilineVerbatim elementDoc then
+      return (← fallback stx)
+    if idx == 0 then state := { state with head := elementDoc }
+    else state := { state with tail := state.tail ++ .group (.line ++ .text "<;> " ++ elementDoc) }
+  return .handled (state.head ++ .nest 2 state.tail)
+
+private
+def dispatch_first
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  if stx.getKind != `Lean.Parser.Tactic.first then
+    return .unhandled
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← fallback stx)
+  if !(Lean4Fmt.Emit.bare_src stx).any (· == '\n') then
+    let some words := line_words? stx ((← read).breaking.listFill) | return (← fallback stx)
+    if words.isEmpty then
+      return (← fallback stx)
+    return .handled (join_words words)
+  let args := stx.getArgs
+  if args.size != 2 then
+    return (← fallback stx)
+  let mut doc : Doc := .text "first"
+  for group in args[1]!.getArgs do
+    let groupArgs := group.getArgs
+    if groupArgs.size != 2 then
+      return (← fallback stx)
+    let some body ← arm_seq_doc? walk groupArgs[1]! | return (← fallback stx)
+    doc := doc ++ .hardline ++ .text "|" ++ body
+  return .handled doc
+
+private
+def match_head? (stx : Lean.Syntax) : Option (String × Lean.Syntax) := do
+  let args := stx.getArgs
+  if args.size < 2 then none
+  else
+    let head ← Id.run do
+      let mut head := ""
+      for h : idx in [0:args.size - 1] do
+        let child := args[idx]!
+        let ownLead :=
+          if idx == 0 then
+            Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? child).getD "")
+          else
+            0
+        if Lean4Fmt.Syntax.count_subtree_line_comments child > ownLead then
+          return none
+        let token := Lean4Fmt.Emit.canon_tok child
+        if token.any (· == '\n') then
+          return none
+        if !token.isEmpty then head := if head.isEmpty then token else head ++ " " ++ token
+      if head.isEmpty then none
+      else some head
+    let alternatives ← args[args.size - 1]!.getArgs[0]?
+    return (head, alternatives)
+
+private
+def dispatch_match
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  if stx.getKind != `Lean.Parser.Tactic.match then
+    return .unhandled
+  let some (head, alternatives) := match_head? stx | return (← fallback stx)
+  let mut doc : Doc := .text head
+  for alternative in alternatives.getArgs do
+    let args := alternative.getArgs
+    if args.size != 4 || Lean4Fmt.Syntax.interior_has_line_comment alternative then
+      return (← fallback stx)
+    let lhs? : Option String :=
+      Id.run do
+        let mut lhs := ""
+        for child in args.extract 0 3 do
+          let token := Lean4Fmt.Emit.canon_tok child
+          if token.any (· == '\n') then
+            return none
+          if !token.isEmpty then lhs := if lhs.isEmpty then token else lhs ++ " " ++ token
+        return some lhs
+    let some lhs := lhs? | return (← fallback stx)
+    let some body ← arm_seq_doc? walk args[3]! | return (← fallback stx)
+    doc := doc ++ .hardline ++ .text lhs ++ body
+  return .handled doc
+
+private
+def rw_rule_doc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (rule : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m (Option Doc) := do
+  let token := Lean4Fmt.Emit.canon_tok rule
+  if token.isEmpty then
+    return none
+  if !token.any (· == '\n') then
+    return some (.text token)
+  let (arrow, term) :=
+    if rule.getKind == ``Lean.Parser.Tactic.rwRule && rule.getArgs.size == 2 then
+      (
+        (((rule.getArgs[0]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString),
+        rule.getArgs[1]!
+      )
+    else
+      ("", rule)
+  let termDoc ← walk term
+  if (match termDoc with | .verbatim _ _ => true | _ => false)
+      || Lean4Fmt.Doc.has_midline_reanchor termDoc then
+    return none
+  return some ((if arrow.isEmpty then Doc.nil else .text (arrow ++ " ")) ++ termDoc)
+
+private
+structure RwRules where
+  docs      : Array Doc := #[]
+  lastComma : Bool := false
+
+private
+def rw_rules?
+    (walk : Lean4Fmt.Emit.Walk)
+    (rules : Array Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m (Option (Array Doc)) := do
+  let mut state : RwRules := {}
+  for rule in rules do
+    if rule.isAtom then
+      if (Lean4Fmt.Emit.bare_src rule).trimAscii.toString == "," then
+        state := { state with lastComma := true }
+    else
+      let some doc ← rw_rule_doc? walk rule | return none
+      state := { docs := state.docs.push doc, lastComma := false }
+  if state.docs.isEmpty || state.lastComma then
+    return none
+  return some state.docs
+
+private
+def dispatch_rw
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  if stx.getKind != ``Lean.Parser.Tactic.rwSeq then
+    return .unhandled
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← fallback stx)
+  let args := stx.getArgs
+  if args.size != 4 then
+    return (← fallback stx)
+  if !(Lean4Fmt.Emit.bare_src args[1]!).trimAscii.toString.isEmpty then
+    return (← fallback stx)
+  let rules := args[2]!
+  if rules.getKind != ``Lean.Parser.Tactic.rwRuleSeq || rules.getArgs.size != 3 then
+    return (← fallback stx)
+  let some docs ← rw_rules? walk ((rules.getArgs[1]?.map (·.getArgs)).getD #[])
+    | return (← fallback stx)
+  let location := (args[3]?.map Lean4Fmt.Emit.canon_tok).getD ""
+  if location.any (· == '\n') then return (← fallback stx)
+  let locationDoc : Doc := if location.isEmpty then .nil else .text (" " ++ location)
+  let width := (← read).layout.lineWidth
+  let anyWide := docs.any (fun doc => ((Lean4Fmt.Doc.flat_width doc).getD (width + 1)) + 12 > width)
+  if docs.size == 1 && anyWide then
+    return .handled (.text "rw [" ++ docs[0]! ++ .text "]" ++ locationDoc)
+  let listDoc :=
+    if (← read).breaking.listFill && !anyWide then
+      Lean4Fmt.Doc.fill_list "[" "]" docs
+    else
+      Lean4Fmt.Doc.comma_list "[" "]" docs
+  return .handled (.text "rw " ++ listDoc ++ locationDoc)
+
+private
+def dispatch_head_block
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  let kind := stx.getKind
+  let ordinary :=
+    kind == `Lean.Parser.Tactic.«tacticNext_=>_» || kind == ``Lean.Parser.Tactic.case
+        || kind == ``Lean.Parser.Tactic.allGoals
+        || kind == `Lean.Parser.Tactic.tacticRepeat_
+  let conv := kind == `Lean.Parser.Tactic.Conv.conv
+  if !ordinary && !conv then
+    return .unhandled
+  let some doc ← head_block_doc? walk stx (conv := conv) | return (← fallback stx)
+  return .handled doc
+
+private
+def dispatch_classical
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  if stx.getKind != `Lean.Parser.Tactic.classical then
+    return .unhandled
+  let args := stx.getArgs
+  if args.size != 2 then
+    return (← fallback stx)
+  let keywordTrail := (Lean4Fmt.Syntax.trailing? args[0]!).getD ""
+  if !keywordTrail.trimAscii.toString.isEmpty then
+    return (← fallback stx)
+  let keyword := (Lean4Fmt.Emit.bare_src args[0]!).trimAscii.toString
+  let some groups := tactic_groups? args[1]! | return (← fallback stx)
+  let some body ← seq_groups_doc? walk groups true | return (← fallback stx)
+  return .handled (.text keyword ++ body)
+
+private
+def dispatch_bullet
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  if stx.getKind != `Lean.cdot then
+    return .unhandled
+  let args := stx.getArgs
+  if args.size != 2 then
+    return (← fallback stx)
+  let token := (Lean4Fmt.Emit.bare_src args[0]!).trimAscii.toString
+  let tokenTrail := ((Lean4Fmt.Syntax.trailing? args[0]!).getD "").trimAscii.toString
+  let some groups := tactic_groups? args[1]! | return (← fallback stx)
+  if tokenTrail.startsWith "--" && !tokenTrail.any (· == '\n') then
+    let some rest ← seq_groups_doc? walk groups true | return (← fallback stx)
+    return .handled (.align (.text (token ++ " " ++ tokenTrail) ++ .nest 2 rest))
+  if !tokenTrail.isEmpty then
+    return (← fallback stx)
+  let firstGroup := groups[0]!
+  let firstLead := (Lean4Fmt.Syntax.leading? firstGroup[0]!).getD ""
+  if ((firstLead.splitOn "\n").drop 1).dropLast.any
+      (fun line => !line.trimAscii.toString.isEmpty) then
+    return (← fallback stx)
+  let some firstDoc ← group_doc? walk firstGroup | return (← fallback stx)
+  if Lean4Fmt.Doc.hasMultilineVerbatim firstDoc then return (← fallback stx)
+  let firstTrail :=
+    ((Lean4Fmt.Syntax.trailing? firstGroup[firstGroup.size - 1]!).getD "").trimAscii.toString
+  if groups.size == 1 then
+    if !firstTrail.isEmpty then return (← fallback stx)
+    return .handled (.text (token ++ " ") ++ .align firstDoc)
+  if firstTrail.any (· == '\n') then return (← fallback stx)
+  let trailDoc : Doc := if firstTrail.isEmpty then .nil else .text (" " ++ firstTrail)
+  let some rest ← seq_groups_doc? walk (groups.extract 1 groups.size) true
+    | return (← fallback stx)
+  return .handled
+    (.align (.text (token ++ " ") ++ .align firstDoc ++ trailDoc ++ .nest 2 rest))
+
+private
+def dispatch_suffices
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  if stx.getKind != `Lean.Parser.Tactic.tacticSuffices_
+      || !(Lean4Fmt.Emit.bare_src stx).any (· == '\n') then
+    return .unhandled
+  let bare := Lean4Fmt.Emit.bare_src stx
+  let some byNode := last_by_descendant? stx | return (← fallback stx)
+  let some startPos := stx.getPos? | return (← fallback stx)
+  let some byPos := byNode.getPos? | return (← fallback stx)
+  if byNode.getTailPos? != stx.getTailPos? then
+    return (← fallback stx)
+  if head_ws_sensitive byPos.byteIdx stx then
+    return (← fallback stx)
+  let headBytes :=
+    (String.fromUTF8? (bare.toUTF8.extract 0 (byPos.byteIdx - startPos.byteIdx))).getD ""
+  if headBytes.isEmpty || headBytes.toList.any (· == '"')
+      || (headBytes.splitOn "--").length > 1 || (headBytes.splitOn "/-").length > 1 then
+    return (← fallback stx)
+  let head :=
+    String.intercalate
+      " "
+      (((headBytes.split (fun char => char == '\n' || char == ' ' || char == '\t')).toList.map
+        (·.toString)).filter
+        (fun word => !word.isEmpty))
+  if head.isEmpty then
+    return (← fallback stx)
+  let byDoc ← walk byNode
+  let .verbatim _ _ := byDoc | return .handled (.text (head ++ " ") ++ byDoc)
+  return (← fallback stx)
+
+private
+def is_token_line_kind (kind : Lean.Name) : Bool :=
+  kind == ``Lean.Parser.Tactic.tacticRfl || kind == ``Lean.Parser.Tactic.omega
+      || kind == ``Lean.Parser.Tactic.decide
+      || kind == ``Lean.Parser.Tactic.nativeDecide
+      || kind == ``Lean.Parser.Tactic.constructor
+      || kind == ``Lean.Parser.Tactic.tacticTrivial
+      || kind == ``Lean.Parser.Tactic.contradiction
+      || kind == ``Lean.Parser.Tactic.assumption
+      || kind == ``Lean.Parser.Tactic.tacticAnd_intros
+      || kind == ``Lean.Parser.Tactic.simpAll
+      || kind == ``Lean.Parser.Tactic.intro
+      || kind == ``Lean.Parser.Tactic.intros
+      || kind == ``Lean.Parser.Tactic.split
+      || kind == `Lean.Parser.Tactic.rcases
+      || kind == ``Lean.Parser.Tactic.show
+      || kind == `Lean.Parser.Tactic.subst
+      || kind == `Lean.Parser.Tactic.«tacticExists_,,»
+      || kind == ``Lean.Parser.Tactic.change
+      || kind == `«tacticBy_cases_:_»
+      || kind == `Lean.Parser.Tactic.tacticSuffices_
+      || kind == `Lean.Parser.Tactic.congr
+      || kind == `Lean.Parser.Tactic.renameI
+      || kind == `Lean.Parser.Tactic.bvDecide
+      || kind == `Lean.Parser.Tactic.left
+      || kind == `Lean.Parser.Tactic.right
+      || kind == `Lean.Parser.Tactic.revert
+      || kind == `Lean.Parser.Tactic.injection
+      || kind == `Lean.Parser.Tactic.tacticInfer_instance
+      || kind == `Lean.Parser.Tactic.tacticExfalso
+      || kind == `Lean.Parser.Tactic.«tacticNomatch_,,»
+      || kind == `Lean.Parser.Tactic.paren
+      || kind == `Lean.Parser.Tactic.generalize
+
+private
+def dispatch_token_line (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Dispatch := do
+  if !is_token_line_kind stx.getKind then
+    return .unhandled
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← fallback stx)
+  let mut line := ""
+  for child in stx.getArgs do
+    let token :=
+      (Lean4Fmt.Emit.token_join? child).getD ((Lean4Fmt.Emit.bare_src child).trimAscii.toString)
+    if token.any (· == '\n') then
+      return (← fallback stx)
+    if !token.isEmpty then line := if line.isEmpty then token else line ++ " " ++ token
+  if line.isEmpty then
+    return (← fallback stx)
+  return .handled (.text line)
+
+private
+def dispatch_by
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  let kind := stx.getKind
+  if kind != ``Lean.Parser.Term.byTactic && kind != `Lean.Parser.Term.byTactic' then
+    return .unhandled
+  let args := stx.getArgs
+  if args.size != 2 then
+    return (← fallback stx)
+  if !((Lean4Fmt.Syntax.trailing? args[0]!).getD "").trimAscii.toString.isEmpty then
+    return (← fallback stx)
+  let some body ← arm_seq_doc? walk args[1]! | return (← fallback stx)
+  return .handled (.text "by" ++ body)
+
+private
+def induction_arm_doc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (alt : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m (Option Doc) := do
+  if alt.getKind != ``Lean.Parser.Tactic.inductionAlt || alt.getArgs.size != 2 then
+    return none
+  let left := Lean4Fmt.Emit.canon_tok alt.getArgs[0]!
+  if left.isEmpty || left.any (· == '\n') then
+    return none
+  let right := alt.getArgs[1]!.getArgs
+  if right.size == 0 then
+    return some (.text left)
+  if right.size != 2 then
+    return none
+  let some seq := right[1]? | return none
+  let arrowSource := ((right[0]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString
+  let arrow := if arrowSource.isEmpty then "=>" else arrowSource
+  let arrowTrail := ((right[0]?.bind Lean4Fmt.Syntax.trailing?).getD "").trimAscii.toString
+  if arrowTrail.any (· == '\n')
+      || (!arrowTrail.isEmpty && !arrowTrail.startsWith "--") then
+    return none
+  if seq.getKind == ``Lean.Parser.Term.syntheticHole || seq.getKind == ``Lean.Parser.Term.hole then
+    let hole := Lean4Fmt.Emit.canon_tok seq
+    if hole.isEmpty || hole.any (· == '\n') || !arrowTrail.isEmpty then
+      return none
+    return some (.text (left ++ " " ++ arrow ++ " " ++ hole))
+  if !arrowTrail.isEmpty then
+    let some groups := tactic_groups? seq | return none
+    let some rest ← seq_groups_doc? walk groups true | return none
+    return some (.text (left ++ " " ++ arrow ++ " " ++ arrowTrail) ++ .nest 2 rest)
+  let some body ← arm_seq_doc? walk seq | return none
+  return some (.text (left ++ " " ++ arrow) ++ body)
+
+private
+def induction_alt_sep? (alt : Lean.Syntax) : Option Doc :=
+  let leading := (Lean4Fmt.Syntax.leading? alt).getD ""
+  let hasContent :=
+    ((leading.splitOn "\n").drop 1).dropLast.any (fun line => !line.trimAscii.toString.isEmpty)
+  if hasContent then Lean4Fmt.Emit.leading_sep? leading else some .hardline
+
+private
+def induction_arm_or_verbatim
+    (walk : Lean4Fmt.Emit.Walk)
+    (alt : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Doc := do
+  let some doc ← induction_arm_doc? walk alt | return (← Lean4Fmt.Emit.verbatim alt)
+  return doc
+
+private
+def dispatch_induction
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  let kind := stx.getKind
+  if kind != ``Lean.Parser.Tactic.induction && kind != ``Lean.Parser.Tactic.cases then
+    return .unhandled
+  let args := stx.getArgs
+  if args.isEmpty then
+    return (← fallback stx)
+  let mut head := ""
+  for child in args.extract 0 (args.size - 1) do
+    let token := Lean4Fmt.Emit.canon_tok child
+    if token.any (· == '\n') then
+      return (← fallback stx)
+    if !token.isEmpty then head := if head.isEmpty then token else head ++ " " ++ token
+  if head.isEmpty then
+    return (← fallback stx)
+  let alternativesSlot := args[args.size - 1]!
+  if (Lean4Fmt.Emit.bare_src alternativesSlot).trimAscii.toString.isEmpty then
+    return .handled (.text head)
+  let some alternativesNode := alternativesSlot.getArgs[0]? | return (← fallback stx)
+  if alternativesNode.getKind != ``Lean.Parser.Tactic.inductionAlts
+      || alternativesNode.getArgs.size != 3 then
+    return (← fallback stx)
+  if !(Lean4Fmt.Emit.bare_src alternativesNode.getArgs[1]!).trimAscii.toString.isEmpty then
+    return (← fallback stx)
+  let mut doc : Doc := .text (head ++ " with")
+  for alt in alternativesNode.getArgs[2]!.getArgs do
+    let some separator := induction_alt_sep? alt | return (← fallback stx)
+    doc := doc ++ separator ++ (← induction_arm_or_verbatim walk alt)
+  return .handled doc
+
+private
+def obtain_head_doc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m (Option Doc) := do
+  let args := stx.getArgs
+  let mut head := (Lean4Fmt.Emit.bare_src args[0]!).trimAscii.toString
+  if head != "obtain" then
+    return none
+  let pattern := Lean4Fmt.Emit.canon_tok args[1]!
+  if pattern.any (· == '\n') then
+    return none
+  if !pattern.isEmpty then head := head ++ " " ++ pattern
+  let typeText := Lean4Fmt.Emit.canon_tok args[2]!
+  if typeText.isEmpty then
+    return some (.text head)
+  if !typeText.any (· == '\n') then
+    return some (.text (head ++ " " ++ typeText))
+  let typeArgs := args[2]!.getArgs
+  let typeNode :=
+    if typeArgs.size == 2 && (Lean4Fmt.Emit.bare_src typeArgs[0]!).trimAscii.toString == ":" then
+      typeArgs[1]!
+    else
+      .missing
+  if typeNode.isMissing then
+    return none
+  let typeDoc ← walk typeNode
+  if (match typeDoc with | .verbatim _ _ => true | _ => false)
+      || Lean4Fmt.Doc.hasMultilineVerbatim typeDoc then
+    return none
+  return some (.text (head ++ " :") ++ .group (.nest 4 (.line ++ typeDoc)))
+
+private
+def obtain_value? (assignment : Lean.Syntax) : Option Lean.Syntax :=
+  if (Lean4Fmt.Emit.bare_src assignment).trimAscii.toString.isEmpty || assignment.getArgs.size != 2 then
+    none
+  else
+    let targets := assignment.getArgs[1]!.getArgs
+    if targets.size != 1 then
+      none
+    else
+      let target := targets[0]!
+      if target.getKind == `Lean.Parser.Tactic.casesTarget && target.getArgs.size == 2
+          && (Lean4Fmt.Emit.bare_src target.getArgs[0]!).trimAscii.toString.isEmpty then
+        some target.getArgs[1]!
+      else
+        some target
+
+private
+def obtain_value_doc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (headDoc : Doc)
+    (value : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m (Option Doc) := do
+  let valueDoc ← walk value
+  let valueIsBlock :=
+    value.getKind == ``Lean.Parser.Term.do || value.getKind == ``Lean.Parser.Term.byTactic
+  if valueIsBlock then
+    if valueDoc matches .verbatim _ _ then
+      return none
+    return some (headDoc ++ .text " := " ++ valueDoc)
+  if Lean4Fmt.Doc.hasMultilineVerbatim valueDoc then
+    if valueDoc matches .verbatim _ _ then
+      return none
+    if Lean4Fmt.Doc.has_midline_reanchor valueDoc then
+      return none
+    return some (headDoc ++ .text " :=" ++ .nest 2 (.hardline ++ valueDoc))
+  return some (headDoc ++ .text " :=" ++ .group (.nest 2 (.line ++ valueDoc)))
+
+private
+def dispatch_obtain
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  if stx.getKind != `Lean.Parser.Tactic.obtain then
+    return .unhandled
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← fallback stx)
+  let args := stx.getArgs
+  if args.size != 4 then
+    return (← fallback stx)
+  let some headDoc ← obtain_head_doc? walk stx | return (← fallback stx)
+  if (Lean4Fmt.Emit.bare_src args[3]!).trimAscii.toString.isEmpty then
+    return .handled headDoc
+  let some value := obtain_value? args[3]! | return (← fallback stx)
+  let some doc ← obtain_value_doc? walk headDoc value | return (← fallback stx)
+  return .handled doc
+
+private
+def calc_steps? (stx : Lean.Syntax) : Option (Array Lean.Syntax) := do
+  let args := stx.getArgs
+  if args.size != 2 then none
+  let stepArgs := args[1]!.getArgs
+  if stepArgs.size != 2 then none
+  let steps := #[stepArgs[0]!] ++ stepArgs[1]!.getArgs
+  if steps.isEmpty then none
+  else some steps
+
+private
+def calc_flat_doc? (steps : Array Lean.Syntax) (width : Nat) : Option Doc :=
+  Id.run do
+    let mut flatSteps : Array String := #[]
+    for step in steps do
+      if head_ws_sensitive (1 <<< 60) step then
+        return none
+      let some text := Lean4Fmt.Emit.token_join_flat? step | return none
+      if text.isEmpty || text.length + 7 > width then
+        return none
+      flatSteps := flatSteps.push text
+    let mut doc : Doc := .text "calc " ++ .text flatSteps[0]!
+    for idx in [1:flatSteps.size] do
+      doc := doc ++ .nest 5 (.hardline ++ .text flatSteps[idx]!)
+    return some doc
+
+private
+def calc_proof? (stepArgs : Array Lean.Syntax) : Option Lean.Syntax :=
+  if stepArgs.size == 3 && (Lean4Fmt.Emit.bare_src stepArgs[1]!).trimAscii.toString == ":=" then
+    some stepArgs[2]!
+  else if stepArgs.size == 2 then
+    let assignment := stepArgs[1]!
+    if assignment.getKind == Lean.nullKind && assignment.getArgs.size == 2
+        && (Lean4Fmt.Emit.bare_src assignment.getArgs[0]!).trimAscii.toString == ":=" then
+      some assignment.getArgs[1]!
+    else
+      none
+  else
+    none
+
+private
+def calc_step_doc?
+    (walk : Lean4Fmt.Emit.Walk)
+    (first : Bool)
+    (step : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m (Option Doc) := do
+  let args := step.getArgs
+  let bareHead :=
+    first && args.size == 2 && (Lean4Fmt.Emit.bare_src args[1]!).trimAscii.toString.isEmpty
+  if bareHead then
+    let some relation := args[0]? | return none
+    let relationDoc ← walk relation
+    if (match relationDoc with | .verbatim _ _ => true | _ => false)
+        || Lean4Fmt.Doc.hasMultilineVerbatim relationDoc then
+      return none
+    return some relationDoc
+  let some proof := calc_proof? args | return none
+  let some relation := args[0]? | return none
+  let relationDoc ← walk relation
+  if (match relationDoc with | .verbatim _ _ => true | _ => false)
+      || Lean4Fmt.Doc.hasMultilineVerbatim relationDoc then
+    return none
+  let proofDoc ← walk proof
+  if proof.getKind == ``Lean.Parser.Term.do || proof.getKind == ``Lean.Parser.Term.byTactic then
+    if proofDoc matches .verbatim _ _ then
+      return none
+    return some (relationDoc ++ .nest 4 (.text " := " ++ proofDoc))
+  if Lean4Fmt.Doc.hasMultilineVerbatim proofDoc then
+    return none
+  return some (relationDoc ++ .nest 4 (.text " :=" ++ .group (.line ++ proofDoc)))
+
+private
+def calc_broken_doc
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    (steps : Array Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Doc := do
+  let mut body : Doc := .nil
+  let mut first := true
+  for step in steps do
+    let stepDoc? ← calc_step_doc? walk first step
+    match stepDoc?, first with
+    | some stepDoc, true => body := .text "calc " ++ stepDoc
+    | some stepDoc, false => body := body ++ .nest 2 (.hardline ++ stepDoc)
+    | none, true => return (← Lean4Fmt.Emit.verbatim stx)
+    | none, false => body := body ++ .nest 2 (.hardline ++ (← Lean4Fmt.Emit.verbatim step))
+    first := false
+  return body
+
+private
+def dispatch_calc
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Dispatch := do
+  let kind := stx.getKind
+  if kind != `Lean.calcTactic && kind != `Lean.calc then
+    return .unhandled
+  if (← read).breaking.preserveLineBreaks && (Lean4Fmt.Emit.bare_src stx).any (· == '\n') then
+    return (← fallback stx)
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← fallback stx)
+  let some steps := calc_steps? stx | return (← fallback stx)
+  if let some doc := calc_flat_doc? steps (← read).layout.lineWidth then
+    return .handled doc
+  return .handled (← calc_broken_doc walk stx steps)
+
 /-- Emit a Tactic-category construct: the `by` block (one tactic per line at
     +2), and the ported tactic interiors — `exact`/`apply`/`refine` (term
     walked, width-aware), `rw` (rule list as a commaList), `unfold` (idents as
     text), `induction`/`cases … with` alternatives (arm bodies via the branch
     layout). Unknown tactics reproduce verbatim — the tactic language is
     extensible and byte-exact passthrough is the contract. -/
-def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
-  let kind := stx.getKind
-  let a := stx.getArgs
-  if kind == ``Lean.Parser.Tactic.exact || kind == ``Lean.Parser.Tactic.apply
-      || kind == ``Lean.Parser.Tactic.refine then
-    -- [kw, term] — the term walked, flat on the kw line when it fits
-    if Lean4Fmt.Syntax.interior_has_line_comment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    let kwT := (Lean4Fmt.Emit.bare_src a[0]!).trimAscii.toString
-    let tDoc ← walk a[1]!
-    -- a bare whole-verbatim term gains nothing (and would move the author's
-    -- glued head to an own-line break); an ACTIVE doc whose interior
-    -- verbatims sit at hardline seams re-anchors deterministically — the
-    -- precise hazard is a mid-line glue in the assembled layout
-    let layout : Doc := .text kwT ++ .group (.nest 2 (.line ++ tDoc))
-    if (match tDoc with | .verbatim _ _ => true | _ => false)
-        || Lean4Fmt.Doc.has_midline_reanchor layout then
-      return (← Lean4Fmt.Emit.verbatim stx)
-    return layout
-  else if kind == ``Lean.Parser.Tactic.rwSeq then
-    -- ["rw", optConfig, rwRuleSeq ["[", rules, "]"], location?]
-    if Lean4Fmt.Syntax.interior_has_line_comment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    if a.size != 4 then return (← Lean4Fmt.Emit.verbatim stx)
-    if !(Lean4Fmt.Emit.bare_src a[1]!).trimAscii.toString.isEmpty then
-      return (← Lean4Fmt.Emit.verbatim stx)   -- config: verbatim for now
-    let rs := a[2]!
-    if rs.getKind != ``Lean.Parser.Tactic.rwRuleSeq || rs.getArgs.size != 3 then
-      return (← Lean4Fmt.Emit.verbatim stx)
-    let mut ds : Array Doc := #[]
-    -- trailing comma (`rw [a, b, ]`): no slot in the rebuilt list — bail
-    let mut lastComma := false
-    for r in (rs.getArgs[1]?.map (·.getArgs)).getD #[] do
-      if r.isAtom then
-        if (Lean4Fmt.Emit.bare_src r).trimAscii.toString == "," then lastComma := true
-        continue
-      let t := Lean4Fmt.Emit.canon_tok r
-      if t.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-      if t.any (· == '\n') then
-        -- a MULTI-LINE rule (a `<|` chain, an app with `(by …)` — 10K of
-        -- the wide census) WALKS its TERM (rwRule = [←?, term]; the arrow
-        -- reattaches as text): newlines are free inside the brackets, so an
-        -- active rule doc breaking at its own group is parse-safe; only an
-        -- opaque piece (bare verbatim / midline hazard) keeps the whole
-        let (arrowT, term) :=
-          if r.getKind == ``Lean.Parser.Tactic.rwRule && r.getArgs.size == 2 then
-            ((((r.getArgs[0]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString),
-              r.getArgs[1]!)
-          else ("", r)
-        let rDoc ← walk term
-        if (match rDoc with | .verbatim _ _ => true | _ => false)
-            || Lean4Fmt.Doc.has_midline_reanchor rDoc then
-          return (← Lean4Fmt.Emit.verbatim stx)
-        ds := ds.push ((if arrowT.isEmpty then Doc.nil else .text (arrowT ++ " ")) ++ rDoc)
-      else
-        ds := ds.push (.text t)
-      lastComma := false
-    if ds.isEmpty || lastComma then return (← Lean4Fmt.Emit.verbatim stx)
-    let locT := (a[3]?.map Lean4Fmt.Emit.canon_tok).getD ""
-    if locT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-    let locD : Doc := if locT.isEmpty then .nil else .text (" " ++ locT)
-    -- fillList force-flattens items: a rule too wide to fit flat (a walked
-    -- multi-line chain) must route to commaList, where its own group breaks
-    let w := (← read).layout.lineWidth
-    let anyWide := ds.any (fun d => ((Lean4Fmt.Doc.flat_width d).getD (w + 1)) + 12 > w)
-    -- a SINGLE wide rule glues the bracket and breaks inside its own group
-    -- (`rw [long_app\n  arg …]`) — the vertical bracket is for lists
-    if ds.size == 1 && anyWide then
-      return .text "rw [" ++ ds[0]! ++ .text "]" ++ locD
-    let listD := if (← read).breaking.listFill && !anyWide then Lean4Fmt.Doc.fill_list "[" "]" ds
-      else Lean4Fmt.Doc.comma_list "[" "]" ds
-    return .text "rw " ++ listD ++ locD
-  else if kind == ``Lean.Parser.Tactic.tacticHave__
-      || kind == `Lean.Parser.Tactic.tacticLet__
-      || kind == `Lean.Parser.Tactic.tacticHaveI__
-      || kind == `Lean.Parser.Tactic.tacticLetI__
-      || kind == ``Lean.Parser.Tactic.replace then
-    -- ["have"/"let"/"haveI"/"letI", letConfig, letDecl] — the doLet shape
-    -- minus `mut` (`replace` is the same minus letConfig); the letDecl walks
-    -- through the existing 5-slot machinery. NO blanket
-    -- comment bail (the over-guard class): a `:= by` value's interior
-    -- comments live at sequence seams the by machinery owns; comment-bearing
-    -- HEADS go multi-line under canonTok and bail below; anything unowned
-    -- is the comments gate's to catch (fallback, never damage).
-    if a.size != 3 && a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    let kwT := (Lean4Fmt.Emit.bare_src a[0]!).trimAscii.toString
-    let cfgT := if a.size == 3 then Lean4Fmt.Emit.canon_tok a[1]! else ""
-    if cfgT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-    let dDoc ← walk a[a.size - 1]!
-    -- trust the letDecl path's OWN guards: a glued-by value's interior
-    -- verbatims sit at sequence seams (an undispatched multi-line tactic
-    -- inside `have h : T := by …` wrongly killed the whole have via the old
-    -- blanket hasMultilineVerbatim — the 5.2KB mathlib tacticHave class);
-    -- only a BARE whole-verbatim binding (the inner path bailed) stays out
-    match dDoc with
-    | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
-    | _ =>
-      return .text (kwT ++ " ") ++ (if cfgT.isEmpty then Doc.nil else .text (cfgT ++ " ")) ++ dDoc
-  else if kind == `Lean.Parser.Tactic.obtain then
-    -- ["obtain", pat?, (":" type)?, (":=" target,+)?] (Batteries rcases).
-    -- The letIdDecl dual in tactic position: head token-for-token (pattern
-    -- and type single-line), the := VALUE walked — `by`/`do` glues (its
-    -- body brings the hardlines; interior verbatims sit at sequence
-    -- seams), else flat-or-broken at +2. 32.2KB of the wide census rode
-    -- verbatim through the token-line path (any newline bailed).
-    if Lean4Fmt.Syntax.interior_has_line_comment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    if a.size != 4 then return (← Lean4Fmt.Emit.verbatim stx)
-    let mut head := (Lean4Fmt.Emit.bare_src a[0]!).trimAscii.toString
-    if head != "obtain" then return (← Lean4Fmt.Emit.verbatim stx)
-    let patT := Lean4Fmt.Emit.canon_tok a[1]!
-    if patT.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-    if !patT.isEmpty then head := head ++ " " ++ patT
-    let tyT := Lean4Fmt.Emit.canon_tok a[2]!
-    let headDoc : Doc ← do
-      if tyT.isEmpty then pure (.text head)
-      else if !tyT.any (· == '\n') then pure (.text (head ++ " " ++ tyT))
-      else
-        -- multi-line TYPE: the broken-head recipe (the letIdDecl dual) —
-        -- `obtain ⟨…⟩ :` + the walked type at +4, the := tail glues after
-        -- the type's last line
-        let ta := a[2]!.getArgs
-        let tyNode :=
-          if ta.size == 2 && (Lean4Fmt.Emit.bare_src ta[0]!).trimAscii.toString == ":" then
-            ta[1]!
-          else .missing
-        if tyNode.isMissing then return (← Lean4Fmt.Emit.verbatim stx)
-        let tyDoc ← walk tyNode
-        if (match tyDoc with | .verbatim _ _ => true | _ => false)
-            || Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then
-          return (← Lean4Fmt.Emit.verbatim stx)
-        pure (.text (head ++ " :") ++ .group (.nest 4 (.line ++ tyDoc)))
-    let asgn := a[3]!
-    if (Lean4Fmt.Emit.bare_src asgn).trimAscii.toString.isEmpty then
-      -- no := tail: the head IS the tactic
-      return headDoc
-    -- [":=", sepBy(casesTarget)]: exactly one target this round (a comma
-    -- list of targets keeps the whole verbatim)
-    if asgn.getArgs.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    let targets := asgn.getArgs[1]!.getArgs
-    if targets.size != 1 then return (← Lean4Fmt.Emit.verbatim stx)
-    let v0 := targets[0]!
-    -- a casesTarget wraps `(ident " : ")? term` — an unnamed one unwraps to
-    -- its term; a NAMED target (`h : e`) keeps the wrapper and rides the
-    -- bare-verbatim bails below
-    let v :=
-      if v0.getKind == `Lean.Parser.Tactic.casesTarget && v0.getArgs.size == 2
-          && (Lean4Fmt.Emit.bare_src v0.getArgs[0]!).trimAscii.toString.isEmpty then
-        v0.getArgs[1]!
-      else v0
-    let vdoc ← walk v
-    let vIsBlock := v.getKind == ``Lean.Parser.Term.do
-        || v.getKind == ``Lean.Parser.Term.byTactic
-    if vIsBlock then
-      match vdoc with
-      | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
-      | _ => return headDoc ++ .text " := " ++ vdoc
-    if Lean4Fmt.Doc.hasMultilineVerbatim vdoc then
-      match vdoc with
-      | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
-      | _ =>
-        if Lean4Fmt.Doc.has_midline_reanchor vdoc then return (← Lean4Fmt.Emit.verbatim stx)
-        return headDoc ++ .text " :=" ++ .nest 2 (.hardline ++ vdoc)
-    return headDoc ++ .text " :=" ++ .group (.nest 2 (.line ++ vdoc))
-  else if kind == ``Lean.Parser.Tactic.simp || kind == ``Lean.Parser.Tactic.simpAll
-      || kind == `Lean.Parser.Tactic.dsimp || kind == `Lean.Parser.Tactic.simpa
-      || kind == `Lean.Parser.Tactic.simpaUsingBang
-      || kind == `Lean.Parser.Tactic.tacticRwa__
-      || kind == `Mathlib.Tactic.tacticSimp_rw___ then
-    -- simp family + rwa: tokens on one line, bracket lists as width-aware
-    -- commaLists (a long lemma list breaks instead of going verbatim)
-    if Lean4Fmt.Syntax.interior_has_line_comment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    -- a multi-line tail AFTER the bracket list (`simpa […] using <multi-line
-    -- term>`) must not naive-join: the space-join spaced a projection dot
-    -- and the reparse minted an anonymous field (gate-caught on mathlib
-    -- Determinant, tokens). The `using` TERM instead WALKS, glued
-    -- exact-style after the joined head (lineWords? on the pruned tactic
-    -- still refuses any OTHER multi-line piece); a bare-verbatim or
-    -- mid-line-hazard term keeps the whole tactic verbatim.
-    if ((Lean4Fmt.Emit.bare_src stx).splitOn "]").getLast!.any (· == '\n') then
-      let some (pruned, term) := prune_using? stx
-        | return (← Lean4Fmt.Emit.verbatim stx)
-      if !(Lean4Fmt.Emit.bare_src term).any (· == '\n') then
-        return (← Lean4Fmt.Emit.verbatim stx)
-      let some ws := line_words? pruned ((← read).breaking.listFill)
-        | return (← Lean4Fmt.Emit.verbatim stx)
-      if ws.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-      let tDoc ← walk term
-      let layout := join_words ws ++ .group (.nest 2 (.line ++ tDoc))
-      if (match tDoc with | .verbatim _ _ => true | _ => false)
-          || Lean4Fmt.Doc.has_midline_reanchor layout then
-        return (← Lean4Fmt.Emit.verbatim stx)
-      return layout
-    match line_words? stx ((← read).breaking.listFill) with
-    | some ws => if ws.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-                 else return join_words ws
-    | none => return (← Lean4Fmt.Emit.verbatim stx)
-  else if kind == `Lean.Parser.Tactic.«tactic_<;>_» then
-    -- [lhs, <;>, rhs] left-nested chain: elements walked (active layouts
-    -- apply), packed width-aware; a break leads the continuation with
-    -- `<;> ` at +2 (the mathlib shape). Bounded spine walk keeps this total.
-    if Lean4Fmt.Syntax.interior_has_line_comment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    let mut elems : Array Lean.Syntax := #[]
-    let mut cur := stx
-    for _ in [0:64] do
-      if cur.getKind == `Lean.Parser.Tactic.«tactic_<;>_» && cur.getArgs.size == 3 then
-        elems := elems.push cur.getArgs[2]!
-        cur := cur.getArgs[0]!
-    if cur.getKind == `Lean.Parser.Tactic.«tactic_<;>_» then
-      return (← Lean4Fmt.Emit.verbatim stx)   -- absurd depth: bail whole
-    elems := elems.push cur
-    let chain := elems.reverse
-    let mut head : Doc := .nil
-    let mut tail : Doc := .nil
-    for h : i in [0:chain.size] do
-      let eDoc ← walk chain[i]
-      if Lean4Fmt.Doc.hasMultilineVerbatim eDoc then return (← Lean4Fmt.Emit.verbatim stx)
-      if i == 0 then head := eDoc
-      else tail := tail ++ .group (.line ++ .text "<;> " ++ eDoc)
-    -- nest ONLY the continuation: nesting the head too would shift the whole
-    -- chain right when it lands after a pending newline (a seq seam)
-    return head ++ .nest 2 tail
-  else if kind == `Lean.Parser.Tactic.first then
-    -- single-line `first | a | b` rides the token line; the block form is
-    -- `first` + one `| <body>` per alternative at the same indent
-    if Lean4Fmt.Syntax.interior_has_line_comment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    if !(Lean4Fmt.Emit.bare_src stx).any (· == '\n') then
-      match line_words? stx ((← read).breaking.listFill) with
-      | some ws => if ws.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-                   else return join_words ws
-      | none => return (← Lean4Fmt.Emit.verbatim stx)
-    if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    let mut d : Doc := .text "first"
-    for g in a[1]!.getArgs do
-      let ga := g.getArgs
-      if ga.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-      let some bD ← arm_seq_doc? walk ga[1]! | return (← Lean4Fmt.Emit.verbatim stx)
-      d := d ++ .hardline ++ .text "|" ++ bD
-    return d
-  else if kind == `Lean.Parser.Tactic.match then
-    -- tactic-match: head `match … with` single-line, arms `| pats =>` + body
-    -- via the branch layout (mirrors induction alternatives)
-    if a.size < 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    let mut head := ""
-    for h : i in [0:a.size - 1] do
-      let c := a[i]!
-      -- first child's leading = the FORM's own leading — the enclosing seam
-      -- owns it (see exampleDoc?); interior comments still bail
-      let ownLead := if i == 0
-        then Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? c).getD "")
-        else 0
-      if Lean4Fmt.Syntax.count_subtree_line_comments c > ownLead then
-        return (← Lean4Fmt.Emit.verbatim stx)
-      let t := Lean4Fmt.Emit.canon_tok c
-      if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-      if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
-    if head.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-    let some altsWrap := a[a.size - 1]!.getArgs[0]? | return (← Lean4Fmt.Emit.verbatim stx)
-    let mut d : Doc := .text head
-    for alt in altsWrap.getArgs do
-      let ala := alt.getArgs
-      if ala.size != 4 then return (← Lean4Fmt.Emit.verbatim stx)
-      if Lean4Fmt.Syntax.interior_has_line_comment alt then return (← Lean4Fmt.Emit.verbatim stx)
-      let mut lhs := ""
-      for c in ala.extract 0 3 do
-        let t := Lean4Fmt.Emit.canon_tok c
-        if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-        if !t.isEmpty then lhs := if lhs.isEmpty then t else lhs ++ " " ++ t
-      let some bD ← arm_seq_doc? walk ala[3]! | return (← Lean4Fmt.Emit.verbatim stx)
-      d := d ++ .hardline ++ .text lhs ++ bD
-    return d
-  else if kind == ``Lean.Parser.Tactic.unfold then
-    -- ["unfold", idents, location?] — plain text, token-for-token
-    if Lean4Fmt.Syntax.interior_has_line_comment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    let mut line := ""
-    for c in a do
-      let t := (Lean4Fmt.Emit.token_join? c).getD
-        ((Lean4Fmt.Emit.bare_src c).trimAscii.toString)
-      if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-      if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
-    if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-    return .text line
-  else if kind == ``Lean.Parser.Tactic.induction || kind == ``Lean.Parser.Tactic.cases then
-    -- [kw, targets, …, alts?] — head token-for-token; `with` alternatives as
-    -- arms: `| pat =>` + body via the branch layout. No alternatives (bare
-    -- `induction n`) is a plain text line.
-    if a.size == 0 then return (← Lean4Fmt.Emit.verbatim stx)
-    let mut head := ""
-    for c in a.extract 0 (a.size - 1) do
-      let t := Lean4Fmt.Emit.canon_tok c
-      if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-      if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
-    if head.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-    let altsSlot := a[a.size - 1]!
-    let altsT := (Lean4Fmt.Emit.bare_src altsSlot).trimAscii.toString
-    if altsT.isEmpty then return (.text head)
-    let some altsNode := altsSlot.getArgs[0]? | return (← Lean4Fmt.Emit.verbatim stx)
-    if altsNode.getKind != ``Lean.Parser.Tactic.inductionAlts || altsNode.getArgs.size != 3 then
-      return (← Lean4Fmt.Emit.verbatim stx)
-    if !(Lean4Fmt.Emit.bare_src altsNode.getArgs[1]!).trimAscii.toString.isEmpty then
-      return (← Lean4Fmt.Emit.verbatim stx)
-    let alts := altsNode.getArgs[2]!.getArgs
-    let mut d : Doc := .text (head ++ " with")
-    for alt in alts do
-      -- an arm the machinery can't carry rides verbatim WHOLE at its own
-      -- hardline seam (the sequence-seam invariant makes the re-anchor
-      -- deterministic) — the OTHER arms stay active. Whole-node bails here
-      -- previously killed 22.9K of the wide census on the biggest sites.
-      -- The arm's LEADING comment lines (`-- case docs` between arms) are
-      -- OUR seam: place via the kit; unownable → whole verbatim (a per-arm
-      -- verbatim would DROP the leading — bareSrc excludes it).
-      let altLead := (Lean4Fmt.Syntax.leading? alt).getD ""
-      let hasLeadContent :=
-        ((altLead.splitOn "\n").drop 1).dropLast.any (fun l => !l.trimAscii.toString.isEmpty)
-      let sep? : Option Doc :=
-        if !hasLeadContent then some .hardline else Lean4Fmt.Emit.leading_sep? altLead
-      let some sepD := sep? | return (← Lean4Fmt.Emit.verbatim stx)
-      let armDoc? ← do
-        if alt.getKind != ``Lean.Parser.Tactic.inductionAlt || alt.getArgs.size != 2 then
-          pure none
-        else
-        let lhsT := Lean4Fmt.Emit.canon_tok alt.getArgs[0]!
-        if lhsT.isEmpty || lhsT.any (· == '\n') then pure none else
-        let rhs := alt.getArgs[1]!.getArgs
-        if rhs.size == 0 then
-          -- arrow-less alt (`with | _ a h ih` — the body tactics are the
-          -- induction's SIBLINGS at outer indent): the pattern line alone
-          pure (some (Doc.text lhsT))
-        else if rhs.size != 2 then pure none else
-        match rhs[1]? with
-        | none => pure none
-        | some seq =>
-          -- arrow spelling from SOURCE (rhs[0] is the arrow atom; `=>` vs `↦`)
-          let arrowT := ((rhs[0]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString
-          let arrowT := if arrowT.isEmpty then "=>" else arrowT
-          -- `=> -- note` (the case-label idiom): the comment lives in the
-          -- ARROW atom's trailing — own it on the arm-head line; ALL groups
-          -- go below (nothing shares the line with a comment)
-          let arrTrail := ((rhs[0]?.bind Lean4Fmt.Syntax.trailing?).getD "").trimAscii.toString
-          if arrTrail.any (· == '\n') || (!arrTrail.isEmpty && !arrTrail.startsWith "--") then
-            pure none
-          else if seq.getKind == ``Lean.Parser.Term.syntheticHole
-              || seq.getKind == ``Lean.Parser.Term.hole then
-            -- hole RHS (`=> ?_`): the grammar's non-seq alternative — plain text
-            let hT := Lean4Fmt.Emit.canon_tok seq
-            if hT.isEmpty || hT.any (· == '\n') || !arrTrail.isEmpty then pure none
-            else pure (some (Doc.text (lhsT ++ " " ++ arrowT ++ " " ++ hT)))
-          else if !arrTrail.isEmpty then
-            let some groups := tactic_groups? seq | pure none
-            match ← seq_groups_doc? walk groups true with
-            | some rest =>
-              pure (some (.text (lhsT ++ " " ++ arrowT ++ " " ++ arrTrail) ++ .nest 2 rest))
-            | none => pure none
-          else
-            match ← arm_seq_doc? walk seq with
-            | some bD => pure (some (.text (lhsT ++ " " ++ arrowT) ++ bD))
-            | none => pure none
-      match armDoc? with
-      | some ad => d := d ++ sepD ++ ad
-      | none => d := d ++ sepD ++ (← Lean4Fmt.Emit.verbatim alt)
-    return d
-  else if kind == `Lean.Parser.Tactic.«tacticNext_=>_» || kind == ``Lean.Parser.Tactic.case
-      || kind == ``Lean.Parser.Tactic.allGoals || kind == `Lean.Parser.Tactic.tacticRepeat_ then
-    match ← head_block_doc? walk stx with
-    | some d => return d
-    | none => return (← Lean4Fmt.Emit.verbatim stx)
-  else if kind == `Lean.Parser.Tactic.classical then
-    -- [atom, tacticSeq] — the parser's block form: the sequence continues at
-    -- the SAME column as the keyword (nest 0), NOT indented under it
-    if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    let kwTrail := (Lean4Fmt.Syntax.trailing? a[0]!).getD ""
-    if !kwTrail.trimAscii.toString.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-    let kwT := (Lean4Fmt.Emit.bare_src a[0]!).trimAscii.toString
-    let some groups := tactic_groups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
-    -- ws-sensitivity CLASS 1 (Emit/WsSensitivity): ALWAYS the block form —
-    -- the inline form (`classical exact h`) with a tactic doc that breaks
-    -- internally re-parses to a DIFFERENT tree (the continuation lines fall
-    -- out of the whitespace-sensitive block; error recovery can silently
-    -- drop them)
-    match ← seq_groups_doc? walk groups true with
-    | some body => return .text kwT ++ body
-    | none => return (← Lean4Fmt.Emit.verbatim stx)
-  else if kind == `Lean.Parser.Tactic.Conv.conv then
-    match ← head_block_doc? walk stx (conv := true) with
-    | some d => return d
-    | none => return (← Lean4Fmt.Emit.verbatim stx)
-  else if (kind == `Lean.calcTactic || kind == `Lean.calc)
-      && (← read).breaking.preserveLineBreaks
-      && (Lean4Fmt.Emit.bare_src stx).any (· == '\n') then
-    -- preserve: the author's step alignment is load-bearing
-    return (← Lean4Fmt.Emit.verbatim stx)
-  else if kind == `Lean.calcTactic || kind == `Lean.calc then
-    -- ["calc", calcSteps[first, null[step*]]] — tactic AND term position
-    -- share the node shape. Every step token-exact single-line → aligned
-    -- under `calc ` (the flat form). Otherwise `calc` alone, steps one per
-    -- line at +2: REL ` := ` PF with the proof WALKED (`:= by` glues, its
-    -- body brings the hardlines; else flat-or-broken group at +2). A step
-    -- the machinery can't carry rides verbatim WHOLE at its own hardline
-    -- seam (sequence-seam invariant) — the other steps stay active.
-    if Lean4Fmt.Syntax.interior_has_line_comment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    let sa := a[1]!.getArgs
-    if sa.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    let steps := #[sa[0]!] ++ sa[1]!.getArgs
-    if steps.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-    -- flat decision PARSE-DERIVED per step (the flatten-first decision law:
-    -- canonTok's bareSrc fallback is byte-dependent and flipped the decision
-    -- pass-to-pass — gate-caught as fixed-point on the house calc), and
-    -- width-guarded (+7 = "calc "/step alignment reserve)
-    let w := (← read).layout.lineWidth
-    let mut flats : Option (Array String) := some #[]
-    for st in steps do
-      -- head-ws law: a step containing by/do/let (newline-SEMANTIC kinds)
-      -- must not flatten-join — joining two tactics without `;` reparses as
-      -- an application (tree class, gate-caught on mathlib Divisors:
-      -- `:= by apply f` + `simp […]` joined into `apply f simp […]`)
-      if head_ws_sensitive (1 <<< 60) st then flats := none else
-      match Lean4Fmt.Emit.token_join_flat? st with
-      | some t => if t.isEmpty || t.length + 7 > w then flats := none
-                  else flats := flats.map (·.push t)
-      | none => flats := none
-    match flats with
-    | some ts =>
-      let mut d : Doc := .text "calc " ++ .text ts[0]!
-      for i in [1:ts.size] do
-        d := d ++ .nest 5 (.hardline ++ .text ts[i]!)
-      return d
-    | none => pure ()
-    -- broken form: `calc ` + first step on the keyword line, later steps
-    -- one per line at +2. Each step: REL walked (binop chains break at the
-    -- continuation indent) ++ the proof part nested +4 — a by/do body at
-    -- the STEP column would TERMINATE the step list on reparse (calcStep
-    -- is column-sensitive), so proof blocks must sit strictly deeper.
-    let mut body : Doc := .nil
-    let mut first := true
-    for st in steps do
-      let stDoc? ← do
-        let sargs := st.getArgs
-        -- calcFirstStep = [rel, null[":=", pf]] ; calcStep = [rel, ":=", pf]
-        let pf? : Option Lean.Syntax :=
-          if sargs.size == 3 && (Lean4Fmt.Emit.bare_src sargs[1]!).trimAscii.toString == ":=" then
-            some sargs[2]!
-          else if sargs.size == 2 then
-            let asgn := sargs[1]!
-            if asgn.getKind == Lean.nullKind && asgn.getArgs.size == 2
-                && (Lean4Fmt.Emit.bare_src asgn.getArgs[0]!).trimAscii.toString == ":=" then
-              some asgn.getArgs[1]!
-            else none
-          else none
-        -- BARE first step (`calc\n  e\n  _ = … := pf` — the mathlib head
-        -- form): no `:=`, the step is its relation alone
-        let bareHead := first && sargs.size == 2
-          && (Lean4Fmt.Emit.bare_src sargs[1]!).trimAscii.toString.isEmpty
-        if bareHead then
-          match sargs[0]? with
-          | some rel =>
-            let relDoc ← walk rel
-            if (match relDoc with | .verbatim _ _ => true | _ => false)
-                || Lean4Fmt.Doc.hasMultilineVerbatim relDoc then pure none
-            else pure (some relDoc)
-          | none => pure none
-        else
-        match pf?, sargs[0]? with
-        | some pf, some rel =>
-          let relDoc ← walk rel
-          if (match relDoc with | .verbatim _ _ => true | _ => false)
-              || Lean4Fmt.Doc.hasMultilineVerbatim relDoc then pure none else
-          let pfDoc ← walk pf
-          if pf.getKind == ``Lean.Parser.Term.do || pf.getKind == ``Lean.Parser.Term.byTactic then
-            match pfDoc with
-            | .verbatim _ _ => pure none
-            | _ => pure (some (relDoc ++ .nest 4 (.text " := " ++ pfDoc)))
-          else if Lean4Fmt.Doc.hasMultilineVerbatim pfDoc then pure none
-          else pure (some (relDoc ++ .nest 4 (.text " :=" ++ .group (.line ++ pfDoc))))
-        | _, _ => pure none
-      match stDoc?, first with
-      | some d, true => body := .text "calc " ++ d
-      | some d, false => body := body ++ .nest 2 (.hardline ++ d)
-      | none, true =>
-        -- a bailed FIRST step would glue verbatim mid-line after `calc ` —
-        -- the master fixed-point hazard: whole-calc verbatim
-        return (← Lean4Fmt.Emit.verbatim stx)
-      | none, false => body := body ++ .nest 2 (.hardline ++ (← Lean4Fmt.Emit.verbatim st))
-      first := false
-    return body
-  else if kind == `Lean.cdot then
-    -- bullet: [cdotTk, tacticSeq] — first group rides the bullet line
-    -- (`· intro l; exact h`), the rest one line per group at +2 under it
-    if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-    -- a same-line comment on the `·` itself (`· -- the goal name` — the
-    -- mathlib case-label idiom) is OUR zone: it rides the bullet line and
-    -- ALL groups go below at +2 (nothing shares the bullet line with it)
-    let tkTrail := ((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString
-    if tkTrail.startsWith "--" && !tkTrail.any (· == '\n') then
-      let tkT := (Lean4Fmt.Emit.bare_src a[0]!).trimAscii.toString
-      let some groups := tactic_groups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
-      match ← seq_groups_doc? walk groups true with
-      | some rest =>
-        return .align (.text (tkT ++ " " ++ tkTrail) ++ .nest 2 rest)
-      | none => return (← Lean4Fmt.Emit.verbatim stx)
-    if !tkTrail.isEmpty then
-      return (← Lean4Fmt.Emit.verbatim stx)   -- non-comment surprise on the `·`
-    let tkT := (Lean4Fmt.Emit.bare_src a[0]!).trimAscii.toString
-    let some groups := tactic_groups? a[1]! | return (← Lean4Fmt.Emit.verbatim stx)
-    let g0 := groups[0]!
-    let lead0 := (Lean4Fmt.Syntax.leading? g0[0]!).getD ""
-    if ((lead0.splitOn "\n").drop 1).dropLast.any (fun l => !l.trimAscii.toString.isEmpty) then
-      return (← Lean4Fmt.Emit.verbatim stx)   -- comment lines between `·` and first tactic
-    let some d0 ← group_doc? walk g0 | return (← Lean4Fmt.Emit.verbatim stx)
-    if Lean4Fmt.Doc.hasMultilineVerbatim d0 then return (← Lean4Fmt.Emit.verbatim stx)
-    let trail0T := ((Lean4Fmt.Syntax.trailing? g0[g0.size - 1]!).getD "").trimAscii.toString
-    if groups.size == 1 then
-      if !trail0T.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)   -- owned by parent seam
-      -- ws-sensitivity CLASS 2 (Emit/WsSensitivity): d0's interior breaks
-      -- must anchor at the bullet CONTENT column, not the bullet line's
-      -- indent — two columns shallow re-parses the glued block's lines as
-      -- bullet-seq SIBLINGS; `.align` is the cure
-      return .text (tkT ++ " ") ++ .align d0
-    if trail0T.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-    let trail0 : Doc := if trail0T.isEmpty then .nil else .text (" " ++ trail0T)
-    match ← seq_groups_doc? walk (groups.extract 1 groups.size) true with
-    | some rest =>
-      -- ws-sensitivity CLASS 2 (Emit/WsSensitivity): the rest-groups' nest
-      -- must anchor at the BULLET column, not the line indent — glued
-      -- placements (`<;> · intro` + a second tactic) otherwise land the
-      -- continuation SHALLOWER than the bullet content and the reparse's
-      -- recovery silently drops it (gate-caught on mathlib
-      -- ArchimedeanDensely, tokens). The outer `.align` re-anchors the whole
-      -- bullet at its own start column; at line start it is a no-op.
-      return .align (.text (tkT ++ " ") ++ .align d0 ++ trail0 ++ .nest 2 rest)
-    | none => return (← Lean4Fmt.Emit.verbatim stx)
-  else if kind == `Lean.Parser.Tactic.tacticSuffices_
-      && (Lean4Fmt.Emit.bare_src stx).any (· == '\n') then
-    -- POSITION-SPLIT port: `suffices h : T by tac` / `have h : T := by tac`
-    -- — find the final by-block descendant (last-child descent), slice the
-    -- HEAD bytes positionally (no shape enumeration), flatten-join the head,
-    -- glue the by (members at sequence seams). Heads carrying strings or
-    -- comments, non-by tails, and whole-verbatim bys fall back; by-INTERIOR
-    -- comments are the by emitter's own seam business.
-    let bare := Lean4Fmt.Emit.bare_src stx
-    match last_by_descendant? stx, stx.getPos?, (last_by_descendant? stx).bind (·.getPos?) with
-    | some byN, some p0, some pb =>
-      -- TAIL-EXACTNESS: the by must END the tactic — a mid-node `(by …)`
-      -- with trailing bytes would lose them to the slice
-      if byN.getTailPos? != stx.getTailPos? then return (← Lean4Fmt.Emit.verbatim stx)
-      if head_ws_sensitive pb.byteIdx stx then return (← Lean4Fmt.Emit.verbatim stx)
-      let headB := (String.fromUTF8? (bare.toUTF8.extract 0 (pb.byteIdx - p0.byteIdx))).getD ""
-      if headB.isEmpty || headB.toList.any (· == '"')
-          || (headB.splitOn "--").length > 1 || (headB.splitOn "/-").length > 1 then
-        return (← Lean4Fmt.Emit.verbatim stx)
-      let headF := String.intercalate " "
-        (((headB.split (fun c => c == '\n' || c == ' ' || c == '\t')).toList.map
-            (·.toString)).filter (fun s => !s.isEmpty))
-      if headF.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-      let byDoc ← walk byN
-      match byDoc with
-      | .verbatim _ _ => return (← Lean4Fmt.Emit.verbatim stx)
-      | _ => return .text (headF ++ " ") ++ byDoc
-    | _, _, _ => return (← Lean4Fmt.Emit.verbatim stx)
-  else if kind == ``Lean.Parser.Tactic.tacticRfl || kind == ``Lean.Parser.Tactic.omega
-      || kind == ``Lean.Parser.Tactic.decide || kind == ``Lean.Parser.Tactic.nativeDecide
-      || kind == ``Lean.Parser.Tactic.constructor || kind == ``Lean.Parser.Tactic.tacticTrivial
-      || kind == ``Lean.Parser.Tactic.contradiction || kind == ``Lean.Parser.Tactic.assumption
-      || kind == ``Lean.Parser.Tactic.tacticAnd_intros || kind == ``Lean.Parser.Tactic.simpAll
-      || kind == ``Lean.Parser.Tactic.intro || kind == ``Lean.Parser.Tactic.intros
-      || kind == ``Lean.Parser.Tactic.split
-      || kind == `Lean.Parser.Tactic.rcases || kind == ``Lean.Parser.Tactic.show
-      || kind == `Lean.Parser.Tactic.subst || kind == `Lean.Parser.Tactic.«tacticExists_,,»
-      || kind == ``Lean.Parser.Tactic.change || kind == `«tacticBy_cases_:_»
-      || kind == `Lean.Parser.Tactic.tacticSuffices_
-      || kind == `Lean.Parser.Tactic.congr || kind == `Lean.Parser.Tactic.renameI
-      || kind == `Lean.Parser.Tactic.bvDecide || kind == `Lean.Parser.Tactic.left
-      || kind == `Lean.Parser.Tactic.right || kind == `Lean.Parser.Tactic.revert
-      || kind == `Lean.Parser.Tactic.injection
-      || kind == `Lean.Parser.Tactic.tacticInfer_instance
-      || kind == `Lean.Parser.Tactic.tacticExfalso
-      || kind == `Lean.Parser.Tactic.«tacticNomatch_,,»
-      || kind == `Lean.Parser.Tactic.paren
-      || kind == `Lean.Parser.Tactic.generalize then
-    -- token-line tactics: single line, token-for-token, single-spaced
-    if Lean4Fmt.Syntax.interior_has_line_comment stx then return (← Lean4Fmt.Emit.verbatim stx)
-    let mut line := ""
-    for c in a do
-      let t := (Lean4Fmt.Emit.token_join? c).getD
-        ((Lean4Fmt.Emit.bare_src c).trimAscii.toString)
-      if t.any (· == '\n') then return (← Lean4Fmt.Emit.verbatim stx)
-      if !t.isEmpty then line := if line.isEmpty then t else line ++ " " ++ t
-    if line.isEmpty then return (← Lean4Fmt.Emit.verbatim stx)
-    return .text line
-  else if kind != ``Lean.Parser.Term.byTactic && kind != `Lean.Parser.Term.byTactic' then
-    return (← Lean4Fmt.Emit.verbatim stx)
-  else
-  if a.size != 2 then return (← Lean4Fmt.Emit.verbatim stx)
-  -- a comment on the `by` line itself has no home in the layout
-  if !((Lean4Fmt.Syntax.trailing? a[0]!).getD "").trimAscii.toString.isEmpty then
-    return (← Lean4Fmt.Emit.verbatim stx)
-  -- the branch layout: a single clean flat group is width-aware (`by rfl`
-  -- stays inline when it fits — flatWidth is exact, T2); anything else one
-  -- line per group at +2
-  match ← arm_seq_doc? walk a[1]! with
-  | some body => return .text "by" ++ body
-  | none => return (← Lean4Fmt.Emit.verbatim stx)
+private
+abbrev Handler := Lean.Syntax → Lean4Fmt.Emit.emit_m Dispatch
+
+mutual
+
+  private partial
+  def route_dispatch (handlers : List Handler) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc :=
+    match handlers with
+    | []              => Lean4Fmt.Emit.verbatim stx
+    | handler :: rest => route_next handler rest stx
+
+  private partial
+  def route_next
+      (handler : Handler)
+      (rest : List Handler)
+      (stx : Lean.Syntax)
+      : Lean4Fmt.Emit.emit_m Doc := do
+    let result ← handler stx
+    route_result result rest stx
+
+  private partial
+  def route_result
+      (result : Dispatch)
+      (rest : List Handler)
+      (stx : Lean.Syntax)
+      : Lean4Fmt.Emit.emit_m Doc :=
+    match result with
+    | .handled doc => pure doc
+    | .unhandled   => route_dispatch rest stx
+
+end
+
+/-- Emit a Tactic-category construct through ordered, family-local handlers.
+    Unknown tactics reproduce verbatim. -/
+def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc :=
+  route_dispatch
+    [
+      dispatch_exact walk,
+      dispatch_rw walk,
+      dispatch_binding walk,
+      dispatch_obtain walk,
+      dispatch_simp walk,
+      dispatch_chain walk,
+      dispatch_first walk,
+      dispatch_match walk,
+      dispatch_unfold,
+      dispatch_induction walk,
+      dispatch_head_block walk,
+      dispatch_classical walk,
+      dispatch_calc walk,
+      dispatch_bullet walk,
+      dispatch_suffices walk,
+      dispatch_token_line,
+      dispatch_by walk
+    ]
+    stx
 
 end Lean4Fmt.Emit.Tactic

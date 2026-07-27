@@ -30,6 +30,20 @@ def init_env_impl : IO Unit := do
 @[implemented_by init_env_impl]
 opaque init_env : IO Unit
 
+private
+def find_lake_root (file : String) : IO (Option System.FilePath) := do
+  let path ← try IO.FS.realPath ⟨file⟩ catch _ => pure ⟨file⟩
+  let mut directory? := if (← path.isDir) then some path else path.parent
+  let mut steps := 0
+  while h : directory?.isSome ∧ steps < 64 do
+    let directory := directory?.get h.1
+    if (← (directory / "lakefile.lean").pathExists)
+        || (← (directory / "lakefile.toml").pathExists) then
+      return some directory
+    directory? := directory.parent
+    steps := steps + 1
+  return none
+
 /-- Lake workspace discovery (milestone 2): walk up from each input to a
     lakefile; one `lake env printenv LEAN_PATH` per distinct workspace root
     supplies the olean search path for that workspace's imports — no
@@ -45,19 +59,9 @@ def add_lake_paths_impl (files : List String) : IO Unit := do
   if ((← IO.getEnv "LEAN_PATH").getD "") != "" then
     return
   let mut roots : Array System.FilePath := #[]
-  for f in files do
-    -- absolute first: a bare relative path's parent chain ends BEFORE the
-    -- cwd (parent "Lithe" = none), so the workspace root is never seen
-    let p ← try IO.FS.realPath ⟨f⟩ catch _ => pure ⟨f⟩
-    let mut dir? := if (← p.isDir) then some p else p.parent
-    let mut steps := 0
-    while h : dir?.isSome ∧ steps < 64 do
-      let dir := dir?.get h.1
-      if (← (dir / "lakefile.lean").pathExists) || (← (dir / "lakefile.toml").pathExists) then
-        if !roots.contains dir then roots := roots.push dir
-        dir? := none
-      else dir? := dir.parent
-      steps := steps + 1
+  for file in files do
+    let some root ← find_lake_root file | continue
+    if !roots.contains root then roots := roots.push root
   for root in roots do
     try
       let r ← IO.Process.output
@@ -79,38 +83,77 @@ opaque add_lake_paths (files : List String) : IO Unit
 /-- Resolve style, expand inputs (files/dirs) to the file set, and run all jobs
     through the scheduler seam (`Driver.runAll`). Behind an opaque boundary so the
     non-`unsafe` `main` can invoke the unsafe frontend. -/
+structure JobConfig where
+  files        : List String
+  width        : Option Nat
+  preset       : String
+  elabFallback : Bool
+  retry        : Bool
+  logLevel     : String
+  lakeEnv      : Bool
+
 unsafe
-def run_jobs_impl
-    (files : List String)
-    (width : Option Nat)
-    (preset : String)
-    (elabFallback : Bool)
-    (retry : Bool)
-    (logLevel : String)
-    (lakeEnv : Bool)
-    : IO (Array Driver.result) := do
-  let base := (Style.by_name? preset).getD Style.straylight
+def run_jobs_impl (cfg : JobConfig) : IO (Array Driver.result) := do
+  let base := (Style.by_name? cfg.preset).getD Style.straylight
   let style :=
-    match width with
+    match cfg.width with
     | some w => { base with layout := { base.layout with lineWidth := w } }
     | none   => base
-  let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
+  let expanded ← Driver.expand (cfg.files.toArray.map System.FilePath.mk)
   let retryCfg ← do
-    if retry then
+    if cfg.retry then
       let exe ← IO.appPath
       pure (some (exe.toString,
-        (match width with | some w => #["--width", toString w] | none => #[])
-          ++ #["--style", preset, "--log-level", logLevel]
-          ++ (if elabFallback then #[] else #["--elab", "off"])
+        (match cfg.width with | some w => #["--width", toString w] | none => #[])
+          ++ #["--style", cfg.preset, "--log-level", cfg.logLevel]
+          ++ (if cfg.elabFallback then #[] else #["--elab", "off"])
           -- the augmented search path is in-process; the child re-discovers
           -- (or matches an explicit --lake off)
-          ++ (if lakeEnv then #[] else #["--lake", "off"])))
+          ++ (if cfg.lakeEnv then #[] else #["--lake", "off"])))
     else pure none
-  Driver.run_all style expanded elabFallback retryCfg
+  Driver.run_all style expanded cfg.elabFallback retryCfg
 
 @[implemented_by run_jobs_impl]
-opaque run_jobs (files : List String) (width : Option Nat) (preset : String) (elabFallback : Bool) (retry : Bool) (logLevel : String) (lakeEnv : Bool) :
-    IO (Array Driver.result)
+opaque run_jobs (cfg : JobConfig) : IO (Array Driver.result)
+
+private unsafe
+def retry_stats
+    (exe : System.FilePath)
+    (retry : Bool)
+    (width : Option Nat)
+    (preset : String)
+    (path : System.FilePath)
+    : IO (Option (Nat × Nat × Nat × Nat)) := do
+  if !retry then
+    return none
+  let result ← IO.Process.output
+    {
+      cmd := exe.toString
+      args := #["--stats", "--no-retry"]
+          ++ (match width with
+          | some width => #["--width", toString width]
+          | none       => #[])
+          ++ #["--style", preset, path.toString]
+    }
+  let [active, verbatim, trivia, policy, _] := ((result.stdout.splitOn "\n").headD "").splitOn " "
+      | return none
+  let (some active, some verbatim, some trivia, some policy) :=
+    (active.toNat?, verbatim.toNat?, trivia.toNat?, policy.toNat?)
+      | return none
+  return some (active, verbatim, trivia, policy)
+
+private unsafe
+def fallback_stats_row
+    (exe : System.FilePath)
+    (retry : Bool)
+    (width : Option Nat)
+    (preset : String)
+    (path : System.FilePath)
+    (verbatimBytes : Nat)
+    : IO (Nat × Nat × Nat × Nat × String) := do
+  let some (active, verbatim, trivia, policy) ← retry_stats exe retry width preset path
+    | return (0, verbatimBytes, 0, 0, path.toString)
+  return (active, verbatim, trivia, policy, path.toString)
 
 /-- Coverage accounting (`--stats`, DESIGN_V2 §15): per-file
     active/verbatim/trivia byte rows plus the aggregate. Files the shared env
@@ -139,22 +182,7 @@ def run_stats_impl
     match ← Frontend.stats_for env p.toString contents style elabFallback with
     | some (a, v, t, pol) => rows := rows.push (a, v, t, pol, p.toString)
     | none =>
-      let sub? ← do
-        if !retry then pure none else
-        let r ← IO.Process.output
-          { cmd := exe.toString,
-            args := #["--stats", "--no-retry"]
-              ++ (match width with | some w => #["--width", toString w] | none => #[])
-              ++ #["--style", preset, p.toString] }
-        match ((r.stdout.splitOn "\n").headD "").splitOn " " with
-        | [a, v, t, pol, _] =>
-          pure (match a.toNat?, v.toNat?, t.toNat?, pol.toNat? with
-                | some a, some v, some t, some pol => some (a, v, t, pol)
-                | _, _, _, _ => none)
-        | _ => pure none
-      match sub? with
-      | some (a, v, t, pol) => rows := rows.push (a, v, t, pol, p.toString)
-      | none => rows := rows.push (0, contents.utf8ByteSize, 0, 0, p.toString)
+      rows := rows.push (← fallback_stats_row exe retry width preset p contents.utf8ByteSize)
   return rows
 
 @[implemented_by run_stats_impl]
@@ -242,8 +270,8 @@ def decls_of_full (stx : Lean.Syntax) : List (String × Lean4Fmt.Rename.axis) :=
   let join :=
     fun (ns : List String) (nm : String) => String.intercalate "." ((ns.filter (· != "")) ++ [nm])
   let step :=
-    fun (acc : List String × List (String × Lean4Fmt.Rename.axis)) (c : Lean.Syntax) =>
-      let (ns, out) := acc
+    fun (state : List String × List (String × Lean4Fmt.Rename.axis)) (c : Lean.Syntax) =>
+      let (ns, out) := state
       let k := c.getKind
       if k == ``Lean.Parser.Command.namespace then
         (
@@ -331,6 +359,30 @@ def run_rename_decls_impl
 @[implemented_by run_rename_decls_impl]
 opaque run_rename_decls (files : List String) (resolve : Bool) (farmDir : Option String) (elabFallback : Bool) : IO Unit
 
+private
+def rewrite_parsed
+    (err : IO.FS.Stream)
+    (contents : String)
+    (map : List (String × String))
+    (path : System.FilePath)
+    (stx : Lean.Syntax)
+    : IO Unit := do
+  let idents := (Lean4Fmt.Emit.leaf_tokens stx).filter (·.isIdent)
+  let mut edits : Array (Nat × Nat × String) := #[]
+  for ident in idents do
+    let some substring := ident.getSubstring? false false | continue
+    let some replacement := Lean4Fmt.Rename.ident_replacement map substring.toString | continue
+    edits := edits.push (substring.startPos.byteIdx, substring.stopPos.byteIdx, replacement)
+  if edits.isEmpty then
+    return
+  -- Apply larger offsets first to preserve every remaining byte position.
+  let sorted := edits.qsort (fun left right => left.1 > right.1)
+  let mut bytes := contents.toUTF8
+  for (start, stop, replacement) in sorted do
+    bytes := (bytes.extract 0 start) ++ replacement.toUTF8 ++ (bytes.extract stop bytes.size)
+  IO.FS.writeFile path (String.fromUTF8! bytes)
+  err.putStrLn s!"rewrite: {path} ({edits.size} idents)"
+
 /-- Token-aware rewrite of one parsed module by a precomputed map: splice only
     the `.ident` leaves whose text moves, end-to-start over the UTF-8 bytes
     (strings/comments/docstrings are never leaf idents, so they ride byte-exact). -/
@@ -345,25 +397,20 @@ def rewrite_file
   let contents ← IO.FS.readFile p
   match ← Frontend.parse_full? env p.toString contents elabFallback with
   | none => err.putStrLn s!"rename-rewrite: SKIP (no parse) {p}"
-  | some stx =>
-    let idents := (Lean4Fmt.Emit.leaf_tokens stx).filter (·.isIdent)
-    let mut edits : Array (Nat × Nat × String) := #[]
-    for id in idents do
-      match id.getSubstring? false false with
-      | some ss =>
-        match Lean4Fmt.Rename.ident_replacement map ss.toString with
-        | some newText => edits := edits.push (ss.startPos.byteIdx, ss.stopPos.byteIdx, newText)
-        | none => pure ()
-      | none => pure ()
-    if edits.isEmpty then
-      return
-    -- end-to-start: applying larger offsets first keeps smaller ones valid
-    let sorted := edits.qsort (fun a b => a.1 > b.1)
-    let mut ba := contents.toUTF8
-    for (s, e, new) in sorted do
-      ba := (ba.extract 0 s) ++ new.toUTF8 ++ (ba.extract e ba.size)
-    IO.FS.writeFile p (String.fromUTF8! ba)
-    err.putStrLn s!"rewrite: {p} ({edits.size} idents)"
+  | some stx => rewrite_parsed err contents map p stx
+
+private unsafe
+def rewrite_from_map (files : List String) (mapFile : String) (elabFallback : Bool) : IO Unit := do
+  let mapText ← IO.FS.readFile ⟨mapFile⟩
+  let map : List (String × String) := mapText.splitOn "\n" |>.filterMap fun line =>
+    match line.splitOn "\t" with
+    | [source, target] => if source.isEmpty then none else some (source, target)
+    | _ => none
+  let paths := files.toArray.map System.FilePath.mk
+  let env ← Frontend.batch_env paths
+  -- The resolved plan is already filtered; the token pass also catches binder types.
+  for path in paths do
+    rewrite_file env map elabFallback path
 
 /-- Worker (`--rename-rewrite --map F`): read the map, rewrite the file in place
     under its own env — token spelling, or RESOLVED identity under `--resolve`. -/
@@ -379,24 +426,10 @@ def run_rename_rewrite_impl
   let err ← IO.getStderr
   match mapFile with
   | none => err.putStrLn "rename-rewrite: --map <file> required"
-  | some mf =>
-    let mapText ← IO.FS.readFile ⟨mf⟩
-    let map : List (String × String) := mapText.splitOn "\n" |>.filterMap (fun line =>
-      match line.splitOn "\t" with
-      | [s, t] => if s.isEmpty then none else some (s, t)
-      | _ => none)
-    let paths := files.toArray.map System.FilePath.mk
-    let env ← Frontend.batch_env paths
-    -- pass 2 is always the TOKEN rewrite; under --resolve the MAP was already
-    -- filtered to unambiguous+defined simple names by the hybrid plan, so the
-    -- token rewrite is both safe (no cross-package over-match) and COMPLETE
-    -- (catches binder-type spellings the InfoTree doesn't record)
-    for p in paths do
-      rewrite_file env map elabFallback p
+  | some mapFile => rewrite_from_map files mapFile elabFallback
 
 @[implemented_by run_rename_rewrite_impl]
 opaque run_rename_rewrite (files : List String) (mapFile : Option String) (resolve : Bool) (farmDir : Option String) (elabFallback : Bool) : IO Unit
-
 
 /-- G-L7.4 probe (`--resolve-dump`): elaborate the file(s) and print each resolved
     ident occurrence as `start-stop<TAB>fullName`. Validates that the InfoTree
@@ -416,6 +449,201 @@ def run_resolve_dump_impl (files : List String) : IO Unit := do
 
 @[implemented_by run_resolve_dump_impl]
 opaque run_resolve_dump (files : List String) : IO Unit
+
+private
+structure RenameWorkerContext where
+  err     : IO.FS.Stream
+  exe     : String
+  paths   : Array System.FilePath
+  jobs    : Nat
+  resolve : Bool
+  extra   : Array String
+  protect : List String
+
+private
+structure RenameDiscovery where
+  allDecls : List (String × Lean4Fmt.Rename.axis) := []
+  occs     : List (String × String) := []
+  defs     : List String := []
+  existing : List String := []
+  idx      : Nat := 0
+
+private
+structure RenameRewriteStats where
+  renamed : Nat := 0
+  skips   : Nat := 0
+  idx     : Nat := 0
+
+private
+def spawnRenameCollect
+    (context : RenameWorkerContext)
+    (path : System.FilePath)
+    : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
+  IO.Process.spawn
+    { cmd    := context.exe,
+      args   := #["--rename-decls", "--no-retry"] ++ context.extra ++ #[path.toString],
+      stdin  := .null,
+      stdout := .piped,
+      stderr := .piped }
+
+private
+def collectRenameLine
+    (resolve : Bool)
+    (state : RenameDiscovery)
+    (line : String)
+    : RenameDiscovery :=
+  if resolve then
+    match line.splitOn "\t" with
+    | [lastComponent, fullName, disposition] =>
+      if disposition == "F" then
+        { state with existing := state.existing ++ [fullName] }
+      else
+        { state with
+          occs := state.occs ++ [(lastComponent, fullName)]
+          defs := if disposition == "D" then state.defs ++ [fullName] else state.defs
+        }
+    | _ => state
+  else
+    match line.splitOn "\t" with
+    | [name, tag] =>
+      match axis_of_tag tag with
+      | some axis => { state with allDecls := state.allDecls ++ [(name, axis)] }
+      | none      => state
+    | _ => state
+
+private
+def collectRenameChild
+    (resolve : Bool)
+    (initial : RenameDiscovery)
+    (child : IO.Process.Child ⟨.null, .piped, .piped⟩)
+    : IO RenameDiscovery := do
+  let output ← child.stdout.readToEnd
+  let _ ← child.stderr.readToEnd
+  let _ ← child.wait
+  return output.splitOn "\n" |>.foldl (collectRenameLine resolve) initial
+
+private
+def collectRenameDeclarations (context : RenameWorkerContext) : IO RenameDiscovery := do
+  let mut state : RenameDiscovery := {}
+  while state.idx < context.paths.size do
+    let wave :=
+      context.paths.extract state.idx (Nat.min (state.idx + context.jobs) context.paths.size)
+    let mut children : Array (IO.Process.Child ⟨.null, .piped, .piped⟩) := #[]
+    for path in wave do
+      children := children.push (← spawnRenameCollect context path)
+    for child in children do
+      state ← collectRenameChild context.resolve state child
+    state := { state with idx := state.idx + context.jobs }
+  return state
+
+private
+def collectProtectedNames (context : RenameWorkerContext) : IO (List String) := do
+  if !context.resolve then
+    return []
+  let mut protectedNames : List String := []
+  for protectedPath in context.protect do
+    let child ← spawnRenameCollect context (System.FilePath.mk protectedPath)
+    let output ← child.stdout.readToEnd
+    let _ ← child.stderr.readToEnd
+    let _ ← child.wait
+    for line in output.splitOn "\n" do
+      match line.splitOn "\t" with
+      | [_, fullName, _] => protectedNames := protectedNames ++ [fullName]
+      | _ => pure ()
+  if !context.protect.isEmpty then
+    context.err.putStrLn
+      s!"// protecting {protectedNames.eraseDups.length} names from {context.protect.length} closure file(s)"
+  return protectedNames
+
+private
+def spawnRenameRewrite
+    (context : RenameWorkerContext)
+    (mapPath : String)
+    (path : System.FilePath)
+    : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
+  IO.Process.spawn
+    { cmd := context.exe,
+      args := #["--rename-rewrite", "--map", mapPath, "--no-retry"] ++ context.extra
+          ++ #[path.toString],
+      stdin := .null,
+      stdout := .piped,
+      stderr := .piped }
+
+private
+def collectRewriteLine
+    (err : IO.FS.Stream)
+    (state : RenameRewriteStats)
+    (line : String)
+    : IO RenameRewriteStats := do
+  if line.startsWith "rewrite: " then
+    err.putStrLn s!"//   {line}"
+    return { state with renamed := state.renamed + 1 }
+  if line.startsWith "rename-rewrite: SKIP" then
+    err.putStrLn s!"//   {line}"
+    return { state with skips := state.skips + 1 }
+  return state
+
+private
+def collectRewriteChild
+    (err : IO.FS.Stream)
+    (initial : RenameRewriteStats)
+    (child : IO.Process.Child ⟨.null, .piped, .piped⟩)
+    : IO RenameRewriteStats := do
+  let _ ← child.stdout.readToEnd
+  let errors ← child.stderr.readToEnd
+  let _ ← child.wait
+  let mut state := initial
+  for line in errors.splitOn "\n" do
+    state ← collectRewriteLine err state line
+  return state
+
+private
+def rewriteRenameFiles
+    (context : RenameWorkerContext)
+    (mapPath : String)
+    : IO RenameRewriteStats := do
+  let mut state : RenameRewriteStats := {}
+  while state.idx < context.paths.size do
+    let wave :=
+      context.paths.extract state.idx (Nat.min (state.idx + context.jobs) context.paths.size)
+    let mut children : Array (IO.Process.Child ⟨.null, .piped, .piped⟩) := #[]
+    for path in wave do
+      children := children.push (← spawnRenameRewrite context mapPath path)
+    for child in children do
+      state ← collectRewriteChild context.err state child
+    state := { state with idx := state.idx + context.jobs }
+  return state
+
+private
+def reportRenamePlan
+    (err : IO.FS.Stream)
+    (tag : String)
+    (fileCount : Nat)
+    (renames skipped : List (String × String))
+    : IO Unit := do
+  err.putStrLn
+    s!"// rename apply ({tag}): {renames.length} renames, {skipped.length} skipped over {fileCount} files"
+  for (name, target) in skipped do
+    err.putStrLn s!"//   SKIP {name} → {target}"
+
+private
+def writeRenameMap (renames : List (String × String)) : IO String := do
+  let mapPath := s!"{((← IO.getEnv "TMPDIR").getD "/tmp")}/lean4fmt-rename.map"
+  IO.FS.writeFile
+    ⟨mapPath⟩
+    (String.intercalate "\n" (renames.map (fun (source, target) => s!"{source}\t{target}")))
+  return mapPath
+
+private
+def enforceRewriteConsistency
+    (err : IO.FS.Stream)
+    (resolve : Bool)
+    (stats : RenameRewriteStats)
+    : IO Unit := do
+  if resolve && stats.skips > 0 then
+    err.putStrLn
+      s!"// ABORT: {stats.skips} file(s) failed to rewrite in pass 2 — rename is INCONSISTENT; revert the set"
+    IO.Process.exit 1
 
 /-- G-L7.3 orchestrator (`--rename-apply`): the multi-workspace-safe driver.
     `importModules` is one-shot per process, so instead of one union `batchEnv`,
@@ -449,229 +677,195 @@ def run_rename_apply_impl
               | none   => #[])
         else
           #[])
-  -- PASS 1: extract decls, one subprocess per file (own env), bounded waves.
-  -- resolve mode emits FULL names (one/line); token mode emits NAME<TAB>AXIS.
-  let spawn1 (p : System.FilePath) : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
-    IO.Process.spawn
-      { cmd    := exe,
-        args   := #["--rename-decls", "--no-retry"] ++ extra ++ #[p.toString],
-        stdin  := .null,
-        stdout := .piped,
-        stderr := .piped }
-  let mut allDecls : List (String × Lean4Fmt.Rename.axis) := []
-  let mut occs : List (String × String) := [] -- (lastComp, fullName) resolved occurrences
-  let mut defs : List String := [] -- AUTHORIZE: declId real decls (D) — may be renamed
-  let mut existing : List String := [] -- COLLIDE: all local consts (F) — incl. generated
-  let mut i := 0
-  while i < paths.size do
-    let wave := paths.extract i (Nat.min (i + jobs) paths.size)
-    let mut children : Array (IO.Process.Child ⟨.null, .piped, .piped⟩) := #[]
-    for p in wave do
-      children := children.push (← spawn1 p)
-    for child in children do
-      let out ← child.stdout.readToEnd
-      let _ ← child.stderr.readToEnd
-      let _ ← child.wait
-      for line in out.splitOn "\n" do
-        if resolve then
-          match line.splitOn "\t" with
-          | [lastC, full, d] =>
-            if d == "F" then
-              existing := existing ++ [full] -- all local consts: collision set only
-            else
-              occs := occs ++ [(lastC, full)]
-              if d == "D" then defs := defs ++ [full] -- declId real: authorize
-          | _ => pure ()
-        else
-          match line.splitOn "\t" with
-          | [nm, tag] =>
-            match axis_of_tag tag with
-            | some ax => allDecls := allDecls ++ [(nm, ax)]
-            | none => pure ()
-          | _ => pure ()
-    i := i + jobs
-  -- PROTECTED closure: resolve each `--protect` file read-only (own env + farm)
-  -- and collect EVERY full name it defines or references. These drop from the
-  -- plan, so a whole-tree pass never renames a decl an untouchable study depends
-  -- on. The files themselves are never in `paths`, so never rewritten.
-  let mut protectedFulls : List String := []
-  if resolve then
-    for pf in protect do
-      let child ← spawn1 (System.FilePath.mk pf)
-      let out ← child.stdout.readToEnd
-      let _ ← child.stderr.readToEnd
-      let _ ← child.wait
-      for line in out.splitOn "\n" do
-        match line.splitOn "\t" with
-        | [_, full, _] => protectedFulls := protectedFulls ++ [full]
-        | _ => pure ()
-    if !protect.isEmpty then
-      err.putStrLn s!"// protecting {protectedFulls.eraseDups.length} names from {protect.length} closure file(s)"
+  let context : RenameWorkerContext := { err, exe, paths, jobs, resolve, extra, protect }
+  let discovery ← collectRenameDeclarations context
+  let protectedFulls ← collectProtectedNames context
   -- the plan: HYBRID under --resolve (resolution decides, token acts), else token
   let (renames, skipped) :=
     if resolve then
-      Lean4Fmt.Rename.plan_hybrid .snake modules occs defs existing protectedFulls
+      Lean4Fmt.Rename.plan_hybrid
+        .snake
+        modules
+        discovery.occs
+        discovery.defs
+        discovery.existing
+        protectedFulls
     else
-      let p := Lean4Fmt.Rename.build_plan naming modules allDecls; (p.renames, p.skipped)
+      let plan := Lean4Fmt.Rename.build_plan naming modules discovery.allDecls
+      (plan.renames, plan.skipped)
   let tag := if resolve then "resolve" else preset
-  err.putStrLn
-    s!"// rename apply ({tag}): {renames.length} renames, {skipped.length} skipped over {paths.size} files"
-  for (nm, tgt) in skipped do
-    err.putStrLn s!"//   SKIP {nm} → {tgt}"
+  reportRenamePlan err tag paths.size renames skipped
   if renames.isEmpty then
     return
-  -- hand the map to the rewrite workers via a temp file (SRC<TAB>TGT; SRC is the
-  -- FULL name and TGT the new last-component under --resolve)
-  let mapPath := s!"{((← IO.getEnv "TMPDIR").getD "/tmp")}/lean4fmt-rename.map"
-  IO.FS.writeFile ⟨mapPath⟩ (String.intercalate "\n" (renames.map (fun (s, t) => s!"{s}\t{t}")))
-  -- PASS 2: rewrite each file, one subprocess per file, bounded waves
-  let spawn2 (p : System.FilePath) : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
-    IO.Process.spawn
-      { cmd    := exe,
-        args   := #["--rename-rewrite", "--map", mapPath, "--no-retry"] ++ extra ++ #[p.toString],
-        stdin  := .null,
-        stdout := .piped,
-        stderr := .piped }
-  let mut renamed := 0
-  let mut skips := 0
-  let mut j := 0
-  while j < paths.size do
-    let wave := paths.extract j (Nat.min (j + jobs) paths.size)
-    let mut children : Array (IO.Process.Child ⟨.null, .piped, .piped⟩) := #[]
-    for p in wave do
-      children := children.push (← spawn2 p)
-    for child in children do
-      let _ ← child.stdout.readToEnd
-      let e2 ← child.stderr.readToEnd
-      let _ ← child.wait
-      for line in e2.splitOn "\n" do
-        if line.startsWith "rewrite: " then
-          renamed := renamed + 1
-          err.putStrLn s!"//   {line}"
-        else if line.startsWith "rename-rewrite: SKIP" then
-          skips := skips + 1
-          err.putStrLn s!"//   {line}"
-    j := j + jobs
-  err.putStrLn s!"// rewrote {renamed} files"
+  let mapPath ← writeRenameMap renames
+  let rewriteStats ← rewriteRenameFiles context mapPath
+  err.putStrLn s!"// rewrote {rewriteStats.renamed} files"
   -- G-L7.4g pass-2 consistency: pass 1 RESOLVED every file (it elaborated). A
   -- pass-2 SKIP means a file could not be rewritten while its DEPS were — a
   -- half-rename. Exit nonzero so the driver reverts the whole set, rather than
   -- leaning on the next build to notice. (core/build hits 0 skips; this is the
   -- fail-safe for the rollout.)
-  if resolve && skips > 0 then
-    err.putStrLn
-      s!"// ABORT: {skips} file(s) failed to rewrite in pass 2 — rename is INCONSISTENT; revert the set"
-    IO.Process.exit 1
+  enforceRewriteConsistency err resolve rewriteStats
 
 @[implemented_by run_rename_apply_impl]
 opaque run_rename_apply (files : List String) (preset : String) (resolve : Bool) (elabFallback : Bool) (protect : List String) : IO Unit
 
+private
+def severity_name : Lean4Fmt.Rules.severity → String
+  | .debug   => "debug"
+  | .info    => "info"
+  | .warning => "warning"
+  | .error   => "error"
+
+private
+def diagnostic_json (diagnostic : Lean4Fmt.Rules.Diagnostic) : Lean.Json :=
+  Lean.Json.mkObj
+    [
+      ("severity", .str (severity_name diagnostic.severity)),
+      ("pos", Lean.toJson diagnostic.pos),
+      ("rule", .str diagnostic.rule),
+      ("role", .str diagnostic.role),
+      ("message", .str diagnostic.message)
+    ]
+
+private
+def result_json (result : Lean4Fmt.Driver.result) : Lean.Json :=
+  Lean.Json.mkObj
+    [
+      ("path", .str result.path.toString),
+      ("changed", Lean.toJson result.changed),
+      ("diagnostics", .arr (result.diagnostics.map diagnostic_json))
+    ]
+
+private
+def parse_rename_decl (line : String) : Option (String × Lean4Fmt.Rename.axis) := do
+  let [name, axis] := (line.trimAscii.toString.splitOn " ").filter (· ≠ "") | none
+  let axis ← axis_of_tag axis
+  return (name, axis)
+
+private
+def run_rename_plan_mode (options : Cli.Options) : IO Unit := do
+  let naming := ((Lean4Fmt.Style.by_name? options.preset).getD Lean4Fmt.Style.straylight).naming
+  let input ← (← IO.getStdin).readToEnd
+  let plan :=
+    Lean4Fmt.Rename.build_plan naming [] (input.splitOn "\n" |>.filterMap parse_rename_decl)
+  IO.println
+    s!"// rename plan (preset {options.preset}): {plan.renames.length} rename, {plan.skipped.length} skip"
+  for (name, target) in plan.renames do
+    IO.println s!"  {name} → {target}"
+  for (name, target) in plan.skipped do
+    IO.println s!"  SKIP {name} → {target}"
+
+private
+def coverage_pct (numerator denominator : Nat) : String :=
+  if denominator == 0 then
+    "-"
+  else
+    s!"{(numerator * 1000 / denominator) / 10}.{(numerator * 1000 / denominator) % 10}%"
+
+private
+def run_stats_mode (options : Cli.Options) : IO Unit := do
+  let rows ← run_stats options.files options.width options.preset options.elabFallback options.retry
+  for row in rows do
+    let (active, verbatim, trivia, policy, path) := row
+    IO.println s!"{active} {verbatim} {trivia} {policy} {path}"
+  let totals :=
+    rows.foldl
+      (fun (active, verbatim, trivia, policy) row =>
+        (active + row.1, verbatim + row.2.1, trivia + row.2.2.1, policy + row.2.2.2.1))
+      (0, 0, 0, 0)
+  let (active, verbatim, trivia, policy) := totals
+  let code := active + verbatim
+  let portable := code - Nat.min policy code
+  IO.println
+    s!"// files {rows.size}  bytes active={active} verbatim={verbatim} trivia={trivia} policy={policy}"
+  IO.println
+    s!"// coverage: code-active {coverage_pct active code}  (of all output: active {coverage_pct active (code + trivia)}, trivia {coverage_pct trivia (code + trivia)})"
+  IO.println
+    s!"// ceiling: portable {coverage_pct portable code} of code; active-of-portable {coverage_pct active portable}"
+
+private
+def run_special_mode (options : Cli.Options) : IO Bool :=
+  match options.mode with
+  | .renamePlan => run_rename_plan_mode options *> pure true
+  | .renameApply =>
+    run_rename_apply
+      options.files
+      options.preset
+      options.resolve
+      options.elabFallback
+      options.protect
+        *> pure true
+  | .renameDecls =>
+    run_rename_decls options.files options.resolve options.farmDir options.elabFallback *> pure true
+  | .renameRewrite =>
+    run_rename_rewrite
+      options.files
+      options.mapFile
+      options.resolve
+      options.farmDir
+      options.elabFallback
+        *> pure true
+  | .resolveDump => run_resolve_dump options.files *> pure true
+  | .stats => run_stats_mode options *> pure true
+  | _ => pure false
+
+private
+def emit_result
+    (options : Cli.Options)
+    (err : IO.FS.Stream)
+    (result : Driver.result)
+    : IO Bool := do
+  if options.mode == .lint && options.json then
+    IO.println (Lean.Json.compress (result_json result))
+    return result.diagnostics.any (·.severity == .error)
+  let mut failed := false
+  for diagnostic in result.diagnostics do
+    let level : Lean4Fmt.Log.level :=
+      match diagnostic.severity with
+      | .debug   => .debug
+      | .info    => .info
+      | .warning => .warn
+      | .error   => .error
+    Lean4Fmt.Log.log level s!"{result.path}:{diagnostic.render}"
+    if diagnostic.severity == .error then failed := true
+  match options.mode with
+  | .format => IO.print result.output
+  | .check =>
+    if result.changed then
+      err.putStrLn s!"Would reformat: {result.path}"
+      failed := true
+    else err.putStrLn s!"OK: {result.path}"
+  | .write =>
+    if result.changed then
+      IO.FS.writeFile result.path result.output
+      err.putStrLn s!"Formatted: {result.path}"
+    else err.putStrLn s!"Unchanged: {result.path}"
+  | _ => pure ()
+  return failed
+
 def main (argv : List String) : IO Unit := do
-  let o := Cli.parse argv
-  if o.mode == .renamePlan then
-    -- read `NAME AXIS` lines on stdin (AXIS ∈ ns|typ|thm|term), apply the preset's
-    -- naming policy through the verified plan builder, print renames + skips.
-    let naming := ((Lean4Fmt.Style.by_name? o.preset).getD Lean4Fmt.Style.straylight).naming
-    let input ← (← IO.getStdin).readToEnd
-    let decls : List (String × Lean4Fmt.Rename.axis) :=
-      input.splitOn "\n"
-        |>.filterMap
-          (fun line =>
-            match (line.trimAscii.toString.splitOn " ").filter (· ≠ "") with
-            | [nm, ax] =>
-              match ax with
-              | "ns" => some (nm, .ns)
-              | "typ" => some (nm, .typ)
-              | "thm" => some (nm, .thm)
-              | "term" => some (nm, .term)
-              | _ => none
-            | _ => none)
-    let plan := Lean4Fmt.Rename.build_plan naming [] decls
-    IO.println
-      s!"// rename plan (preset {o.preset}): {plan.renames.length} rename, {plan.skipped.length} skip"
-    for (nm, tgt) in plan.renames do
-      IO.println s!"  {nm} → {tgt}"
-    for (nm, tgt) in plan.skipped do
-      IO.println s!"  SKIP {nm} → {tgt}"
-    return
-  if o.files.isEmpty then
+  let options := Cli.parse argv
+  if options.mode != .renamePlan && options.files.isEmpty then
     (← IO.getStderr).putStrLn Cli.usage
     IO.Process.exit 1
-
   init_env
-  Lean4Fmt.Log.set_level (Lean4Fmt.Log.level.of_string o.logLevel)
-  if o.lakeEnv then add_lake_paths o.files
+  Lean4Fmt.Log.set_level (Lean4Fmt.Log.level.of_string options.logLevel)
+  if options.mode == .lint && options.json then Lean4Fmt.Log.set_level .error
+  else if options.mode == .lint && options.logLevel == "warn" then Lean4Fmt.Log.set_level .info
+  if options.lakeEnv then add_lake_paths options.files
+  if ← run_special_mode options then
+    return
+  let results ← run_jobs
+    {
+      files := options.files
+      width := options.width
+      preset := options.preset
+      elabFallback := options.elabFallback
+      retry := options.retry
+      logLevel := options.logLevel
+      lakeEnv := options.lakeEnv
+    }
   let err ← IO.getStderr
-
-  if o.mode == .renameApply then
-    run_rename_apply o.files o.preset o.resolve o.elabFallback o.protect
-    return
-  if o.mode == .renameDecls then
-    run_rename_decls o.files o.resolve o.farmDir o.elabFallback
-    return
-  if o.mode == .renameRewrite then
-    run_rename_rewrite o.files o.mapFile o.resolve o.farmDir o.elabFallback
-    return
-  if o.mode == .resolveDump then
-    run_resolve_dump o.files
-    return
-
-  if o.mode == .stats then
-    let rows ← run_stats o.files o.width o.preset o.elabFallback o.retry
-    let mut ta := 0
-    let mut tv := 0
-    let mut tt := 0
-    let mut tp := 0
-    for row in rows do
-      let a := row.1; let v := row.2.1; let t := row.2.2.1
-      let pol := row.2.2.2.1; let p := row.2.2.2.2
-      IO.println s!"{a} {v} {t} {pol} {p}"
-      ta := ta + a; tv := tv + v; tt := tt + t; tp := tp + pol
-    let code := ta + tv
-    -- policy content (moduleDoc/header/quotation commands) is permanently
-    -- verbatim by design: the PORTABLE code — the honest denominator for
-    -- "how much could active formatting ever cover" — excludes it
-    let portable := code - Nat.min tp code
-    let pct (n d : Nat) : String :=
-      if d == 0 then "-" else s!"{(n * 1000 / d) / 10}.{(n * 1000 / d) % 10}%"
-    IO.println s!"// files {rows.size}  bytes active={ta} verbatim={tv} trivia={tt} policy={tp}"
-    IO.println
-      s!"// coverage: code-active {pct ta code}  (of all output: active {pct ta (code + tt)}, trivia {pct tt (code + tt)})"
-    IO.println
-      s!"// ceiling: portable {pct portable code} of code; active-of-portable {pct ta portable}"
-    return
-
-  let results ← run_jobs o.files o.width o.preset o.elabFallback o.retry o.logLevel o.lakeEnv
-
-  let mut failed := false
-  for r in results do
-    for d in r.diagnostics do
-      let lvl : Lean4Fmt.Log.level :=
-        match d.severity with
-        | .debug   => .debug
-        | .info    => .info
-        | .warning => .warn
-        | .error   => .error
-      Lean4Fmt.Log.log lvl s!"{r.path}:{d.render}"
-      if d.severity == .error then failed := true
-    match o.mode with
-    | .stats => pure ()   -- unreachable: stats returns above
-    | .renamePlan => pure ()   -- unreachable: renamePlan returns above
-    | .renameApply => pure ()   -- unreachable: renameApply returns above
-    | .renameDecls => pure ()   -- unreachable: renameDecls returns above
-    | .renameRewrite => pure ()   -- unreachable: renameRewrite returns above
-    | .resolveDump => pure ()   -- unreachable: resolveDump returns above
-    | .format => IO.print r.output
-    | .check =>
-      if r.changed then
-        err.putStrLn s!"Would reformat: {r.path}"; failed := true
-      else
-        err.putStrLn s!"OK: {r.path}"
-    | .write =>
-      if r.changed then
-        IO.FS.writeFile r.path r.output
-        err.putStrLn s!"Formatted: {r.path}"
-      else
-        err.putStrLn s!"Unchanged: {r.path}"
-
-  if failed then IO.Process.exit 1
+  let failures ← results.mapM (emit_result options err)
+  if failures.any id then IO.Process.exit 1

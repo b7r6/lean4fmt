@@ -39,6 +39,19 @@ abbrev Walk := Lean.Syntax → emit_m Doc
 def bare_src (stx : Lean.Syntax) : String :=
   (stx.getSubstring? false false).map (·.toString) |>.getD ""
 
+private
+structure canonical_piece_state where
+  output : String := ""
+  cursor : Nat := 0
+
+private
+def append_canonical_piece
+    (state : canonical_piece_state)
+    (code quotation : String)
+    (cursor : Nat)
+    : canonical_piece_state :=
+  { output := state.output ++ Lean4Fmt.Doc.canon_verbatim_ws code ++ quotation, cursor }
+
 /-- `canonVerbatimWs` applied PIECEWISE around embedded quotation TERMS: the
     quotation interiors ride byte-exact (the quasiquotation pin), everything
     around them still collapses — a sibling statement's gap must not escape
@@ -61,20 +74,18 @@ def canon_ws_piecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) :
       -- range boundaries are token edges, so byte slices are valid UTF-8; any
       -- decode surprise bails to the whole text (content-safe)
       let piece? := fun (a b : Nat) => String.fromUTF8? (bytes.extract a b)
-      let mut out := ""
-      let mut cur : Nat := 0
+      let mut state : canonical_piece_state := {}
       for (qs, qe) in ranges do
         if qe ≤ base then continue               -- range before our suffix window
         let a := qs - base                        -- Nat sub clamps: partial overlap → 0
         let b := qe - base
-        if b ≤ a || a < cur || b > send then return s   -- geometry surprise: content-safe
-        match piece? cur a, piece? a b with
+        if b ≤ a || a < state.cursor || b > send then return s   -- geometry surprise: content-safe
+        match piece? state.cursor a, piece? a b with
         | some code, some quot =>
-          out := out ++ Lean4Fmt.Doc.canon_verbatim_ws code ++ quot
-          cur := b
+          state := append_canonical_piece state code quot b
         | _, _ => return s
-      match piece? cur send with
-      | some tail => return out ++ Lean4Fmt.Doc.canon_verbatim_ws tail
+      match piece? state.cursor send with
+      | some tail => return state.output ++ Lean4Fmt.Doc.canon_verbatim_ws tail
       | none => return s
 
 /-- The opt-out trail entry (debug level): names the kind and position.
@@ -186,6 +197,31 @@ structure arm_piece where
       comment) — `none` rides plain and terminates its run. -/
   gridRow : Option (Doc × Option Doc)
 
+private
+structure arm_run_state where
+  plainDoc : Doc := .nil
+  rows     : Array (Doc × Option Doc) := #[]
+  allGrid  : Bool := true
+
+private
+structure arm_runs_state where
+  output      : Doc := .nil
+  run         : Array arm_piece := #[]
+  sectionLead : Doc := .nil
+
+private
+structure alt_pattern_state where
+  groups  : Array String := #[]
+  current : Array Lean.Syntax := #[]
+  valid   : Bool := true
+  doc     : Doc := .nil
+
+private
+structure arm_piece_state where
+  pieces        : Array arm_piece := #[]
+  patternDoc    : Doc := .nil
+  patternBroken : Bool := false
+
 /-- §7 matchArms with clang-format run semantics: a VISIBLE seam (comment or
     blank line) splits the arm set into sections, and each section aligns
     independently (`armsAligned` — delta-guarded; single-arm sections degrade
@@ -206,27 +242,31 @@ def arms_aligned_runs
         Id.run do
           if sect.isEmpty then
             return out
-          let mut plainJ : Doc := .nil
-          let mut rows : Array (Doc × Option Doc) := #[]
-          let mut allGrid := true
-          for h : j in [0:sect.size] do
-            let p := sect[j]
-            plainJ := plainJ ++ (if j == 0 then Doc.nil else Doc.hardline) ++ p.doc
+          let mut state : arm_run_state := {}
+          for h : idx in [0:sect.size] do
+            let p := sect[idx]
+            state :=
+              { state with
+                plainDoc := state.plainDoc ++ (if idx == 0 then Doc.nil else Doc.hardline) ++ p.doc }
             match p.gridRow with
-            | some r => rows := rows.push r
-            | none => allGrid := false
-          let body := if allGrid then arms_aligned mode maxDelta rows plainJ else plainJ
+            | some r => state := { state with rows := state.rows.push r }
+            | none => state := { state with allGrid := false }
+          let body :=
+            if state.allGrid then
+              arms_aligned mode maxDelta state.rows state.plainDoc
+            else
+              state.plainDoc
           return out ++ sectLead ++ body
-    let mut out : Doc := .nil
-    let mut sect : Array arm_piece := #[]
-    let mut sectLead : Doc := .nil
+    let mut state : arm_runs_state := {}
     for p in pieces do
-      if p.plain && !sect.isEmpty then sect := sect.push p
+      if p.plain && !state.run.isEmpty then state := { state with run := state.run.push p }
       else
-        out := flush out sectLead sect
-        sect := #[p]
-        sectLead := p.sep
-    return flush out sectLead sect
+        state := {
+          output := flush state.output state.sectionLead state.run
+          run := #[p]
+          sectionLead := p.sep
+        }
+    return flush state.output state.sectionLead state.run
 
 /-- The `matchAlt` nodes of a `matchAlts` node (groups flattened). -/
 def match_alts_of (altsNode : Lean.Syntax) : Array Lean.Syntax :=
@@ -236,6 +276,34 @@ def match_alts_of (altsNode : Lean.Syntax) : Array Lean.Syntax :=
       for c in g.getArgs do
         if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
     return alts
+
+private
+def flush_alt_pattern_group
+    (joinFlat? : Lean.Syntax → Option String)
+    (group : Array Lean.Syntax)
+    : Option String := do
+  if group.isEmpty then none
+  let text ← joinFlat? (Lean.mkNullNode group)
+  if text.isEmpty || text.any (· == '\n') then none
+  else some text
+
+private
+def push_alt_pattern_separator
+    (joinFlat? : Lean.Syntax → Option String)
+    (separator : Lean.Syntax)
+    (state : alt_pattern_state)
+    : alt_pattern_state :=
+  let trivia_empty :=
+    ((Lean4Fmt.Syntax.leading? separator).getD "").trimAscii.toString.isEmpty
+        && ((Lean4Fmt.Syntax.trailing? separator).getD "").trimAscii.toString.isEmpty
+  match flush_alt_pattern_group joinFlat? state.current with
+  | some text =>
+    { state with
+      groups := state.groups.push text
+      current := #[]
+      valid := state.valid && trivia_empty
+    }
+  | none => { state with current := #[], valid := false }
 
 /-- The ALTERNATIVE-pattern stack rebuild (`| p₁\n| p₂\n| p₃ => body` — the
     Abel shape): split the arm's pattern null on its top-level `|` atoms,
@@ -252,48 +320,29 @@ def alt_pattern_stack?
     (joinFlat? : Lean.Syntax → Option String)
     : emit_m (Option (Doc × Bool)) := do
   let width := (← read).layout.lineWidth
-  let flushG :=
-    fun (g : Array Lean.Syntax) =>
-      Id.run do
-        if g.isEmpty then
-          return none
-        match joinFlat? (Lean.mkNullNode g) with
-        | some t =>
-          if t.isEmpty || t.any (· == '\n') then
-            return none
-          return some t
-        | none => return (none : Option String)
-  let mut groups : Array String := #[]
-  let mut curG : Array Lean.Syntax := #[]
-  let mut ok := true
+  let mut state : alt_pattern_state := {}
   for c in patStx.getArgs do
     match c with
     | .atom _ "|" =>
       -- a comment riding the separator's trivia has no seam here
-      if !(((Lean4Fmt.Syntax.leading? c).getD "").trimAscii.toString.isEmpty
-          && ((Lean4Fmt.Syntax.trailing? c).getD "").trimAscii.toString.isEmpty) then
-        ok := false
-      match flushG curG with
-      | some t => groups := groups.push t
-      | none => ok := false
-      curG := #[]
-    | _ => curG := curG.push c
-  match flushG curG with
-  | some t => groups := groups.push t
-  | none => ok := false
-  if !ok || groups.size < 2 then
+      state := push_alt_pattern_separator joinFlat? c state
+    | _ => state := { state with current := state.current.push c }
+  match flush_alt_pattern_group joinFlat? state.current with
+  | some t => state := { state with groups := state.groups.push t }
+  | none => state := { state with valid := false }
+  if !state.valid || state.groups.size < 2 then
     return none
-  if groups.any (fun g => g.length + 8 > width) then
+  if state.groups.any (fun g => g.length + 8 > width) then
     return none
   let result ← do
-    let joined := " | ".intercalate groups.toList
+    let joined := " | ".intercalate state.groups.toList
     if joined.length + 8 ≤ width then
       pure ((Doc.text joined), false)
     else
-      let mut pd : Doc := .text groups[0]!
-      for g in groups.toList.drop 1 do
-        pd := pd ++ .hardline ++ .text ("| " ++ g)
-      pure (pd, true)
+      state := { state with doc := .text state.groups[0]! }
+      for g in state.groups.toList.drop 1 do
+        state := { state with doc := state.doc ++ .hardline ++ .text ("| " ++ g) }
+      pure (state.doc, true)
   -- the initial walk logged the pattern null's opt-out, but the rebuilt
   -- set ships — pop the stale entry
   let pos := (patStx.getPos?.map (·.byteIdx)).getD 0
@@ -303,6 +352,35 @@ def alt_pattern_stack?
     else
       ds
   return some result
+
+private
+def arm_body_part
+    (body : Lean.Syntax)
+    (bodyDoc : Doc)
+    (sourceBroken preserveLineBreaks : Bool)
+    : Doc :=
+  let glueBody :=
+    body.getKind == ``Lean.Parser.Term.do || body.getKind == ``Lean.Parser.Term.byTactic
+  if glueBody then
+    .text " " ++ bodyDoc
+  else if preserveLineBreaks then
+    if sourceBroken then Doc.nest 2 (Doc.hardline ++ bodyDoc) else Doc.text " " ++ bodyDoc
+  else
+    .group (.nest 2 (.line ++ bodyDoc))
+
+private
+def arm_grid_row
+    (body : Lean.Syntax)
+    (bodyDoc patternDoc : Doc)
+    (hasTrail patternBroken : Bool)
+    (arrowText : String)
+    : Option (Doc × Option Doc) :=
+  let inlineOk :=
+    body.getKind != ``Lean.Parser.Term.do && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
+  if inlineOk && !hasTrail && arrowText == "=>" && !patternBroken then
+    some (patternDoc, some bodyDoc)
+  else
+    none
 
 /-- THE shared arm loop: the `ArmPiece`s of a `| pat => body` arm set —
     `Term.match` arms and the Decl `declValEqns` value are the same shape, and
@@ -324,34 +402,34 @@ def arm_pieces?
     (alts : Array Lean.Syntax)
     (joinFlat? : Lean.Syntax → Option String := fun _ => none)
     : emit_m (Option (Array arm_piece)) := do
-  let mut pieces : Array arm_piece := #[]
-  for h : i in [0:alts.size] do
-    let alt := alts[i]
+  let mut state : arm_piece_state := {}
+  for h : idx in [0:alts.size] do
+    let alt := alts[idx]
     if Lean4Fmt.Syntax.has_unowned_interior_comment alt then
       return none
     let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
     let some sep := leading_sep? lead | return none
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
     let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
-    let last := i + 1 == alts.size
+    let last := idx + 1 == alts.size
     if !last && trailT.any (· == '\n') then return none
     let hasTrail := !last && !trailT.isEmpty
     let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
     let aa := alt.getArgs
     let patStx := aa[1]?.getD .missing
-    let mut patDoc ← walk (aa[1]?.getD .missing)
-    let mut patBroken := false
+    state := { state with
+      patternDoc := ← walk (aa[1]?.getD .missing)
+      patternBroken := false }
     -- ws-sensitivity (fixed-point class): a multi-line re-anchoring PATTERN
     -- glued after "| " re-indents by its placement column, which the previous
     -- pass just moved (gate-caught on mathlib Applicative + List/Basic,
     -- +2/pass). The ALTERNATIVE-pattern stack (the Abel shape) is portable
     -- though — see altPatternStack?. Anything else stays the caller's to
     -- verbatim, as before.
-    if Lean4Fmt.Doc.hasMultilineReanchor patDoc then
+    if Lean4Fmt.Doc.hasMultilineReanchor state.patternDoc then
       match ← alt_pattern_stack? patStx joinFlat? with
       | some (pd, broken) =>
-        patDoc := pd
-        patBroken := broken
+        state := { state with patternDoc := pd, patternBroken := broken }
       | none => return none
     let arrowT := (bare_src (aa[2]?.getD .missing)).trimAscii.toString
     let arrowT := if arrowT.isEmpty then "=>" else arrowT
@@ -364,27 +442,17 @@ def arm_pieces?
     -- below is the canonical arm shape — the non-glued group put `by` on
     -- its own line whenever the proof was multi-line (surfaced when the
     -- alternative-pattern port activated eqns arms with by proofs)
-    let glueBody := body.getKind == ``Lean.Parser.Term.do
-      || body.getKind == ``Lean.Parser.Term.byTactic
-    let bodyPart : Doc := if glueBody
-      then .text " " ++ bodyDoc
-      else if preserveLB then
-        -- the author's arrow-line decision is load-bearing
-        if srcBroken then Doc.nest 2 (Doc.hardline ++ bodyDoc)
-        else Doc.text " " ++ bodyDoc
-      else .group (.nest 2 (.line ++ bodyDoc))
+    let bodyPart := arm_body_part body bodyDoc srcBroken preserveLB
     let armSrc := (bare_src alt).trimAscii.toString
     let armDoc :=
       if preserveLB && !armSrc.isEmpty && !armSrc.any (· == '\n') then
         Doc.text armSrc
-      else .text "| " ++ patDoc ++ .text (" " ++ arrowT) ++ bodyPart
-    let inlineOk := body.getKind != ``Lean.Parser.Term.do
-      && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
-    let row := if inlineOk && !hasTrail && arrowT == "=>" && !patBroken
-      then some (patDoc, some bodyDoc) else none
-    pieces := pieces.push
+      else .text "| " ++ state.patternDoc ++ .text (" " ++ arrowT) ++ bodyPart
+    let row := arm_grid_row body bodyDoc state.patternDoc hasTrail state.patternBroken arrowT
+    let piece : arm_piece :=
       { sep := sep, plain := plainSep, doc := armDoc ++ trailDoc, gridRow := row }
-  return some pieces
+    state := { state with pieces := state.pieces.push piece }
+  return some state.pieces
 
 /-- The leading trivia (comments + blank lines) before a form, as literal text. -/
 def leading_raw (stx : Lean.Syntax) : Doc := .textRaw (Lean4Fmt.Syntax.leading? stx |>.getD "")

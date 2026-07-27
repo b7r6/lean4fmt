@@ -21,6 +21,7 @@ structure Diagnostic where
   severity : severity
   pos      : Nat := 0
   rule     : String := ""
+  role     : String := ""
   message  : String
   deriving Repr, Inhabited
 
@@ -32,6 +33,7 @@ def Diagnostic.render (d : Diagnostic) : String :=
     | .warning => "warning"
     | .error   => "error"
   let tag := if d.rule.isEmpty then "" else s!" [{d.rule}]"
-  s!"{d.pos}: {sev}{tag}: {d.message}"
+  let role := if d.role.isEmpty then "" else s!" ({d.role})"
+  s!"{d.pos}: {sev}{tag}{role}: {d.message}"
 
 end Lean4Fmt.Rules

@@ -72,9 +72,10 @@ def parse_module? (env : Environment) (path contents : String) : IO (Option Lean
 /-- Flatten every `Info` node of a tree in document order. -/
 partial
 def collect_infos : Lean.Elab.InfoTree → Array Lean.Elab.Info → Array Lean.Elab.Info
-  | .context _ t, acc => collect_infos t acc
-  | .node i cs, acc   => cs.foldl (fun a c => collect_infos c a) (acc.push i)
-  | .hole _, acc      => acc
+  | .context _ tree, infos => collect_infos tree infos
+  | .node info children, infos =>
+    children.foldl (fun found child => collect_infos child found) (infos.push info)
+  | .hole _, infos => infos
 
 /-- First ident leaf of a subtree — the declId's NAME, dropping any `.{univs}`. -/
 partial
@@ -82,6 +83,61 @@ def first_ident : Lean.Syntax → Option Lean.Syntax
   | stx@(.ident ..) => some stx
   | .node _ _ args  => args.findSome? first_ident
   | _               => none
+
+private
+structure resolution_state where
+  resolutions : Array (Nat × Nat × Name × Bool) := #[]
+  binders     : Lean.NameSet := {}
+  locals      : Array Name := #[]
+
+private
+def record_term_info
+    (state : resolution_state)
+    (term_info : Lean.Elab.TermInfo)
+    : resolution_state :=
+  let state :=
+    if term_info.stx.getKind == `Lean.Parser.Command.declId then
+      -- Record the defined constant at the declaration identifier.
+      match term_info.expr.getAppFn.consumeMData, (first_ident term_info.stx).bind (·.getRange?) with
+      | .const name _, some range =>
+        { state with
+          resolutions :=
+            state.resolutions.push
+              (range.start.byteIdx, range.stop.byteIdx, name, true) }
+      | _, _ => state
+    else
+      -- Record every constant-resolving occurrence; the rewrite sanity gate
+      -- rejects generated or whole-application ranges that cannot be renamed.
+      match term_info.expr.getAppFn.consumeMData, term_info.stx.getRange? with
+      | .const name _, some range =>
+        { state with
+          resolutions :=
+            state.resolutions.push
+              (range.start.byteIdx, range.stop.byteIdx, name, false) }
+      | _, _ => state
+  -- Add local binders to the collision set, but never to the rename set.
+  term_info.lctx.decls.foldl
+    (fun state declaration =>
+      match declaration with
+      | some local_decl =>
+        if local_decl.userName.isInternal || local_decl.userName.hasMacroScopes then
+          state
+        else
+          { state with binders := state.binders.insert local_decl.userName }
+      | none => state)
+    state
+
+private
+def record_field_info
+    (state : resolution_state)
+    (field_info : Lean.Elab.FieldInfo)
+    : resolution_state :=
+  match field_info.stx.getRange? with
+  | some range =>
+    { state with
+      resolutions := state.resolutions.push
+        (range.start.byteIdx, range.stop.byteIdx, field_info.projName, false) }
+  | none => state
 
 /-- G-L7.4: name-resolution. Elaborate a module with info trees ON, and return,
     for every resolved identifier OCCURRENCE, its source byte range paired with
@@ -104,41 +160,17 @@ def resolve_idents
     do
       try
         let s ← Lean.Elab.IO.processCommands ictx mps st
-        let mut acc : Array (Nat × Nat × Name × Bool) := #[]
+        let mut state : resolution_state := {}
         -- local BINDER names (fn params, `let`s, `match` vars) in scope at any term.
         -- A type snaking onto a binder name shadows it — `(action : Action)` →
         -- `(action : action)`, where `action → …` then reads the value, not the type.
         -- Binders aren't env consts, so they must be harvested from each term's local
         -- context; they feed the COLLISION set only (never renamed).
-        let mut binders : Lean.NameSet := {}
         for tree in s.commandState.infoState.trees do
-          for i in collect_infos tree #[] do
-            match i with
-            | .ofTermInfo ti =>
-              if ti.stx.getKind == `Lean.Parser.Command.declId then
-                -- DEFINITION site: the defined const, at the declId's name ident
-                match ti.expr.getAppFn.consumeMData, (first_ident ti.stx).bind (·.getRange?) with
-                | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm, true)
-                | _, _ => pure ()
-              else
-                -- ANY const-resolving occurrence (bare ident, dot-projection,
-                -- binder type, …) at its stx range. Broad on purpose: the rewrite's
-                -- SANITY gate (token tail must spell the const's last component)
-                -- filters whole-application / generated-const infos, so over-
-                -- capture here is safe and closes the binder-type gap.
-                match ti.expr.getAppFn.consumeMData, ti.stx.getRange? with
-                | .const nm _, some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, nm, false)
-                | _, _ => pure ()
-              for d in ti.lctx.decls do
-                match d with
-                | some ld =>
-                  unless ld.userName.isInternal || ld.userName.hasMacroScopes do
-                    binders := binders.insert ld.userName
-                | none => pure ()
-            | .ofFieldInfo fi =>
-              match fi.stx.getRange? with
-              | some r => acc := acc.push (r.start.byteIdx, r.stop.byteIdx, fi.projName, false)
-              | none => pure ()
+          for info in collect_infos tree #[] do
+            match info with
+            | .ofTermInfo term_info => state := record_term_info state term_info
+            | .ofFieldInfo field_info => state := record_field_info state field_info
             | _ => pure ()
         -- the COMPLETE def set the collision/taken guards need — fields,
         -- constructors, every decl — harvested from the SAME elaboration via the
@@ -146,12 +178,12 @@ def resolve_idents
         -- worker is DETERMINISTIC; a second parse for fields raced and dropped
         -- defs, letting a type snake onto an unseen term (`Attr` → `attr`). Plus the
         -- local binders (collision-only) that close the type↔binder shadow class.
-        let mut locals : Array Name := binders.toList.toArray
+        state := { state with locals := state.binders.toList.toArray }
         for (nm, _) in s.commandState.env.constants.map₂.toList do
-          unless nm.isInternal do locals := locals.push nm
+          unless nm.isInternal do state := { state with locals := state.locals.push nm }
         -- the elaborator records an ident in several info nodes; dedup exact
         -- (start, stop, name, isDef) so the rewrite never double-edits a range
-        pure (acc.toList.eraseDups.toArray, locals)
+        pure (state.resolutions.toList.eraseDups.toArray, state.locals)
       catch _ => pure (#[], #[])
 
 end Lean4Fmt.Frontend.Session

@@ -15,7 +15,7 @@ import Lean4Fmt.Casing
 
 namespace Lean4Fmt.Style
 
--- ── choice knobs ────────────────────────────────────────────────────────────
+-- ── choice knobs ──────────────────────────────────────────────────────────────
 
 inductive colon_placement
   | breakBefore
@@ -83,7 +83,7 @@ def op_break.of_string? : String → Option op_break
   | "trailing" => some .trailing
   | _          => none
 
--- ── grouped sub-records ─────────────────────────────────────────────────────
+-- ── grouped sub-records ───────────────────────────────────────────────────────
 
 structure Layout where
   lineWidth          : Nat := 100
@@ -196,6 +196,37 @@ structure Naming where
   terms      : Lean4Fmt.Casing.Case := .preserve -- def / abbrev / instance / fields
   deriving Repr, Inhabited
 
+/-- Diagnostic-only policy for short bound names. `symbolAllow` is keyed by
+    EXACT character count: an entry at 2 never exempts a one-character name.
+    A zero floor disables the rule, which keeps non-house styles inert. -/
+structure Linting where
+  symbolMinChars : Nat := 0
+  /-- Maximum direct control-flow dispatch points in an executable definition.
+      Zero disables the rule. -/
+  branchDensityMax : Nat := 0
+  /-- Maximum explicit value parameters on one declaration. Zero disables the
+      rule. Implicit/strict-implicit and instance binders do not consume it. -/
+  handlerParameterMax : Nat := 0
+  /-- Require every blank-line stanza break inside an executable definition to
+      introduce the next block with an immediately following comment. -/
+  requireStanzaComments : Bool := false
+  symbolAllow               : List (Nat × List String) := []
+  symbolDeny                : List String := []
+  fieldAllow                : List (Nat × List String) := []
+  allowGreekSymbols         : Bool := false
+  allowHebrewSymbols        : Bool := false
+  allowTraditionalInstances : Bool := true
+  /-- Require every named instance binder to use a Greek or Hebrew base letter
+      followed only by Unicode modifier/subscript characters. -/
+  requireTraditionalInstances : Bool := false
+  /-- Require positional bracket-range loop binders to follow the HFT
+      `idx`/`jdx`/`kdx` convention by positional nesting depth. -/
+  requirePositionalLoopNames : Bool := false
+  /-- Require pattern and match-arm binders to meet the configured semantic
+      symbol floor; pattern position grants no blanket short-name exemption. -/
+  requireSemanticPatternBinders : Bool := false
+  deriving Repr, Inhabited
+
 /-- The fully-resolved style. -/
 structure Style where
   layout     : Layout := {}
@@ -206,6 +237,7 @@ structure Style where
   imports    : imports := {}
   comments   : comments := {}
   naming     : Naming := {}
+  linting    : Linting := {}
   deriving Repr, Inhabited
 
 end Lean4Fmt.Style
