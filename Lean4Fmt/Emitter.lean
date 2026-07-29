@@ -46,34 +46,38 @@ abbrev emitter_m := ReaderT style_config (StateM emitter_state)
 
 namespace emitter_m
 
-def run (α : Type) (config : style_config) (m : emitter_m α) : α × emitter_state :=
-  StateT.run (ReaderT.run m config) {}
+def run
+    (valueType : Type)
+    (config : style_config)
+    (modeValue : emitter_m valueType)
+    : valueType × emitter_state :=
+  StateT.run (ReaderT.run modeValue config) {}
 
 def get_config : emitter_m style_config := read
 def get_state : emitter_m emitter_state := get
-def modify_state (f : emitter_state → emitter_state) : emitter_m Unit := modify f
+def modify_state (transform : emitter_state → emitter_state) : emitter_m Unit := modify transform
 
-def emit (s : String) : emitter_m Unit := do
-  if s.isEmpty then
+def emit (source : String) : emitter_m Unit := do
+  if source.isEmpty then
     return
   let config ← get_config
-  let st ← get_state
-  let mut out := st.output
-  let mut col := st.column
-  for _ in [:st.pendingNewlines] do out := out.push '\n'; col := 0
-  if col == 0 && st.indentLevel > 0 then
-    let spaces := String.ofList (List.replicate (st.indentLevel * config.indent) ' ')
+  let state ← get_state
+  let mut out := state.output
+  let mut col := state.column
+  for _ in [:state.pendingNewlines] do out := out.push '\n'; col := 0
+  if col == 0 && state.indentLevel > 0 then
+    let spaces := String.ofList (List.replicate (state.indentLevel * config.indent) ' ')
     out := out ++ spaces; col := spaces.length
-  if st.pendingSpace && col > 0 then out := out.push ' '; col := col + 1
-  out := out ++ s
-  for character in s.toList do
+  if state.pendingSpace && col > 0 then out := out.push ' '; col := col + 1
+  out := out ++ source
+  for character in source.toList do
     if character == '\n' then col := 0
     else col := col + 1
-  set { st with output := out, column := col, pendingNewlines := 0, pendingSpace := false }
+  set { state with output := out, column := col, pendingNewlines := 0, pendingSpace := false }
 
 def newline : emitter_m Unit := do
-  let st ← get_state
-  if st.inlineMode then
+  let state ← get_state
+  if state.inlineMode then
     return -- suppress newlines in inline mode
   let config ← get_config
   modify_state fun state =>
@@ -91,10 +95,10 @@ def dedent : emitter_m Unit :=
   modify_state fun state => { state with indentLevel := state.indentLevel - 1 }
 
 /-- Run an action in inline mode (suppresses newlines) -/
-def with_inline {α : Type} (m : emitter_m α) : emitter_m α := do
+def with_inline {valueType : Type} (modeValue : emitter_m valueType) : emitter_m valueType := do
   let oldInline := (← get_state).inlineMode
   modify_state fun state => { state with inlineMode := true }
-  let result ← m
+  let result ← modeValue
   modify_state fun state => { state with inlineMode := oldInline }
   return result
 
@@ -103,15 +107,15 @@ def with_inline {α : Type} (m : emitter_m α) : emitter_m α := do
     internal relative indentation is preserved. This is what makes verbatim
     reproduction safe for indentation-sensitive constructs (tactic blocks,
     `let rec`, `where`) even when the surrounding signature has been reflowed. -/
-def emit_verbatim_str (s : String) : emitter_m Unit := do
+def emit_verbatim_str (source : String) : emitter_m Unit := do
   let nonblank (line : String) : Bool := line.any (· != ' ')
   -- split; drop leading/trailing blank lines
-  let mut lines := s.splitOn "\n"
+  let mut lines := source.splitOn "\n"
   lines := lines.dropWhile (fun line => !nonblank line)
   lines := (lines.reverse.dropWhile (fun line => !nonblank line)).reverse
   if lines.isEmpty then
     return
-  let indentOf (l : String) : Nat := (l.toList.takeWhile (· == ' ')).length
+  let indentOf (lineValue : String) : Nat := (lineValue.toList.takeWhile (· == ' ')).length
   let base :=
     (lines.filter nonblank).foldl (fun minimum line => Nat.min minimum (indentOf line)) 1000000
   let base := if base == 1000000 then 0 else base
@@ -170,8 +174,8 @@ def get_leading (stx : Syntax) : Option String :=
   | .original leading .. => some (Substring.Raw.toString leading)
   | _ => none
 
-def has_comment (s : String) : Bool := s.toList.any (· == '-')
-def count_newlines (s : String) : Nat := s.toList.filter (· == '\n') |>.length
+def has_comment (source : String) : Bool := source.toList.any (· == '-')
+def count_newlines (source : String) : Nat := source.toList.filter (· == '\n') |>.length
 
 end emitter_m
 
@@ -183,11 +187,11 @@ def process_leading (stx : Syntax) : emitter_m Unit := do
   if let some leading := get_leading stx then
     if leading.isEmpty then
       return
-    let st ← get_state
+    let state ← get_state
     -- In inline mode, don't process leading whitespace
-    if st.inlineMode then
+    if state.inlineMode then
       return
-    let atStart := st.output.isEmpty && st.pendingNewlines == 0
+    let atStart := state.output.isEmpty && state.pendingNewlines == 0
     let newlines := count_newlines leading
     if has_comment leading then
       -- trim BOTH ends: keep the comment text, drop surrounding whitespace so
@@ -198,14 +202,14 @@ def process_leading (stx : Syntax) : emitter_m Unit := do
         if !atStart then
           -- Only add newlines if we don't already have pending ones
           -- (or if trivia has MORE newlines than we have pending)
-          if newlines > st.pendingNewlines then
+          if newlines > state.pendingNewlines then
             if newlines > 1 then blank_line
             else newline
         emit trimmed
         newline
     else
       -- Just whitespace — convert to newlines (but not at start, and not if already pending)
-      if !atStart && st.pendingNewlines == 0 then
+      if !atStart && state.pendingNewlines == 0 then
         if newlines > 1 then blank_line
         else if newlines > 0 then newline
 
@@ -625,13 +629,13 @@ def emitDeclModifiers (args : Array Syntax) : emitter_m Unit := do
     for arg in args do if !arg.isNone then emit_syntax arg
 
 private partial
-def emitModifierKeyword (kw : String) (_args : Array Syntax) : emitter_m Unit := do
-    emit kw
+def emitModifierKeyword (keyword : String) (_args : Array Syntax) : emitter_m Unit := do
+    emit keyword
     space
 
 private partial
-def emitKeywordDecl (kw : String) (args : Array Syntax) : emitter_m Unit := do
-    process_leading args[0]!; emit kw; space
+def emitKeywordDecl (keyword : String) (args : Array Syntax) : emitter_m Unit := do
+    process_leading args[0]!; emit keyword; space
     for idx in [1:args.size] do emit_syntax args[idx]!
 
 private partial
@@ -1054,7 +1058,7 @@ def emitMatch (args : Array Syntax) : emitter_m Unit := do
     emit "match"
     space
     -- Emit scrutinees and alts
-    let st ← get_state
+    let state ← get_state
     for idx in [1:args.size] do
       let arg := args[idx]!
       if arg.isAtom then
@@ -1062,7 +1066,7 @@ def emitMatch (args : Array Syntax) : emitter_m Unit := do
           if val == "with" then
             space
             emit "with"
-            if st.inlineMode then space else newline
+            if state.inlineMode then space else newline
       else if !arg.isNone then emit_syntax arg
 
 private partial
@@ -1070,7 +1074,7 @@ def emitDoMatch (args : Array Syntax) : emitter_m Unit := do
     -- args[0] = "match", args[1..] = opt stuff, scrutinees, "with", alts
     emit "match"
     space
-    let st ← get_state
+    let state ← get_state
     -- Skip the opt null nodes, find the discriminant and alts
     for idx in [1:args.size] do
       let arg := args[idx]!
@@ -1079,7 +1083,7 @@ def emitDoMatch (args : Array Syntax) : emitter_m Unit := do
           if val == "with" then
             space
             emit "with"
-            if st.inlineMode then space else newline
+            if state.inlineMode then space else newline
       else if !arg.isNone then emit_syntax arg
 
 private partial
@@ -1090,10 +1094,10 @@ def emitMatchDiscr (args : Array Syntax) : emitter_m Unit := do
 private partial
 def emitMatchAlts (args : Array Syntax) : emitter_m Unit := do
     -- args is typically a single null node containing the alts
-    let st ← get_state
+    let state ← get_state
     for arg in args do
       match arg with
-      | .node _ _ alts => emitMatchAltNodes st.inlineMode alts
+      | .node _ _ alts => emitMatchAltNodes state.inlineMode alts
       | _ => emit_syntax arg
 
 private partial

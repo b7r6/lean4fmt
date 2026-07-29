@@ -31,31 +31,31 @@ structure style_patch where
 
 /-- Right-biased merge: the later patch wins per group. Named so the
     composition laws can unfold the operation directly. -/
-def style_patch.append (a b : style_patch) : style_patch := {
-  layout := b.layout <|> a.layout
-  breaking := b.breaking <|> a.breaking
-  alignment := b.alignment <|> a.alignment
-  blankLines := b.blankLines <|> a.blankLines
-  spacing := b.spacing <|> a.spacing
-  imports := b.imports <|> a.imports
-  comments := b.comments <|> a.comments
-  naming := b.naming <|> a.naming
-  linting := b.linting <|> a.linting
+def style_patch.append (leftValue rightValue : style_patch) : style_patch := {
+  layout := rightValue.layout <|> leftValue.layout
+  breaking := rightValue.breaking <|> leftValue.breaking
+  alignment := rightValue.alignment <|> leftValue.alignment
+  blankLines := rightValue.blankLines <|> leftValue.blankLines
+  spacing := rightValue.spacing <|> leftValue.spacing
+  imports := rightValue.imports <|> leftValue.imports
+  comments := rightValue.comments <|> leftValue.comments
+  naming := rightValue.naming <|> leftValue.naming
+  linting := rightValue.linting <|> leftValue.linting
 }
 
 instance : Append style_patch := ⟨style_patch.append⟩
 
 /-- Apply a patch to a base style (patch wins where present). -/
-def Style.apply (base : Style) (p : style_patch) : Style := {
-  layout := p.layout.getD base.layout
-  breaking := p.breaking.getD base.breaking
-  alignment := p.alignment.getD base.alignment
-  blankLines := p.blankLines.getD base.blankLines
-  spacing := p.spacing.getD base.spacing
-  imports := p.imports.getD base.imports
-  comments := p.comments.getD base.comments
-  naming := p.naming.getD base.naming
-  linting := p.linting.getD base.linting
+def Style.apply (base : Style) (predicate : style_patch) : Style := {
+  layout := predicate.layout.getD base.layout
+  breaking := predicate.breaking.getD base.breaking
+  alignment := predicate.alignment.getD base.alignment
+  blankLines := predicate.blankLines.getD base.blankLines
+  spacing := predicate.spacing.getD base.spacing
+  imports := predicate.imports.getD base.imports
+  comments := predicate.comments.getD base.comments
+  naming := predicate.naming.getD base.naming
+  linting := predicate.linting.getD base.linting
 }
 
 /-- A path-local override. `root` is a component path relative to the policy

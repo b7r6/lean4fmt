@@ -28,7 +28,7 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
 private
 def comma_group
     (walk : Walk)
-    (l r : String)
+    (lineValue result : String)
     (children : Array Lean.Syntax)
     : emit_m (Option Doc) := do
 
@@ -51,8 +51,8 @@ def comma_group
         (fun index =>
           documents[index]!
             ++ (if index + 1 == documents.size then Doc.nil else Doc.text ","))).toList
-    return some (.text l ++ .nest 2 (Doc.fillSep items) ++ .text r)
-  return some (Lean4Fmt.Doc.comma_list l r documents)
+    return some (.text lineValue ++ .nest 2 (Doc.fillSep items) ++ .text result)
+  return some (Lean4Fmt.Doc.comma_list lineValue result documents)
 
 /-- Comment-bearing comma list, FORCED broken (a line comment cannot flatten,
     §0.4): one element per line at +2, each element's leading comment/blank
@@ -75,7 +75,7 @@ def comma_trivia? (comma? : Option Lean.Syntax) : Option (Doc × String) := do
 private
 def seam_comma_list?
     (walk : Walk)
-    (l r : String)
+    (lineValue result : String)
     (opener : Lean.Syntax)
     (pairs : Array (Lean.Syntax × Option Lean.Syntax))
     (closer : Lean.Syntax)
@@ -118,7 +118,7 @@ def seam_comma_list?
     let trailD : Doc := if trailT.isEmpty then .nil else .text (" " ++ trailT)
     body := body ++ sep ++ eDoc ++ commaD ++ trailD ++ commaLeadSep
   let openD : Doc := if openTrail.isEmpty then .nil else .text (" " ++ openTrail)
-  return some (.text l ++ openD ++ .nest 2 body ++ .hardline ++ .text r)
+  return some (.text lineValue ++ openD ++ .nest 2 body ++ .hardline ++ .text result)
 
 /-- A `do`/`by` DESCENDANT — NEWLINE-BLIND: this feeds a layout decision,
     and "is it multi-line in the SOURCE" flips pass-to-pass (the DualNumber
@@ -129,10 +129,10 @@ def seam_comma_list?
     elaboration-level tree change the gate caught as tokens). let/structInst
     newline semantics ride safely inside their own self-anchored docs. -/
 private partial
-def contains_do_by (s : Lean.Syntax) : Bool :=
-  s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
-      || s.getKind == `Lean.Parser.Term.byTactic'
-      || s.getArgs.any contains_do_by
+def contains_do_by (source : Lean.Syntax) : Bool :=
+  source.getKind == ``Lean.Parser.Term.do || source.getKind == ``Lean.Parser.Term.byTactic
+      || source.getKind == `Lean.Parser.Term.byTactic'
+      || source.getArgs.any contains_do_by
 
 private
 def paren_doc (walk : Walk) (stx content : Lean.Syntax) : emit_m Doc := do
@@ -157,19 +157,19 @@ def paren_doc (walk : Walk) (stx content : Lean.Syntax) : emit_m Doc := do
     reparse (gate-caught on OmegaLimit: `<| calc` glued flat, the step list
     ended early — tokens). -/
 private partial
-def tail_glue_safe (s : Lean.Syntax) : Bool :=
-  let kind := s.getKind
+def tail_glue_safe (source : Lean.Syntax) : Bool :=
+  let kind := source.getKind
   if kind == ``Lean.Parser.Term.byTactic || kind == `Lean.Parser.Term.byTactic'
       || kind == ``Lean.Parser.Term.do then
     true
   else if kind == ``Lean.Parser.Term.app then
-    ((s.getArgs[1]?.bind (·.getArgs.back?)).map tail_glue_safe).getD false
+    ((source.getArgs[1]?.bind (·.getArgs.back?)).map tail_glue_safe).getD false
   else if kind == ``Lean.Parser.Term.fun then
-    match s.getArgs[1]? with
+    match source.getArgs[1]? with
     | some bodyForm => ((bodyForm.getArgs.back?).map tail_glue_safe).getD false
     | none          => false
   else if kind == ``Lean.Parser.Term.show then
-    ((s.getArgs.back?).map
+    ((source.getArgs.back?).map
       (fun result =>
         result.getKind == `Lean.Parser.Term.byTactic'
             || result.getKind == ``Lean.Parser.Term.byTactic
@@ -186,25 +186,25 @@ def tail_glue_safe (s : Lean.Syntax) : Bool :=
     list early on reparse (home Preset.lean). Every other multi-line value
     is nest-relative and re-anchors deterministically. -/
 private partial
-def contains_comma_struct_inst (s : Lean.Syntax) : Bool :=
-  (s.getKind == ``Lean.Parser.Term.structInst && (bare_src s).any (· == ','))
-      || s.getArgs.any contains_comma_struct_inst
+def contains_comma_struct_inst (source : Lean.Syntax) : Bool :=
+  (source.getKind == ``Lean.Parser.Term.structInst && (bare_src source).any (· == ','))
+      || source.getArgs.any contains_comma_struct_inst
 
 /-- Flatten a subtree into single-line canonTok PIECES (the binder groups of
     a wide quantifier head): a single-line node is one piece, a multi-line
     container contributes its children's pieces recursively; `none` when a
     leaf itself spans lines (nothing to wrap on). -/
 private partial
-def head_pieces? (s : Lean.Syntax) : Option (Array String) :=
-  let text := Lean4Fmt.Emit.canon_tok s
+def head_pieces? (source : Lean.Syntax) : Option (Array String) :=
+  let text := Lean4Fmt.Emit.canon_tok source
   if !text.any (· == '\n') then
     if text.isEmpty then some #[] else some #[text]
-  else if s.getArgs.isEmpty then
+  else if source.getArgs.isEmpty then
     none
   else
     Id.run do
       let mut pieces : Array String := #[]
-      for child in s.getArgs do
+      for child in source.getArgs do
         match head_pieces? child with
         | some piecesBinding => pieces := pieces ++ piecesBinding
         | none => return none
@@ -215,11 +215,11 @@ def head_pieces? (s : Lean.Syntax) : Option (Array String) :=
     placements, a column hazard when glued at a field/binding column
     (doc-derived test: flatWidth none is pass-stable). -/
 private
-def chain_own_line (v : Lean.Syntax) (vdoc : Doc) : Bool :=
-  (v.getKind == ``Lean.Parser.Term.let || v.getKind == ``Lean.Parser.Term.letrec
-      || v.getKind == ``Lean.Parser.Term.have
-      || v.getKind == ``Lean.Parser.Term.letI
-      || v.getKind == ``Lean.Parser.Term.haveI)
+def chain_own_line (value : Lean.Syntax) (vdoc : Doc) : Bool :=
+  (value.getKind == ``Lean.Parser.Term.let || value.getKind == ``Lean.Parser.Term.letrec
+      || value.getKind == ``Lean.Parser.Term.have
+      || value.getKind == ``Lean.Parser.Term.letI
+      || value.getKind == ``Lean.Parser.Term.haveI)
       && (Lean4Fmt.Doc.flat_width vdoc).isNone
 
 /-- A single `structInstField` = [structInstLVal, «rest»]. The LVal (field name /
@@ -922,10 +922,10 @@ def negation_doc
   let opT := (bare_src args[0]!).trimAscii.toString
   if opT.isEmpty || opT.any (· == '\n') then
     return (← verbatim stx)
-  let d ← walk args[1]!
-  if Lean4Fmt.Doc.hasMultilineVerbatim d then
+  let document ← walk args[1]!
+  if Lean4Fmt.Doc.hasMultilineVerbatim document then
     return (← verbatim stx)
-  return .text opT ++ d
+  return .text opT ++ document
 
 private partial
 def hole_doc

@@ -116,10 +116,10 @@ def make_olean_farm (files : List String) : IO (Option String) := do
     search := { search with steps := search.steps + 1 }
   let some root := search.root | return none
   let dirs ← try
-      let r ← IO.Process.output
+      let result ← IO.Process.output
         { cmd := "find",
           args := #[root.toString, "-type", "d", "-path", "*/.lake/build/lib/lean", "-prune"] }
-      pure ((r.stdout.splitOn "\n").filter (fun line => !line.isEmpty))
+      pure ((result.stdout.splitOn "\n").filter (fun line => !line.isEmpty))
     catch _ => pure ([] : List String)
   if dirs.isEmpty then
     return none

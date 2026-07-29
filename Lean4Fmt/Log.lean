@@ -46,9 +46,12 @@ def level.of_string : String → level
 
 initialize levelRef : IO.Ref level ← IO.mkRef .warn
 
-def set_level (l : level) : IO Unit := levelRef.set l
+def set_level (lineValue : level) : IO Unit := levelRef.set lineValue
 
-def log (l : level) (msg : String) : IO Unit := do
-  if l.rank ≥ (← levelRef.get).rank then (← IO.getStderr).putStrLn s!"[{l.tag}] {msg}"
+def log (lineValue : level) (msg : String) : IO Unit := do
+  if lineValue.rank ≥ (← levelRef.get).rank then
+    (← IO.getStderr).putStrLn
+      s!
+          "[{lineValue.tag}] {msg}"
 
 end Lean4Fmt.Log

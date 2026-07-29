@@ -64,18 +64,18 @@ def add_lake_paths_impl (files : List String) : IO Unit := do
     if !roots.contains root then roots := roots.push root
   for root in roots do
     try
-      let r ← IO.Process.output
+      let result ← IO.Process.output
         { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd := root }
-      if r.exitCode == 0 then
-        let entries := ((r.stdout.splitOn "\n").headD "").splitOn ":"
+      if result.exitCode == 0 then
+        let entries := ((result.stdout.splitOn "\n").headD "").splitOn ":"
           |>.filter (fun entry => !entry.isEmpty) |>.map System.FilePath.mk
         if !entries.isEmpty then
           Lean.searchPathRef.modify (· ++ entries)
           Lean4Fmt.Log.log .debug s!"lake env: {root} → {entries.length} search paths"
       else
-        Lean4Fmt.Log.log .debug s!"lake env failed at {root} (exit {r.exitCode})"
-    catch e =>
-      Lean4Fmt.Log.log .debug s!"lake env unavailable at {root}: {e}"
+        Lean4Fmt.Log.log .debug s!"lake env failed at {root} (exit {result.exitCode})"
+    catch element =>
+      Lean4Fmt.Log.log .debug s!"lake env unavailable at {root}: {element}"
 
 @[implemented_by add_lake_paths_impl]
 opaque add_lake_paths (files : List String) : IO Unit
@@ -194,14 +194,14 @@ opaque run_stats (files : List String) (width : Option Nat) (preset : String) (e
 
 /-- The naming axis a declaration node's KIND falls on, or `none` (example, or a
     command that declares no renamable name). -/
-def axis_of_kind (k : Lean.Name) : Option Lean4Fmt.Rename.axis :=
-  if k == ``Lean.Parser.Command.definition || k == ``Lean.Parser.Command.abbrev
-      || k == ``Lean.Parser.Command.opaque
-      || k == ``Lean.Parser.Command.instance then
+def axis_of_kind (keyValue : Lean.Name) : Option Lean4Fmt.Rename.axis :=
+  if keyValue == ``Lean.Parser.Command.definition || keyValue == ``Lean.Parser.Command.abbrev
+      || keyValue == ``Lean.Parser.Command.opaque
+      || keyValue == ``Lean.Parser.Command.instance then
     some .term
-  else if k == ``Lean.Parser.Command.theorem || k == ``Lean.Parser.Command.axiom then
+  else if keyValue == ``Lean.Parser.Command.theorem || keyValue == ``Lean.Parser.Command.axiom then
     some .thm
-  else if k == ``Lean.Parser.Command.structure || k == ``Lean.Parser.Command.inductive then
+  else if keyValue == ``Lean.Parser.Command.structure || keyValue == ``Lean.Parser.Command.inductive then
     some .typ
   else
     none
@@ -398,13 +398,13 @@ def rewrite_file
     (env : Lean.Environment)
     (map : List (String × String))
     (elabFallback : Bool)
-    (p : System.FilePath)
+    (predicate : System.FilePath)
     : IO Unit := do
   let err ← IO.getStderr
-  let contents ← IO.FS.readFile p
-  match ← Frontend.parse_full? env p.toString contents elabFallback with
-  | none => err.putStrLn s!"rename-rewrite: SKIP (no parse) {p}"
-  | some stx => rewrite_parsed err contents map p stx
+  let contents ← IO.FS.readFile predicate
+  match ← Frontend.parse_full? env predicate.toString contents elabFallback with
+  | none => err.putStrLn s!"rename-rewrite: SKIP (no parse) {predicate}"
+  | some stx => rewrite_parsed err contents map predicate stx
 
 private unsafe
 def rewrite_from_map (files : List String) (mapFile : String) (elabFallback : Bool) : IO Unit := do

@@ -27,78 +27,86 @@ namespace Lean4Fmt.Solve
     subtree's own left edge. -/
 abbrev lines := List (Nat × String)
 
-def lines_maxw (ls : lines) : Nat :=
-  ls.foldl (fun maximum line => max maximum (line.1 + line.2.length)) 0
+def lines_maxw (lines : lines) : Nat :=
+  lines.foldl (fun maximum line => max maximum (line.1 + line.2.length)) 0
 
-def lines_last (ls : lines) : Nat :=
-  match ls.getLast? with
+def lines_last (lines : lines) : Nat :=
+  match lines.getLast? with
   | some pathValue => pathValue.1 + pathValue.2.length
   | none           => 0
 
 /-- Horizontal join: `b` continues `a`'s last line; `b`'s later lines shift
     right by `a`'s last-line width (they were relative to `b`'s left edge). -/
-def cat_lines (a b : lines) : lines :=
-  match a.getLast? with
-  | none => b
+def cat_lines (leftValue rightValue : lines) : lines :=
+  match leftValue.getLast? with
+  | none => rightValue
   | some leftPlan =>
     let width := leftPlan.1 + leftPlan.2.length
-    match b with
-    | [] => a
+    match rightValue with
+    | [] => leftValue
     | rightPlan :: brest =>
-      a.dropLast
+      leftValue.dropLast
           ++ (leftPlan.1, leftPlan.2 ++ rightPlan.2)
               :: brest.map (fun line => (line.1 + width, line.2))
 
 /-- Newline after `a`: the next content starts a fresh line at relative 0. -/
-def flush_lines (a : lines) : lines := a ++ [(0, "")]
+def flush_lines (leftValue : lines) : lines := leftValue ++ [(0, "")]
 
 /-- Indent everything after the first line by `n`. -/
-def nest_lines (n : Nat) (a : lines) : lines :=
-  match a with
+def nest_lines (count : Nat) (leftValue : lines) : lines :=
+  match leftValue with
   | []                => []
-  | pathValue :: rest => pathValue :: rest.map (fun line => (line.1 + n, line.2))
+  | pathValue :: rest => pathValue :: rest.map (fun line => (line.1 + count, line.2))
 
 structure meas where
   lines : lines
   cost  : Nat
   deriving Inhabited
 
-def meas.maxw (m : meas) : Nat := lines_maxw m.lines
-def meas.last (m : meas) : Nat := lines_last m.lines
+def meas.maxw (modeValue : meas) : Nat := lines_maxw modeValue.lines
+def meas.last (modeValue : meas) : Nat := lines_last modeValue.lines
 
-def cat_m (a b : meas) : meas := { lines := cat_lines a.lines b.lines, cost := a.cost + b.cost }
-def flush_m (a : meas) : meas := { a with lines := flush_lines a.lines }
-def nest_m (n : Nat) (a : meas) : meas := { a with lines := nest_lines n a.lines }
-def pen_m (c : Nat) (a : meas) : meas := { a with cost := a.cost + c }
+def cat_m (leftValue rightValue : meas) : meas :=
+  { lines := cat_lines leftValue.lines rightValue.lines, cost := leftValue.cost + rightValue.cost }
+
+def flush_m (leftValue : meas) : meas := { leftValue with lines := flush_lines leftValue.lines }
+
+def nest_m (count : Nat) (leftValue : meas) : meas :=
+  { leftValue with lines := nest_lines count leftValue.lines }
+
+def pen_m (character : Nat) (leftValue : meas) : meas :=
+  { leftValue with cost := leftValue.cost + character }
 
 /-- Dominance: `x` is no worse than `y` in every coordinate that constrains the
     future — max width, last-line width, cost. With additive (monotone) cost a
     dominated partial layout can never extend to a strictly better whole, so we
     drop it. This prune is the whole tractability argument. -/
-def dominates (x y : meas) : Bool := x.maxw ≤ y.maxw && x.last ≤ y.last && x.cost ≤ y.cost
+def dominates (inputValue rightValue : meas) : Bool :=
+  inputValue.maxw ≤ rightValue.maxw && inputValue.last ≤ rightValue.last
+      && inputValue.cost ≤ rightValue.cost
 
-def insert_pareto (m : meas) (frontier : List meas) : List meas :=
-  if frontier.any (fun candidate => dominates candidate m) then
+def insert_pareto (modeValue : meas) (frontier : List meas) : List meas :=
+  if frontier.any (fun candidate => dominates candidate modeValue) then
     frontier
   else
-    m :: frontier.filter (fun candidate => !dominates m candidate)
+    modeValue :: frontier.filter (fun candidate => !dominates modeValue candidate)
 
 /-- Reduce a candidate set to its Pareto frontier. -/
-def prune (ms : List meas) : List meas := ms.foldr insert_pareto []
+def prune (modes : List meas) : List meas := modes.foldr insert_pareto []
 
-def cross_cat (fa fb : List meas) : List meas :=
-  fa.foldr (fun left products => fb.map (cat_m left) ++ products) []
+def cross_cat (leftFunction rightFunction : List meas) : List meas :=
+  leftFunction.foldr (fun left products => rightFunction.map (cat_m left) ++ products) []
 
 /-- The layout problem: a tree of choice points. `choice` is the constraint
     variable (which alternative); `pen` attaches a preference weight. `group`
     is the degenerate 2-candidate case a Wadler printer bakes in. -/
 inductive ldoc where
-  | text (s : String)
-  | cat (a b : ldoc)
-  | flush (a : ldoc)
-  | nest (n : Nat) (a : ldoc)
+  | text (source : String)
+  | cat (leftValue rightValue : ldoc)
+  | flush (leftValue : ldoc)
+  | nest (count : Nat) (leftValue : ldoc)
   | choice (alts : List ldoc)
-  | pen (c : Nat) (a : ldoc)
+  | pen (character : Nat) (leftValue : ldoc)
   deriving Inhabited
 
 /-- The DP: the Pareto frontier of every layout the subtree admits, computed
@@ -117,9 +125,9 @@ def frontier : ldoc → List meas
 /-- Pick the min-cost layout whose every line fits `W` (the hard constraint).
     If none fits, degrade to the narrowest — the never-worse-than-input floor,
     which the token/comment gate then backstops. -/
-def best_under (W : Nat) (f : List meas) : Option meas :=
-  let feas := f.filter (fun candidate => candidate.maxw ≤ W)
-  let pool := if feas.isEmpty then f else feas
+def best_under (widthBound : Nat) (transform : List meas) : Option meas :=
+  let feas := transform.filter (fun candidate => candidate.maxw ≤ widthBound)
+  let pool := if feas.isEmpty then transform else feas
   pool.foldl
     (fun best candidate => match best with
       | none => some candidate
@@ -131,37 +139,38 @@ def best_under (W : Nat) (f : List meas) : Option meas :=
           rightValue)
     none
 
-def solve (W : Nat) (d : ldoc) : Option meas := best_under W (frontier d)
+def solve (widthBound : Nat) (document : ldoc) : Option meas :=
+  best_under widthBound (frontier document)
 
 /-- The greedy caricature: each `choice` commits to the first alternative that
     fits ON ITS OWN, left-to-right, blind to how downstream placement or cost
     will land. This is the local optimum `.group` printers take. -/
 partial
-def greedy (W : Nat) : ldoc → meas
+def greedy (widthBound : Nat) : ldoc → meas
   | .text textValue => { lines := [(0, textValue)], cost := 0 }
-  | .cat leftValue rightValue => cat_m (greedy W leftValue) (greedy W rightValue)
-  | .flush leftValue => flush_m (greedy W leftValue)
-  | .nest count leftValue => nest_m count (greedy W leftValue)
-  | .pen headChar leftValue => pen_m headChar (greedy W leftValue)
+  | .cat leftValue rightValue => cat_m (greedy widthBound leftValue) (greedy widthBound rightValue)
+  | .flush leftValue => flush_m (greedy widthBound leftValue)
+  | .nest count leftValue => nest_m count (greedy widthBound leftValue)
+  | .pen headChar leftValue => pen_m headChar (greedy widthBound leftValue)
   | .choice alts =>
-    let cands := alts.map (greedy W)
-    match cands.find? (fun candidate => candidate.maxw ≤ W) with
+    let cands := alts.map (greedy widthBound)
+    match cands.find? (fun candidate => candidate.maxw ≤ widthBound) with
     | some candidate => candidate
     | none           => (cands.getLast?).getD { lines := [(0, "")], cost := 0 }
 
-def render_meas (m : meas) : String :=
+def render_meas (modeValue : meas) : String :=
   String.intercalate
     "\n"
-    (m.lines.map fun line => String.ofList (List.replicate line.1 ' ') ++ line.2)
+    (modeValue.lines.map fun line => String.ofList (List.replicate line.1 ' ') ++ line.2)
 
 /-- The affine feasibility of a horizontal composition — the two line-width
     obligations `a fits` and `a.last + b fits` — is exactly what omega discharges
     in the loop. (Scaled up, this is the Farkas/ISL certificate the solver emits.) -/
 theorem cat_fits
-        (aMax aLast bMax W : Nat)
-        (ha : aMax ≤ W)
-        (hb : aLast + bMax ≤ W)
-        : aMax ≤ W ∧ aLast + bMax ≤ W := by omega
+        (aMax aLast bMax widthBound : Nat)
+        (leftProof : aMax ≤ widthBound)
+        (rightProof : aLast + bMax ≤ widthBound)
+        : aMax ≤ widthBound ∧ aLast + bMax ≤ widthBound := by omega
 
 -- ── sanity: the measure algebra ───────────────────────────────────────────────
 
@@ -185,7 +194,8 @@ def brute_force : ldoc → List meas
   | .choice alts =>
     alts.foldr (fun alternative candidates => brute_force alternative ++ candidates) []
 
-def brute_opt (W : Nat) (d : ldoc) : Option meas := best_under W (brute_force d)
+def brute_opt (widthBound : Nat) (document : ldoc) : Option meas :=
+  best_under widthBound (brute_force document)
 
 /-- A chain of `n` break-or-flat segments (the long-application shape): flat is
     5 wide and free, broken is narrow and +1. `2^n` raw layouts. -/
@@ -198,14 +208,14 @@ def chain : Nat → ldoc
 /-- A def-sig CHOICE whose body is a nested chain — the outer sig branch and the
     inner chain branches compose through the frontier (def ⊃ body, both breaking).
     The exact sig shape is immaterial; the NESTING is the point the DP optimizes. -/
-def nested_def (n : Nat) : ldoc :=
+def nested_def (count : Nat) : ldoc :=
   let sig : ldoc :=
     .choice
       [
         .pen 0 (.text "private def f (a : T) : R :="),
         .pen 2 (.cat (.flush (.text "private def f")) (.text "    (a : T) : R :="))
       ]
-  .cat sig (.nest 2 (.cat (.flush (.text "")) (chain n)))
+  .cat sig (.nest 2 (.cat (.flush (.text "")) (chain count)))
 
 -- optimality: the pruned DP finds the SAME optimal cost as exhaustive search
 #guard (solve 12 (chain 6)).map meas.cost == (brute_opt 12 (chain 6)).map meas.cost
@@ -231,10 +241,10 @@ def nested_def (n : Nat) : ldoc :=
     algebra, live on the Emit path. The seam G-L4 widens: add the oneLine/fill
     rungs and real preference weights, and this same `bestUnder` starts choosing
     among them. -/
-def inline_def_fits (W total : Nat) : Bool :=
+def inline_def_fits (widthBound total : Nat) : Bool :=
   let inlineRung : meas := { lines := [(total, "")], cost := 0 } -- maxw = total, preferred
   let breakRung : meas := { lines := [(0, "")], cost := 2 } -- maxw = 0, always feasible
-  (best_under W [inlineRung, breakRung]).map meas.cost == some 0
+  (best_under widthBound [inlineRung, breakRung]).map meas.cost == some 0
 
 -- byte-identical to the `total ≤ width` test it replaces, across the boundary
 #guard inline_def_fits 100 80 == true -- fits → inline
@@ -252,8 +262,12 @@ def inline_def_fits (W total : Nat) : Bool :=
     adding one `(tag, Meas)` pair; the preference map is the cost column. This is
     the "select the most-preferred shape that satisfies the constraint" the whole
     campaign is for, one call. -/
-def pick_shape {α : Type} (W : Nat) (rungs : List (α × meas)) : Option α :=
-  let feas := rungs.filter (fun rung => rung.2.maxw ≤ W)
+def pick_shape
+    {valueType : Type}
+    (widthBound : Nat)
+    (rungs : List (valueType × meas))
+    : Option valueType :=
+  let feas := rungs.filter (fun rung => rung.2.maxw ≤ widthBound)
   let pool := if feas.isEmpty then rungs else feas
   (pool.foldl
     (fun best rung => match best with
@@ -275,9 +289,9 @@ def pick_shape {α : Type} (W : Nat) (rungs : List (α × meas)) : Option α :=
     drops to the per-line stack. Returns `true` for oneLine. The adaptivity a
     fixed `binders` knob cannot do: the SAME sig rides one line where it fits and
     stacks where it does not, per declaration. -/
-def sig_one_line_fits (W prefixW bindersW : Nat) : Bool :=
+def sig_one_line_fits (widthBound prefixW bindersW : Nat) : Bool :=
   (pick_shape
-    W
+    widthBound
     [
       (true, { lines := [(prefixW + bindersW, "")], cost := 0 }),
       (false, { lines := [(0, "")], cost := 1 })

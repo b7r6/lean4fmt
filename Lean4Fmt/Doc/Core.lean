@@ -31,14 +31,14 @@ abbrev blank_req := Nat
 inductive Doc where
   -- Wadler/Leijen core
   | nil
-  | text (s : String)
-  | cat (a b : Doc)
+  | text (source : String)
+  | cat (leftValue rightValue : Doc)
   | line -- flat: " "  ; break: newline+indent
   | softline -- flat: ""   ; break: newline+indent
   | hardline -- always newline+indent
-  | group (d : Doc) -- try flat; break whole group if it won't fit
-  | nest (n : Int) (d : Doc) -- shift break-indent of `d` by n
-  | align (d : Doc) -- set break-indent to the current column
+  | group (document : Doc) -- try flat; break whole group if it won't fit
+  | nest (count : Int) (document : Doc) -- shift break-indent of `d` by n
+  | align (document : Doc) -- set break-indent to the current column
   -- extensions
   -- container payloads are LISTS (not arrays) so the Doc walkers get
   -- structural nested recursion — total by construction, provable in Proofs
@@ -50,13 +50,13 @@ inductive Doc where
   -- §5: pack flat items separated by single spaces, wrapping at the width
   -- (literal pools — byte tables, opcode lists). Items must be flat-capable.
   | fillSep (items : List Doc)
-  | blank (req : blank_req) -- §8
-  | flatten (d : Doc)       -- force flat
+  | blank (req : blank_req)  -- §8
+  | flatten (document : Doc) -- force flat
   -- phantom width: renders NOTHING (flat width 0 — T2 exactness holds), but a
   -- group fit counts it via `padWidth` — the reserve for un-breakable text the
   -- CALLER appends after the group on the same line (` := by` after a sig)
-  | pad (n : Nat)
-  | textRaw (s : String) -- verbatim comment (may contain '\n')
+  | pad (count : Nat)
+  | textRaw (source : String) -- verbatim comment (may contain '\n')
   | verbatim (src : String) (baseIndent : Nat) -- opaque reproduction (§4.1)
   deriving Inhabited
 
@@ -74,14 +74,14 @@ def empty : Doc := .nil
 def space : Doc := .text " "
 
 /-- Concatenate a list of docs. -/
-def concat (ds : List Doc) : Doc := ds.foldl .cat .nil
+def concat (documents : List Doc) : Doc := documents.foldl .cat .nil
 
 /-- Concatenate an array of docs. -/
-def concat_arr (ds : Array Doc) : Doc := ds.foldl .cat .nil
+def concat_arr (documents : Array Doc) : Doc := documents.foldl .cat .nil
 
 /-- Whether a comment carries a line comment `-- …` (the un-flattenable hazard,
     §0.4). A `group` containing one must render in break mode. -/
-def is_line_comment (s : String) : Bool := (s.splitOn "--").length > 1
+def is_line_comment (source : String) : Bool := (source.splitOn "--").length > 1
 
 end Doc
 end Lean4Fmt.Doc

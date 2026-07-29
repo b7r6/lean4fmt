@@ -118,12 +118,12 @@ def ctor_line_doc?
 private
 def ctor_doc?
     (walk : Lean4Fmt.Emit.Walk)
-    (c : Lean.Syntax)
+    (character : Lean.Syntax)
     (preserve : Bool)
     : Lean4Fmt.Emit.emit_m (Option (Doc × String × Option Doc)) := do
-  if c.getKind != ``Lean.Parser.Command.ctor then
+  if character.getKind != ``Lean.Parser.Command.ctor then
     return none
-  let args := c.getArgs
+  let args := character.getArgs
   if args.size != 5 then
     return none
   let docT := (bare_src args[0]!).trimAscii.toString
@@ -332,9 +332,9 @@ def assemble
           maxDelta
       -- run eligibility: plain separator, no doc-comment prefix, and — when only
       -- trailing alignment is on — a trailing comment to align
-      let eligible (it : item) : Bool :=
-        it.plainSep && !it.hasPrefix
-            && ((colOn && !it.nameSeg.isEmpty) || (trailOn && !it.trailT.isEmpty))
+      let eligible (item : item) : Bool :=
+        item.plainSep && !item.hasPrefix
+            && ((colOn && !item.nameSeg.isEmpty) || (trailOn && !item.trailT.isEmpty))
       let mut state : assemble_state := {}
       for item in items do
         if eligible item then state := { state with run := state.run.push item }
@@ -479,12 +479,12 @@ def field_default
 private
 def field_doc?
     (walk : Lean4Fmt.Emit.Walk)
-    (f : Lean.Syntax)
+    (transform : Lean.Syntax)
     (preserve : Bool)
     : Lean4Fmt.Emit.emit_m (Option field_parts) := do
-  if f.getKind != ``Lean.Parser.Command.structSimpleBinder then
+  if transform.getKind != ``Lean.Parser.Command.structSimpleBinder then
     return none
-  let args := f.getArgs
+  let args := transform.getArgs
   if args.size != 4 then
     return none
   let some (docT, modifiers) := field_modifiers? args[0]! | return none
@@ -529,7 +529,7 @@ def field_doc?
   -- tokens the name's leading IS the field's leading, which the item loop
   -- already places (emitting it here doubled every bare-commented field:
   -- comments gate, mathlib ElementaryMaps)
-  let some docD := field_prefix_doc? f docT state.modifiers | return none
+  let some docD := field_prefix_doc? transform docT state.modifiers | return none
   return some { prefixDoc := docD, name := nameSeg, rest := restSeg, line, lineDoc? }
 
 private

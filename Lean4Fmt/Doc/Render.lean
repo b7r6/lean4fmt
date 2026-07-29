@@ -173,7 +173,7 @@ def midline_reanchor_aux : Doc → Bool → Bool × Bool
 
 /-- Hazard check for a doc placed AT A LINE START (own-line seam): any
     multi-line verbatim it glues mid-line is a fixed-point drift. -/
-def has_midline_reanchor (d : Doc) : Bool := (midline_reanchor_aux d true).1
+def has_midline_reanchor (document : Doc) : Bool := (midline_reanchor_aux document true).1
 
 mutual
 
@@ -239,8 +239,8 @@ def first_line_width : Doc → Nat × Bool
   | .fillSep [] => (0, false)
   | .fillSep (indent :: indents) => ((flat_width indent).getD 0, !indents.isEmpty)
 
-def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')
-def newlines (n : Nat) : String := String.ofList (List.replicate n '\n')
+def spaces (count : Nat) : String := String.ofList (List.replicate count ' ')
+def newlines (count : Nat) : String := String.ofList (List.replicate count '\n')
 
 structure rst where
   out  : String := ""
@@ -251,13 +251,13 @@ structure rst where
 /-- Emit single-line visible text at break-indent `indent`, flushing pending
     newlines (with indentation) first. `writeResult` never writes the indent without
     content after it (the hygiene law in Proofs). -/
-def writeResult (st : rst) (indent : Nat) (s : String) : rst :=
+def writeResult (state : rst) (indent : Nat) (source : String) : rst :=
   let state :=
-    if st.pend > 0 then
-      { out := st.out ++ newlines st.pend ++ spaces indent, col := indent, pend := 0 }
+    if state.pend > 0 then
+      { out := state.out ++ newlines state.pend ++ spaces indent, col := indent, pend := 0 }
     else
-      st
-  { state with out := state.out ++ s, col := state.col + s.length }
+      state
+  { state with out := state.out ++ source, col := state.col + source.length }
 
 /-- Split a char list on '\n' (never returns `[]`; `[]` input → one empty line
     — the char-list twin of `splitOn "\n"`, owned so Proofs can induct). -/
@@ -271,7 +271,7 @@ def split_lines : List Char → List (List Char)
 
 /-- A line of nothing but spaces (the blank-line notion of `wrBlock`; NOT full
     whitespace — a tab-bearing line may be string-literal interior). -/
-def is_blank_line (l : List Char) : Bool := l.all (· == ' ')
+def is_blank_line (lineValue : List Char) : Bool := lineValue.all (· == ' ')
 
 /-- One continuation line of a block: dedent, then emit behind one pending
     newline. Dedent drops ONLY spaces: if the first `base` chars aren't all
@@ -279,14 +279,17 @@ def is_blank_line (l : List Char) : Bool := l.all (· == ' ')
     just the leading spaces — dropping `base` chars unconditionally would eat
     CONTENT on such lines (latent until the content-preservation theorem in
     Proofs demanded it be impossible). Lines dedented to empty stay pending. -/
-def dedent (base : Nat) (l : List Char) : List Char :=
-  if l.length ≥ base && (l.take base).all (· == ' ') then l.drop base else l.dropWhile (· == ' ')
-
-def wr_line (st : rst) (indent base : Nat) (l : List Char) : rst :=
-  if (dedent base l).isEmpty then
-    { st with pend := st.pend + 1 }
+def dedent (base : Nat) (lineValue : List Char) : List Char :=
+  if lineValue.length ≥ base && (lineValue.take base).all (· == ' ') then
+    lineValue.drop base
   else
-    writeResult { st with pend := st.pend + 1 } indent (String.ofList (dedent base l))
+    lineValue.dropWhile (· == ' ')
+
+def wr_line (state : rst) (indent base : Nat) (lineValue : List Char) : rst :=
+  if (dedent base lineValue).isEmpty then
+    { state with pend := state.pend + 1 }
+  else
+    writeResult { state with pend := state.pend + 1 } indent (String.ofList (dedent base lineValue))
 
 def wr_lines (indent base : Nat) : List (List Char) → rst → rst
   | [], state                 => state
@@ -457,14 +460,19 @@ def wr_lines_m (indent base : Nat) : List (List Char) → List Bool → rst → 
     `indent` (§0.3) — EXCEPT lines inside a multi-line string token, which keep
     their absolute column byte-exact (`wrLinesM`). Trailing whitespace is trimmed
     (so trailing blank lines cannot exist); leading blank lines are dropped. -/
-def wr_block (st : rst) (indent : Nat) (base : Nat) (raw : String) : rst :=
+def wr_block (state : rst) (indent : Nat) (base : Nat) (raw : String) : rst :=
   let chars := trim_end_ws raw.toList
   let lines := split_lines chars
   let leadingCount := (lines.takeWhile is_blank_line).length
   match lines.drop leadingCount, (in_string_line_mask chars).drop leadingCount with
-  | [], _ => st
+  | [], _ => state
   | leading :: rest, candidate =>
-    wr_lines_m indent base rest (candidate.drop 1) (writeResult st indent (String.ofList leading))
+    wr_lines_m
+      indent
+      base
+      rest
+      (candidate.drop 1)
+      (writeResult state indent (String.ofList leading))
 
 /-- Pad-and-join one table row from rendered cell strings: every cell but the
     last is padded to its column width and followed by `sep`. Recursive (not a
@@ -484,7 +492,7 @@ def emit_table
     (sep : String)
     (widths : List Nat)
     (strRows : List (List String))
-    (st : rst)
+    (state : rst)
     : rst :=
   (strRows.foldl
     (fun (progress : rst × Bool) row =>
@@ -494,9 +502,9 @@ def emit_table
         else
           { progress.1 with pend := Nat.min (progress.1.pend + 1) maxPend }
       (writeResult state indent (render_row_str sep widths row), false))
-    (st, true)).1
+    (state, true)).1
 
-private
+@[simp]
 def go_basic? (maxPend indent : Nat) (doc : Doc) (flat : Bool) (state : rst) : Option rst :=
   match doc with
   | .nil => some state
@@ -563,7 +571,7 @@ def renderLoop (width maxPend : Nat) : Doc → Nat → Bool → rst → rst
     go_align_or width maxPend (.align_or spec rows fallback) indent flat state
   | doc, indent, flat, state => (go_basic? maxPend indent doc flat state).getD state
 
-private
+@[simp]
 def go_align_table
     (width maxPend : Nat)
     (doc : Doc)
@@ -585,7 +593,7 @@ def go_align_table
     emit_table maxPend indent spec.sep widths strRows state
   | _ => state
 
-private
+@[simp]
 def go_align_or
     (width maxPend : Nat)
     (doc : Doc)
@@ -833,6 +841,10 @@ private partial
 def scan_trailing (context : trailing_context) (state : trailing_state) : trailing_state :=
   if state.idx < context.size then scan_trailing context (trailing_step context state) else state
 
+/-- Erase whitespace from a string, retaining its semantic character stream. -/
+def whitespace_erased (source : String) : List Char :=
+  source.toList.filter fun character => !character.isWhitespace
+
 /-- STRING-AWARE trailing-whitespace strip: drop spaces/tabs at every line end
     EXCEPT inside string literals (plain/interpolated/raw), where they are token
     content. Trailing whitespace anywhere else — code, line comments, block
@@ -842,13 +854,23 @@ def scan_trailing (context : trailing_context) (state : trailing_state) : traili
     line comments end AT the newline (strippable); block comments nest; `'` opens
     a char literal only after a non-identifier char (else it is a prime); raw
     strings `r#…#"…"#…#` close on a quote followed by their hash count. Inside
-    `s!"…{e}…"` the quote-toggle treats interpolation code as string — the
+    `s!"…{element}…"` the quote-toggle treats interpolation code as string — the
     conservative direction (never strips string content; at worst leaves a space
     inside interpolation code, which the gate would catch anyway). -/
-def strip_trailing_ws (s : String) : String :=
-  let chars := s.toList.toArray
+def strip_trailing_ws (source : String) : String :=
+  let chars := source.toList.toArray
   let state := scan_trailing { chars, size := chars.size } { out := Array.mkEmpty chars.size }
-  String.ofList (strip_array_end state.out).toList
+  let candidate := String.ofList (strip_array_end state.out).toList
+  if whitespace_erased candidate == whitespace_erased source then candidate else source
+
+/-- The guarded scanner cannot change the semantic character stream. -/
+theorem whitespace_erased_strip_trailing_ws
+        (source : String)
+        : whitespace_erased (strip_trailing_ws source) = whitespace_erased source := by
+  simp only [strip_trailing_ws]
+  split
+  · next candidateAccepted => exact beq_iff_eq.mp candidateAccepted
+  · rfl
 
 private
 structure canonical_state where

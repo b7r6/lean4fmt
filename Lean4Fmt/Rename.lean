@@ -26,10 +26,11 @@ open Lean4Fmt.Casing
 
 /-- Last dotted component of a name (`Foo.bar` → `bar`). The one spelling shared
     by the plan, the rewrite, and the driver — a name's simple form. -/
-def last_comp (s : String) : String := (s.splitOn ".").getLastD s
+def last_comp (source : String) : String := (source.splitOn ".").getLastD source
 
 /-- Is `s` a suffix of `n`? (No `String.isSuffixOf` in this Lean core.) -/
-def is_suffix (s n : String) : Bool := s.length ≤ n.length && n.drop (n.length - s.length) == s
+def is_suffix (source count : String) : Bool :=
+  source.length ≤ count.length && count.drop (count.length - source.length) == source
 
 /-- Which naming AXIS a declaration falls on — the map from decl kind to the
     `Naming` policy field. -/
@@ -40,11 +41,11 @@ inductive axis
   | term -- def / abbrev / instance / field
   deriving Repr, Inhabited, BEq
 
-def axis_case (n : Lean4Fmt.Style.Naming) : axis → Case
-  | .ns   => n.namespaces
-  | .typ  => n.types
-  | .thm  => n.theorems
-  | .term => n.terms
+def axis_case (count : Lean4Fmt.Style.Naming) : axis → Case
+  | .ns   => count.namespaces
+  | .typ  => count.types
+  | .thm  => count.theorems
+  | .term => count.terms
 
 /-- Lean keywords a target must not become (leave the name, report). Not
     exhaustive — the build is the backstop; this catches the common snake hits. -/
@@ -86,8 +87,8 @@ def build_plan
     fun (name target : String) =>
       tgtCount target > 1 || keywords.contains target || modules.contains name
   let changed := byName.filter (fun pair => pair.1 ≠ pair.2)
-  { renames := changed.filter (fun (nm, t) => !blocked nm t),
-    skipped := changed.filter (fun (nm, t) => blocked nm t) }
+  { renames := changed.filter (fun (nm, textValue) => !blocked nm textValue),
+    skipped := changed.filter (fun (nm, textValue) => blocked nm textValue) }
 
 /-- Rewrite a (possibly dotted) identifier through the rename `map`, component by
     component: `Foo.bar` under `bar ↦ baz` becomes `Foo.baz`. `none` when nothing
@@ -174,7 +175,7 @@ def resolved_rewrite (map : List (String × String)) (tokenText full : String) :
     namespace collide on it. No module-basename exemption — resolution never
     touches module paths. -/
 def plan_resolved
-    (c : Case)
+    (character : Case)
     (decls : List String)
     : List (String × String) × List (String × String) :=
   let rows : List (String × String × String × String) :=
@@ -182,7 +183,7 @@ def plan_resolved
       (fun full =>
         let comps := full.splitOn "."
         let last := comps.getLastD full
-        let newLast := convert c last
+        let newLast := convert character last
         (full, last, newLast, String.intercalate "." (comps.dropLast ++ [newLast])))
   let collides :=
     fun candidate => (rows.filter (fun (_, _, _, target) => target == candidate)).length > 1
@@ -246,7 +247,7 @@ def hybrid_candidates
     it, and it may not be rewritten); they stay in `exists` (still block collisions)
     but never authorize a rename. Returns `(simpleName → target)` renames + skips. -/
 def plan_hybrid
-    (c : Case)
+    (character : Case)
     (modules : List String)
     (occs : List (String × String))
     (defs : List String)
@@ -259,7 +260,7 @@ def plan_hybrid
   -- module basename (the token rewrite hits `import`/`open` paths too, so a type
   -- sharing a module name — `Toolchain` in `Toolchain.lean` — must be exempted)
   -- AND not in a protected file's closure (would break an untouchable study)
-  let rows := hybrid_candidates c modules occs defs protect
+  let rows := hybrid_candidates character modules occs defs protect
   -- two distinct safe sources snaking to one target collide (both skipped)
   let collides :=
     fun target => (rows.filter (fun (_, _, candidate) => candidate == target)).length > 1
@@ -290,8 +291,12 @@ def plan_hybrid
     fun (source sourceFull target : String) =>
       !keywords.contains target && !collides target && !taken sourceFull target && !gen_ref source
   (
-    changed.filterMap (fun (s, full, t) => if admissible s full t then some (s, t) else none),
-    changed.filterMap (fun (s, full, t) => if admissible s full t then none else some (s, t))
+    changed.filterMap
+      (fun (source, full, textValue) =>
+        if admissible source full textValue then some (source, textValue) else none),
+    changed.filterMap
+      (fun (source, full, textValue) =>
+        if admissible source full textValue then none else some (source, textValue))
   )
 
 -- ── #guard-locked: identity rewrite + resolution plan ─────────────────────────

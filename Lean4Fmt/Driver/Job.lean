@@ -73,9 +73,9 @@ def run_job
     -- diagnostic via stderr).
     let _ := retry   -- retries are batched by runAll (waves), not per-job
     return { path, original, output, diagnostics }
-  catch e =>
+  catch element =>
     return { path, original, output := original,
-             diagnostics := #[{ severity := .error, rule := "io", message := toString e }] }
+             diagnostics := #[{ severity := .error, rule := "io", message := toString element }] }
 
 /-- Whether a result is a candidate for the subprocess retry: unchanged output
     with a parse diagnostic (a superset-env conflict, an own-notation file the

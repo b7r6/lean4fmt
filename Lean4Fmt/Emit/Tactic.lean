@@ -30,10 +30,10 @@ open Lean Lean4Fmt.Doc
     Proofs.lean: a five-line suffices goal with a let-in-term flattened into
     an application). -/
 private partial
-def head_ws_sensitive (limit : Nat) (s : Lean.Syntax) : Bool :=
-  match s with
+def head_ws_sensitive (limit : Nat) (source : Lean.Syntax) : Bool :=
+  match source with
   | .node _ kind args =>
-    (((s.getPos?.map (·.byteIdx)).getD limit) < limit
+    (((source.getPos?.map (·.byteIdx)).getD limit) < limit
         && (kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.letrec
             || kind == ``Lean.Parser.Term.do
             || kind == ``Lean.Parser.Term.byTactic
@@ -45,17 +45,17 @@ def head_ws_sensitive (limit : Nat) (s : Lean.Syntax) : Bool :=
 /-- The deepest final `by`-block descendant (last-child descent) — the
     position-split ports slice the head bytes before it. -/
 private partial
-def last_by_descendant? (s : Lean.Syntax) : Option Lean.Syntax :=
+def last_by_descendant? (source : Lean.Syntax) : Option Lean.Syntax :=
 
   -- BOTH by kinds: tactic-position `by` is byTactic' (the prime variant) —
   -- matching only byTactic descended THROUGH a suffices' own by into a deep
   -- `<| by` tail and flattened the whole proof body into the "head"
   -- (gate-caught on Fixed + CosetCover, tokens, ~300 tokens reflowed)
-  if s.getKind == ``Lean.Parser.Term.byTactic
-      || s.getKind == `Lean.Parser.Term.byTactic' then
-    some s
+  if source.getKind == ``Lean.Parser.Term.byTactic
+      || source.getKind == `Lean.Parser.Term.byTactic' then
+    some source
   else
-    match (s.getArgs.filter
+    match (source.getArgs.filter
         (fun child => !(Lean4Fmt.Emit.bare_src child).trimAscii.toString.isEmpty)).back? with
     | some headChar => last_by_descendant? headChar
     | none => none
@@ -117,18 +117,18 @@ def conv_groups? (seq : Lean.Syntax) : Option (Array (Array Lean.Syntax)) :=
     an INTERMEDIATE item has trailing trivia content (a comment there would
     comment out the rest of the joined line). -/
 private
-def group_text? (g : Array Lean.Syntax) : Option String :=
+def group_text? (groupValue : Array Lean.Syntax) : Option String :=
   Id.run do
     let mut txt := ""
-    for idx in [0:g.size] do
-      let item := g[idx]!
+    for idx in [0:groupValue.size] do
+      let item := groupValue[idx]!
       if Lean4Fmt.Syntax.interior_has_line_comment item then
         return none
       let text :=
         (Lean4Fmt.Emit.token_join? item).getD ((Lean4Fmt.Emit.bare_src item).trimAscii.toString)
       if text.isEmpty || text.any (· == '\n') then
         return none
-      if idx + 1 < g.size then
+      if idx + 1 < groupValue.size then
         let trailing := (Lean4Fmt.Syntax.trailing? item).getD ""
         if !trailing.trimAscii.toString.isEmpty || trailing.any (· == '\n') then
           return none
@@ -146,11 +146,11 @@ def group_text? (g : Array Lean.Syntax) : Option String :=
 private
 def group_doc?
     (walk : Lean4Fmt.Emit.Walk)
-    (g : Array Lean.Syntax)
+    (groupValue : Array Lean.Syntax)
     : Lean4Fmt.Emit.emit_m (Option Doc) := do
-  if g.size == 1 then
-    return some (← walk g[0]!)
-  return (group_text? g).map Doc.text
+  if groupValue.size == 1 then
+    return some (← walk groupValue[0]!)
+  return (group_text? groupValue).map Doc.text
 
 /-- The seam loop over groups (mirrors `DoNotation.seqLinesDoc?`): each group
     one line, its leading trivia placed structurally, same-line trailing
@@ -310,8 +310,8 @@ def line_words? (stx : Lean.Syntax) (fill : Bool := false) : Option (Array Doc) 
     the TERM pruned (the `using` atom stays) and the term itself. `none` when
     no such tail exists. -/
 private partial
-def prune_using? (s : Lean.Syntax) : Option (Lean.Syntax × Lean.Syntax) :=
-  match s with
+def prune_using? (source : Lean.Syntax) : Option (Lean.Syntax × Lean.Syntax) :=
+  match source with
   | .node info kind args => visitNode info kind args
   | _ => none
 
@@ -335,8 +335,8 @@ def prune_using? (s : Lean.Syntax) : Option (Lean.Syntax × Lean.Syntax) :=
 
 /-- Join line words with single spaces. -/
 private
-def join_words (ws : Array Doc) : Doc :=
-  ws.foldl
+def join_words (whitespace : Array Doc) : Doc :=
+  whitespace.foldl
     (fun document word => match document with
       | .nil => word
       | _    => document ++ .text " " ++ word)

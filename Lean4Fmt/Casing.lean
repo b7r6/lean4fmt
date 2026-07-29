@@ -39,8 +39,8 @@ def Case.of_string? : String → Option Case
 
 /-- Capitalize the first character. -/
 private
-def cap (s : String) : String :=
-  match s.toList with
+def cap (source : String) : String :=
+  match source.toList with
   | [] => ""
   | headChar :: tailChars => String.ofList (headChar.toUpper :: tailChars)
 

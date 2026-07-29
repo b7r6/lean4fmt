@@ -41,8 +41,8 @@ structure config_entry where
 /-- Parse a literal value token: `"str"` → str, bare token kept as-is
     (numbers, `true`/`false`, bare enum names all arrive as their token). -/
 private
-def unquote (v : String) : String :=
-  let value := v.trimAscii.toString
+def unquote (value : String) : String :=
+  let value := value.trimAscii.toString
   if value.length ≥ 2 && value.startsWith "\"" && value.endsWith "\"" then
     ((value.drop 1).dropRight 1).toString
   else
@@ -52,7 +52,9 @@ private
 def config_entry_of_parts (rawKey value : String) (line : Nat) : Except String config_entry := do
   let key := rawKey.trimAscii.toString
   if key.isEmpty || key.any (fun character => character == ' ') then
-    throw s!"line {line}: bad key `{key}`"
+    throw
+      s!
+          "line {line}: bad key `{key}`"
   pure { key, val := unquote value, line }
 
 private
@@ -75,8 +77,13 @@ def consume_pending_config_line
     (headerLine : Nat)
     : Except String config_parse_state := do
   if text.startsWith "def " then
-    throw s!"line {headerLine}: expected a literal after `:=`"
-  let entry ← parse_config_entry s!"{header} {text}" headerLine
+    throw
+      s!
+          "line {headerLine}: expected a literal after `:=`"
+  let entry ← parse_config_entry
+    s!
+      "{header} {text}"
+    headerLine
   return { state with entries := state.entries ++ [entry], pending := none }
 
 private
@@ -85,7 +92,9 @@ def consume_fresh_config_line
     (text : String)
     : Except String config_parse_state := do
   if !text.startsWith "def " then
-    throw s!"line {state.line}: expected `def <key> := <value>` (got: {text})"
+    throw
+      s!
+          "line {state.line}: expected `def <key> := <value>` (got: {text})"
   if text.endsWith ":=" then
     return { state with pending := some (text, state.line) }
   let entry ← parse_config_entry text state.line
@@ -113,100 +122,142 @@ def parse_config (text : String) : Except String (List config_entry) := do
   for line in text.splitOn "\n" do
     state ← consume_config_line state line
   match state.pending with
-  | some (_, headerLine) => throw s!"line {headerLine}: expected a literal after `:=`"
+  | some (_, headerLine) =>
+    throw
+      s!
+          "line {headerLine}: expected a literal after `:=`"
   | none => return state.entries
 
 private
-def as_nat (e : config_entry) : Except String Nat :=
-  match e.val.toNat? with
+def as_nat (element : config_entry) : Except String Nat :=
+  match element.val.toNat? with
   | some count => pure count
-  | none       => throw s!"line {e.line}: `{e.key}` expects a number (got `{e.val}`)"
+  | none => throw s!"line {element.line}: `{element.key}` expects a number (got `{element.val}`)"
 
 private
-def as_bool (e : config_entry) : Except String Bool :=
-  match e.val with
-  | "true"  => pure true
+def as_bool (element : config_entry) : Except String Bool :=
+  match element.val with
+  | "true" => pure true
   | "false" => pure false
-  | _       => throw s!"line {e.line}: `{e.key}` expects true/false (got `{e.val}`)"
+  | _ => throw s!"line {element.line}: `{element.key}` expects true/false (got `{element.val}`)"
 
 private
-def as_align (e : config_entry) : Except String align_mode :=
-  match align_mode.of_string? e.val with
+def as_align (element : config_entry) : Except String align_mode :=
+  match align_mode.of_string? element.val with
   | some candidate => pure candidate
-  | none => throw s!"line {e.line}: `{e.key}` expects always/whenShort/never (got `{e.val}`)"
+  | none =>
+    throw
+      s!"line {element.line}: `{element.key}` expects always/whenShort/never (got `{element.val}`)"
 
 private
-def as_case (e : config_entry) : Except String Lean4Fmt.Casing.Case :=
-  match Lean4Fmt.Casing.Case.of_string? e.val with
+def as_case (element : config_entry) : Except String Lean4Fmt.Casing.Case :=
+  match Lean4Fmt.Casing.Case.of_string? element.val with
   | some headChar => pure headChar
   | none =>
-    throw s!"line {e.line}: `{e.key}` expects snake/camel/upperCamel/preserve (got `{e.val}`)"
+    throw
+      s!"line {element.line}: `{element.key}` expects snake/camel/upperCamel/preserve (got `{element.val}`)"
 
 private
-def symbol_allow (s : Style) (e : config_entry) (size : Nat) : Except String Style := do
+def symbol_allow (source : Style) (element : config_entry) (size : Nat) : Except String Style := do
   let names :=
-    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
+    if element.val.trimAscii.isEmpty then
+      []
+    else
+      (element.val.splitOn ",").map (·.trimAscii.toString)
   for name in names do
     if name.isEmpty || name.length != size then
-      throw s!"line {e.line}: `{e.key}` entries must have exactly {size} characters (got `{name}`)"
-  let allow := (s.linting.symbolAllow.filter (·.1 != size)) ++ [(size, names)]
-  pure { s with linting.symbolAllow := allow }
+      throw
+        s!
+              "line {element.line}: `{element.key}` entries must have exactly {size} characters (got `{name}`)"
+  let allow := (source.linting.symbolAllow.filter (·.1 != size)) ++ [(size, names)]
+  pure { source with linting.symbolAllow := allow }
 
 private
-def field_allow (s : Style) (e : config_entry) (size : Nat) : Except String Style := do
+def field_allow (source : Style) (element : config_entry) (size : Nat) : Except String Style := do
   let names :=
-    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
+    if element.val.trimAscii.isEmpty then
+      []
+    else
+      (element.val.splitOn ",").map (·.trimAscii.toString)
   for name in names do
     let segments := name.splitOn "."
     let leaf := segments.getLast!
     if name.isEmpty || segments.any (·.isEmpty) || leaf.length != size then
       throw
-        s!"line {e.line}: `{e.key}` entries must have a leaf with exactly {size} characters (got `{name}`)"
-  let allow := (s.linting.fieldAllow.filter (·.1 != size)) ++ [(size, names)]
-  pure { s with linting.fieldAllow := allow }
+        s!
+              "line {element.line}: `{element.key}` entries must have a leaf with exactly {size} characters (got `{name}`)"
+  let allow := (source.linting.fieldAllow.filter (·.1 != size)) ++ [(size, names)]
+  pure { source with linting.fieldAllow := allow }
 
 private
-def declaration_allow (s : Style) (e : config_entry) (size : Nat) : Except String Style := do
+def declaration_allow
+    (source : Style)
+    (element : config_entry)
+    (size : Nat)
+    : Except String Style := do
   let names :=
-    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
+    if element.val.trimAscii.isEmpty then
+      []
+    else
+      (element.val.splitOn ",").map (·.trimAscii.toString)
   for name in names do
     let segments := name.splitOn "."
     let leaf := segments.getLast!
     if name.isEmpty || segments.any (·.isEmpty) || leaf.length != size then
       throw
-        s!"line {e.line}: `{e.key}` entries must have a leaf with exactly {size} characters (got `{name}`)"
-  let allow := (s.linting.declarationAllow.filter (·.1 != size)) ++ [(size, names)]
-  pure { s with linting.declarationAllow := allow }
+        s!
+              "line {element.line}: `{element.key}` entries must have a leaf with exactly {size} characters (got `{name}`)"
+  let allow := (source.linting.declarationAllow.filter (·.1 != size)) ++ [(size, names)]
+  pure { source with linting.declarationAllow := allow }
 
 private
-def recursive_helper_allow (s : Style) (e : config_entry) (size : Nat) : Except String Style := do
+def recursive_helper_allow
+    (source : Style)
+    (element : config_entry)
+    (size : Nat)
+    : Except String Style := do
   let names :=
-    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
+    if element.val.trimAscii.isEmpty then
+      []
+    else
+      (element.val.splitOn ",").map (·.trimAscii.toString)
   for name in names do
     if name.isEmpty || name.length != size then
-      throw s!"line {e.line}: `{e.key}` entries must have exactly {size} characters (got `{name}`)"
-  let allow := (s.linting.recursiveHelperAllow.filter (·.1 != size)) ++ [(size, names)]
-  pure { s with linting.recursiveHelperAllow := allow }
+      throw
+        s!
+              "line {element.line}: `{element.key}` entries must have exactly {size} characters (got `{name}`)"
+  let allow := (source.linting.recursiveHelperAllow.filter (·.1 != size)) ++ [(size, names)]
+  pure { source with linting.recursiveHelperAllow := allow }
 
 private
-def lambda_allow (s : Style) (e : config_entry) (size : Nat) : Except String Style := do
+def lambda_allow (source : Style) (element : config_entry) (size : Nat) : Except String Style := do
   let names :=
-    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
+    if element.val.trimAscii.isEmpty then
+      []
+    else
+      (element.val.splitOn ",").map (·.trimAscii.toString)
   for name in names do
     if name.isEmpty || name.length != size then
-      throw s!"line {e.line}: `{e.key}` entries must have exactly {size} characters (got `{name}`)"
-  let allow := (s.linting.lambdaAllow.filter (·.1 != size)) ++ [(size, names)]
-  pure { s with linting.lambdaAllow := allow }
+      throw
+        s!
+              "line {element.line}: `{element.key}` entries must have exactly {size} characters (got `{name}`)"
+  let allow := (source.linting.lambdaAllow.filter (·.1 != size)) ++ [(size, names)]
+  pure { source with linting.lambdaAllow := allow }
 
 private
-def let_allow (s : Style) (e : config_entry) (size : Nat) : Except String Style := do
+def let_allow (source : Style) (element : config_entry) (size : Nat) : Except String Style := do
   let names :=
-    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
+    if element.val.trimAscii.isEmpty then
+      []
+    else
+      (element.val.splitOn ",").map (·.trimAscii.toString)
   for name in names do
     if name.isEmpty || name.length != size then
-      throw s!"line {e.line}: `{e.key}` entries must have exactly {size} characters (got `{name}`)"
-  let allow := (s.linting.letAllow.filter (·.1 != size)) ++ [(size, names)]
-  pure { s with linting.letAllow := allow }
+      throw
+        s!
+              "line {element.line}: `{element.key}` entries must have exactly {size} characters (got `{name}`)"
+  let allow := (source.linting.letAllow.filter (·.1 != size)) ++ [(size, names)]
+  pure { source with linting.letAllow := allow }
 
 private
 def apply_bucket_alias?
@@ -250,149 +301,198 @@ def apply_lean_bucket_entry?
       <|> apply_bucket_alias? style entry key "lint.letAllow" let_allow
 
 private
-def apply_dynamic_entry (s : Style) (e : config_entry) (key : String) : Except String Style :=
-  match apply_dotted_bucket_entry? s e key with
+def apply_dynamic_entry
+    (source : Style)
+    (element : config_entry)
+    (key : String)
+    : Except String Style :=
+  match apply_dotted_bucket_entry? source element key with
   | some result => result
   | none =>
-    match apply_lean_bucket_entry? s e key with
+    match apply_lean_bucket_entry? source element key with
     | some result => result
-    | none        => throw s!"line {e.line}: unknown option `{key}`"
+    | none        => throw s!"line {element.line}: unknown option `{key}`"
 
 private
-def apply_layout_or_breaking_entry (s : Style) (e : config_entry) : Except String Style := do
-  match e.key with
-  | "layout.lineWidth" => pure { s with layout.lineWidth := ← as_nat e }
-  | "layout.indent" => pure { s with layout.indent := ← as_nat e }
-  | "layout.continuationIndent" => pure { s with layout.continuationIndent := ← as_nat e }
-  | "layout.bodyFitWidth" => pure { s with layout.bodyFitWidth := ← as_nat e }
+def apply_layout_or_breaking_entry
+    (source : Style)
+    (element : config_entry)
+    : Except String Style := do
+  match element.key with
+  | "layout.lineWidth" => pure { source with layout.lineWidth := ← as_nat element }
+  | "layout.indent" => pure { source with layout.indent := ← as_nat element }
+  | "layout.continuationIndent" =>
+    pure { source with layout.continuationIndent := ← as_nat element }
+  | "layout.bodyFitWidth" => pure { source with layout.bodyFitWidth := ← as_nat element }
   | "breaking.colon" =>
-    match colon_placement.of_string? e.val with
-    | some value => pure { s with breaking.colon := value }
-    | none => throw s!"line {e.line}: `{e.key}` expects breakBefore/breakAfter"
+    match colon_placement.of_string? element.val with
+    | some value => pure { source with breaking.colon := value }
+    | none =>
+      throw
+        s!
+              "line {element.line}: `{element.key}` expects breakBefore/breakAfter"
   | "breaking.binders" =>
-    match binder_layout.of_string? e.val with
-    | some value => pure { s with breaking.binders := value }
-    | none => throw s!"line {e.line}: `{e.key}` expects oneLine/onePerLine/fill/adaptive"
-  | "breaking.attributesOwnLine" => pure { s with breaking.attributesOwnLine := ← as_bool e }
-  | "breaking.visibilityOwnLine" => pure { s with breaking.visibilityOwnLine := ← as_bool e }
-  | "breaking.bodyOwnLine" => pure { s with breaking.bodyOwnLine := ← as_bool e }
-  | "breaking.bodyAlwaysBreak" => pure { s with breaking.bodyAlwaysBreak := ← as_bool e }
-  | "breaking.preserveLineBreaks" => pure { s with breaking.preserveLineBreaks := ← as_bool e }
-  | "breaking.compactDo" => pure { s with breaking.compactDo := ← as_bool e }
-  | "breaking.elseIfChain" => pure { s with breaking.elseIfChain := ← as_bool e }
-  | "breaking.inlineBranches" => pure { s with breaking.inlineBranches := ← as_bool e }
-  | "breaking.guardIfOwnLine" => pure { s with breaking.guardIfOwnLine := ← as_bool e }
-  | "breaking.ctorsOneLine" => pure { s with breaking.ctorsOneLine := ← as_bool e }
-  | "breaking.glueFun" => pure { s with breaking.glueFun := ← as_bool e }
-  | "breaking.listFill" => pure { s with breaking.listFill := ← as_bool e }
-  | "breaking.solveDefs" => pure { s with breaking.solveDefs := ← as_bool e }
+    match binder_layout.of_string? element.val with
+    | some value => pure { source with breaking.binders := value }
+    | none =>
+      throw
+        s!
+              "line {element.line}: `{element.key}` expects oneLine/onePerLine/fill/adaptive"
+  | "breaking.attributesOwnLine" =>
+    pure { source with breaking.attributesOwnLine := ← as_bool element }
+  | "breaking.visibilityOwnLine" =>
+    pure { source with breaking.visibilityOwnLine := ← as_bool element }
+  | "breaking.bodyOwnLine" => pure { source with breaking.bodyOwnLine := ← as_bool element }
+  | "breaking.bodyAlwaysBreak" => pure { source with breaking.bodyAlwaysBreak := ← as_bool element }
+  | "breaking.preserveLineBreaks" =>
+    pure { source with breaking.preserveLineBreaks := ← as_bool element }
+  | "breaking.compactDo" => pure { source with breaking.compactDo := ← as_bool element }
+  | "breaking.elseIfChain" => pure { source with breaking.elseIfChain := ← as_bool element }
+  | "breaking.inlineBranches" => pure { source with breaking.inlineBranches := ← as_bool element }
+  | "breaking.guardIfOwnLine" => pure { source with breaking.guardIfOwnLine := ← as_bool element }
+  | "breaking.ctorsOneLine" => pure { source with breaking.ctorsOneLine := ← as_bool element }
+  | "breaking.glueFun" => pure { source with breaking.glueFun := ← as_bool element }
+  | "breaking.listFill" => pure { source with breaking.listFill := ← as_bool element }
+  | "breaking.solveDefs" => pure { source with breaking.solveDefs := ← as_bool element }
   | "breaking.opBreak" =>
-    match op_break.of_string? e.val with
-    | some value => pure { s with breaking.opBreak := value }
-    | none => throw s!"line {e.line}: `{e.key}` expects leading/trailing"
-  | key => throw s!"line {e.line}: unknown option `{key}`"
+    match op_break.of_string? element.val with
+    | some value => pure { source with breaking.opBreak := value }
+    | none =>
+      throw
+        s!
+              "line {element.line}: `{element.key}` expects leading/trailing"
+  | key =>
+    throw
+      s!
+          "line {element.line}: unknown option `{key}`"
 
 private
-def apply_symbol_policy (s : Style) (e : config_entry) : Except String Style :=
-  match e.val with
+def apply_symbol_policy (source : Style) (element : config_entry) : Except String Style :=
+  match element.val with
   | "systems" =>
-    pure { s with linting.allowGreekSymbols := false, linting.allowHebrewSymbols := false }
+    pure { source with linting.allowGreekSymbols := false, linting.allowHebrewSymbols := false }
   | "traditionalLean" =>
-    pure { s with linting.allowGreekSymbols := true, linting.allowHebrewSymbols := false }
-  | _ => throw s!"line {e.line}: `{e.key}` expects systems/traditionalLean"
+    pure { source with linting.allowGreekSymbols := true, linting.allowHebrewSymbols := false }
+  | _ => throw s!"line {element.line}: `{element.key}` expects systems/traditionalLean"
 
 private
-def apply_symbol_deny (s : Style) (e : config_entry) : Style :=
+def apply_symbol_deny (source : Style) (element : config_entry) : Style :=
   let names :=
-    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
-  { s with linting.symbolDeny := names }
+    if element.val.trimAscii.isEmpty then
+      []
+    else
+      (element.val.splitOn ",").map (·.trimAscii.toString)
+  { source with linting.symbolDeny := names }
 
 private
-def apply_lint_entry (s : Style) (e : config_entry) : Except String Style := do
-  match e.key with
-  | "lint.symbolMinChars" => pure { s with linting.symbolMinChars := ← as_nat e }
-  | "lint.branchDensityMax" => pure { s with linting.branchDensityMax := ← as_nat e }
-  | "lint.handlerParameterMax" => pure { s with linting.handlerParameterMax := ← as_nat e }
-  | "lint.requireStanzaComments" => pure { s with linting.requireStanzaComments := ← as_bool e }
-  | "lint.symbolDeny" => pure (apply_symbol_deny s e)
-  | "lint.symbolPolicy" => apply_symbol_policy s e
-  | "lint.allowGreekSymbols" => pure { s with linting.allowGreekSymbols := ← as_bool e }
-  | "lint.allowHebrewSymbols" => pure { s with linting.allowHebrewSymbols := ← as_bool e }
+def apply_lint_entry (source : Style) (element : config_entry) : Except String Style := do
+  match element.key with
+  | "lint.symbolMinChars" => pure { source with linting.symbolMinChars := ← as_nat element }
+  | "lint.branchDensityMax" => pure { source with linting.branchDensityMax := ← as_nat element }
+  | "lint.handlerParameterMax" =>
+    pure { source with linting.handlerParameterMax := ← as_nat element }
+  | "lint.requireStanzaComments" =>
+    pure { source with linting.requireStanzaComments := ← as_bool element }
+  | "lint.symbolDeny" => pure (apply_symbol_deny source element)
+  | "lint.symbolPolicy" => apply_symbol_policy source element
+  | "lint.allowGreekSymbols" => pure { source with linting.allowGreekSymbols := ← as_bool element }
+  | "lint.allowHebrewSymbols" =>
+    pure { source with linting.allowHebrewSymbols := ← as_bool element }
   | "lint.allowTraditionalInstances" =>
-    pure { s with linting.allowTraditionalInstances := ← as_bool e }
+    pure { source with linting.allowTraditionalInstances := ← as_bool element }
   | "lint.requireTraditionalInstances" =>
-    pure { s with linting.requireTraditionalInstances := ← as_bool e }
+    pure { source with linting.requireTraditionalInstances := ← as_bool element }
   | "lint.requirePositionalLoopNames" =>
-    pure { s with linting.requirePositionalLoopNames := ← as_bool e }
+    pure { source with linting.requirePositionalLoopNames := ← as_bool element }
   | "lint.requireSemanticPatternBinders" =>
-    pure { s with linting.requireSemanticPatternBinders := ← as_bool e }
+    pure { source with linting.requireSemanticPatternBinders := ← as_bool element }
   | "lint.requireSemanticCollectionLoopNames" =>
-    pure { s with linting.requireSemanticCollectionLoopNames := ← as_bool e }
+    pure { source with linting.requireSemanticCollectionLoopNames := ← as_bool element }
   | "lint.requireSemanticFieldNames" =>
-    pure { s with linting.requireSemanticFieldNames := ← as_bool e }
+    pure { source with linting.requireSemanticFieldNames := ← as_bool element }
   | "lint.requireSemanticDeclarationNames" =>
-    pure { s with linting.requireSemanticDeclarationNames := ← as_bool e }
+    pure { source with linting.requireSemanticDeclarationNames := ← as_bool element }
   | "lint.requireSemanticRecursiveHelperNames" =>
-    pure { s with linting.requireSemanticRecursiveHelperNames := ← as_bool e }
+    pure { source with linting.requireSemanticRecursiveHelperNames := ← as_bool element }
   | "lint.requireSemanticLambdaNames" =>
-    pure { s with linting.requireSemanticLambdaNames := ← as_bool e }
-  | "lint.requireSemanticLetNames" => pure { s with linting.requireSemanticLetNames := ← as_bool e }
-  | key => apply_dynamic_entry s e key
+    pure { source with linting.requireSemanticLambdaNames := ← as_bool element }
+  | "lint.requireSemanticLetNames" =>
+    pure { source with linting.requireSemanticLetNames := ← as_bool element }
+  | key => apply_dynamic_entry source element key
+
+/-- Resolve a preset entry or report its source line. -/
+private
+def apply_preset_entry (entry : config_entry) : Except String Style :=
+  match by_name? entry.val with
+  | some preset => pure preset
+  | none        => throw s!"line {entry.line}: unknown preset `{entry.val}`"
 
 /-- Apply one entry to a style. The single source of truth for the key space —
     an unknown key is an error here, which is what makes a typo'd axis LOUD. -/
-def apply_entry (s : Style) (e : config_entry) : Except String Style := do
-  if e.key.startsWith "layout." || e.key.startsWith "breaking." then
-    return ← apply_layout_or_breaking_entry s e
-  if e.key.startsWith "lint." then
-    return ← apply_lint_entry s e
-  match e.key with
-  | "preset" =>
-    match by_name? e.val with
-    | some pathValue => pure pathValue
-    | none => throw s!"line {e.line}: unknown preset `{e.val}`"
-  | "alignment.structFields" => pure { s with alignment.structFields := ← as_align e }
-  | "alignment.matchArms" => pure { s with alignment.matchArms := ← as_align e }
-  | "alignment.letBlocks" => pure { s with alignment.letBlocks := ← as_align e }
-  | "alignment.recordFields" => pure { s with alignment.recordFields := ← as_align e }
-  | "alignment.trailingComments" => pure { s with alignment.trailingComments := ← as_align e }
-  | "alignment.binderGroups" => pure { s with alignment.binderGroups := ← as_align e }
-  | "alignment.maxDelta" => pure { s with alignment.maxDelta := ← as_nat e }
+def apply_entry (style : Style) (entry : config_entry) : Except String Style := do
+  if entry.key.startsWith "layout." || entry.key.startsWith "breaking." then
+    return ← apply_layout_or_breaking_entry style entry
+  if entry.key.startsWith "lint." then
+    return ← apply_lint_entry style entry
+  match entry.key with
+  | "preset" => apply_preset_entry entry
+  | "alignment.structFields" => pure { style with alignment.structFields := ← as_align entry }
+  | "alignment.matchArms" => pure { style with alignment.matchArms := ← as_align entry }
+  | "alignment.letBlocks" => pure { style with alignment.letBlocks := ← as_align entry }
+  | "alignment.recordFields" => pure { style with alignment.recordFields := ← as_align entry }
+  | "alignment.trailingComments" =>
+    pure { style with alignment.trailingComments := ← as_align entry }
+  | "alignment.binderGroups" => pure { style with alignment.binderGroups := ← as_align entry }
+  | "alignment.maxDelta" => pure { style with alignment.maxDelta := ← as_nat entry }
   | "blankLines.policy" =>
-    match blank_policy.of_string? e.val with
-    | some value => pure { s with blankLines.policy := value }
-    | none => throw s!"line {e.line}: `{e.key}` expects preserve/impose/normalize"
+    match blank_policy.of_string? entry.val with
+    | some value => pure { style with blankLines.policy := value }
+    | none =>
+      throw
+        s!
+              "line {entry.line}: `{entry.key}` expects preserve/impose/normalize"
   | "blankLines.betweenTopLevelDecls" =>
-    pure { s with blankLines.betweenTopLevelDecls := ← as_nat e }
-  | "blankLines.betweenImportGroups" => pure { s with blankLines.betweenImportGroups := ← as_nat e }
-  | "blankLines.afterNamespaceOpen" => pure { s with blankLines.afterNamespaceOpen := ← as_nat e }
-  | "blankLines.beforeNamespaceEnd" => pure { s with blankLines.beforeNamespaceEnd := ← as_nat e }
-  | "blankLines.beforeDocComment" => pure { s with blankLines.beforeDocComment := ← as_nat e }
-  | "blankLines.beforeSectionBanner" => pure { s with blankLines.beforeSectionBanner := ← as_nat e }
-  | "blankLines.afterSectionBanner" => pure { s with blankLines.afterSectionBanner := ← as_nat e }
-  | "blankLines.betweenDeclKinds" => pure { s with blankLines.betweenDeclKinds := ← as_bool e }
-  | "blankLines.aroundBlockComments" => pure { s with blankLines.aroundBlockComments := ← as_nat e }
-  | "blankLines.insideDoPhases" => pure { s with blankLines.insideDoPhases := ← as_bool e }
-  | "blankLines.maxConsecutive" => pure { s with blankLines.maxConsecutive := ← as_nat e }
-  | "spacing.aroundOperators" => pure { s with spacing.aroundOperators := ← as_bool e }
-  | "spacing.insideBrackets" => pure { s with spacing.insideBrackets := ← as_bool e }
-  | "spacing.afterComma" => pure { s with spacing.afterComma := ← as_bool e }
-  | "spacing.preserveBinders" => pure { s with spacing.preserveBinders := ← as_bool e }
-  | "imports.group" => pure { s with imports.group := ← as_bool e }
-  | "imports.sort" => pure { s with imports.sort := ← as_bool e }
-  | "comments.spaceAfterDashes" => pure { s with comments.spaceAfterDashes := ← as_bool e }
-  | "naming.namespaces" => pure { s with naming.namespaces := ← as_case e }
-  | "naming.types" => pure { s with naming.types := ← as_case e }
-  | "naming.theorems" => pure { s with naming.theorems := ← as_case e }
-  | "naming.terms" => pure { s with naming.terms := ← as_case e }
-  | key => throw s!"line {e.line}: unknown option `{key}`"
+    pure { style with blankLines.betweenTopLevelDecls := ← as_nat entry }
+  | "blankLines.betweenImportGroups" =>
+    pure { style with blankLines.betweenImportGroups := ← as_nat entry }
+  | "blankLines.afterNamespaceOpen" =>
+    pure { style with blankLines.afterNamespaceOpen := ← as_nat entry }
+  | "blankLines.beforeNamespaceEnd" =>
+    pure { style with blankLines.beforeNamespaceEnd := ← as_nat entry }
+  | "blankLines.beforeDocComment" =>
+    pure { style with blankLines.beforeDocComment := ← as_nat entry }
+  | "blankLines.beforeSectionBanner" =>
+    pure { style with blankLines.beforeSectionBanner := ← as_nat entry }
+  | "blankLines.afterSectionBanner" =>
+    pure { style with blankLines.afterSectionBanner := ← as_nat entry }
+  | "blankLines.betweenDeclKinds" =>
+    pure { style with blankLines.betweenDeclKinds := ← as_bool entry }
+  | "blankLines.aroundBlockComments" =>
+    pure { style with blankLines.aroundBlockComments := ← as_nat entry }
+  | "blankLines.insideDoPhases" => pure { style with blankLines.insideDoPhases := ← as_bool entry }
+  | "blankLines.maxConsecutive" => pure { style with blankLines.maxConsecutive := ← as_nat entry }
+  | "spacing.aroundOperators" => pure { style with spacing.aroundOperators := ← as_bool entry }
+  | "spacing.insideBrackets" => pure { style with spacing.insideBrackets := ← as_bool entry }
+  | "spacing.afterComma" => pure { style with spacing.afterComma := ← as_bool entry }
+  | "spacing.preserveBinders" => pure { style with spacing.preserveBinders := ← as_bool entry }
+  | "imports.group" => pure { style with imports.group := ← as_bool entry }
+  | "imports.sort" => pure { style with imports.sort := ← as_bool entry }
+  | "comments.spaceAfterDashes" => pure { style with comments.spaceAfterDashes := ← as_bool entry }
+  | "naming.namespaces" => pure { style with naming.namespaces := ← as_case entry }
+  | "naming.types" => pure { style with naming.types := ← as_case entry }
+  | "naming.theorems" => pure { style with naming.theorems := ← as_case entry }
+  | "naming.terms" => pure { style with naming.terms := ← as_case entry }
+  | key =>
+    throw
+      s!
+          "line {entry.line}: unknown option `{key}`"
 
 /-- Apply a whole config (one fmt.lean) onto a base style, in entry order. -/
-def apply_config (s : Style) (entries : List config_entry) : Except String Style :=
-  entries.foldlM apply_entry s
+def apply_config (source : Style) (entries : List config_entry) : Except String Style :=
+  entries.foldlM apply_entry source
 
 /-- Parse + apply in one step (the per-file unit the resolver folds). -/
-def apply_config_text (s : Style) (text : String) : Except String Style := do
-  apply_config s (← parse_config text)
+def apply_config_text (source : Style) (text : String) : Except String Style := do
+  apply_config source (← parse_config text)
 
 end Lean4Fmt.Style

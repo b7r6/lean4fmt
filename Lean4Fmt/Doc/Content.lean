@@ -18,14 +18,16 @@ import Lean4Fmt.Doc.Core
 namespace Lean4Fmt.Doc
 
 /-- Non-whitespace characters of a char list, in order. -/
-def non_ws_l (cs : List Char) : List Char := cs.filter (fun char => !char.isWhitespace)
+def non_ws_l (characters : List Char) : List Char :=
+  characters.filter (fun char => !char.isWhitespace)
 
 /-- Non-whitespace characters of a string, in order. -/
-def non_ws (s : String) : List Char := non_ws_l s.toList
+def non_ws (source : String) : List Char := non_ws_l source.toList
 
 /-- Drop trailing whitespace (the char-list twin of `trimAsciiEnd`, owned here
     so the Proofs module can reason about it by induction). -/
-def trim_end_ws (cs : List Char) : List Char := (cs.reverse.dropWhile Char.isWhitespace).reverse
+def trim_end_ws (characters : List Char) : List Char :=
+  (characters.reverse.dropWhile Char.isWhitespace).reverse
 
 mutual
 

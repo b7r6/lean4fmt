@@ -66,6 +66,6 @@ def first_ident : Lean.Syntax → Name
   | _ => .anonymous
 
 /-- Safe child access. -/
-def child? (stx : Lean.Syntax) (i : Nat) : Option Lean.Syntax := stx.getArgs[i]?
+def child? (stx : Lean.Syntax) (childIndex : Nat) : Option Lean.Syntax := stx.getArgs[childIndex]?
 
 end Lean4Fmt.Syntax

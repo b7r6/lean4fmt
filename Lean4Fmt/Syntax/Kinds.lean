@@ -27,7 +27,7 @@ def list_lit_kind : SyntaxNodeKind := `«term[_]»
 /-- `#[a, b]` array literals. -/
 def array_lit_kind : SyntaxNodeKind := `«term#[_,]»
 
-/-- `{a}` brace literals. -/
+/-- `{leftValue}` brace literals. -/
 def brace_lit_kind : SyntaxNodeKind := `«term{_}»
 
 /-- `if c then a else b`. -/
@@ -171,9 +171,9 @@ def owns_seams (kind : SyntaxNodeKind) : Bool :=
     text before the block, so a binding seam's block-glue argument passes
     through it (`x := fun a ↦ by` + body below). The match-alternative form
     (`fun | pat => …`) is not this shape. -/
-def is_fun_block_value (v : Lean.Syntax) : Bool :=
-  v.getKind == ``Lean.Parser.Term.fun
-      && (match v.getArgs[1]? with
+def is_fun_block_value (value : Lean.Syntax) : Bool :=
+  value.getKind == ``Lean.Parser.Term.fun
+      && (match value.getArgs[1]? with
       | some bodyForm =>
         bodyForm.getKind == ``Lean.Parser.Term.basicFun
             && (match bodyForm.getArgs.back? with
@@ -200,14 +200,14 @@ partial
 def has_unowned_line_comment (stx : Lean.Syntax) : Bool :=
   countUnownedComments stx > count_line_comments ((last_token_trailing? stx).getD "")
   where
-    countUnownedComments (s : Lean.Syntax) : Nat :=
-      match s with
+    countUnownedComments (source : Lean.Syntax) : Nat :=
+      match source with
       | .node _ kind args =>
         if owns_seams kind then 0
     else args.foldl (fun count child => count + countUnownedComments child) 0
       | _ =>
-        count_line_comments ((leading? s).getD "")
-          + count_line_comments ((trailing? s).getD "")
+        count_line_comments ((leading? source).getD "")
+          + count_line_comments ((trailing? source).getD "")
 
 /-- The ARM-SITE variant of the unowned-comment count: (a) the node's OWN
     leading is exempt — the arm loop places it via `leadingSep?`; (b) a
@@ -222,33 +222,33 @@ def has_unowned_interior_comment (stx : Lean.Syntax) : Bool :=
       > count_line_comments ((leading? stx).getD "")
           + count_line_comments ((last_token_trailing? stx).getD "")
   where
-    goI (s : Lean.Syntax) : Nat :=
-      match s with
+    goI (source : Lean.Syntax) : Nat :=
+      match source with
       | .node _ kind args =>
-        if owns_seams kind then count_line_comments ((leading? s).getD "")
+        if owns_seams kind then count_line_comments ((leading? source).getD "")
     else args.foldl (fun count child => count + goI child) 0
       | _ =>
-        count_line_comments ((leading? s).getD "")
-          + count_line_comments ((trailing? s).getD "")
+        count_line_comments ((leading? source).getD "")
+          + count_line_comments ((trailing? source).getD "")
 
 /-- A quotation TERM kind (`Term.quot`, `dynamicQuot`, category quots) —
     `.quot`/`…Quot` names the quotation PARSERS; name-literal kinds
     (`quotedName`) are single tokens — nothing inside them to respace — and
     must NOT poison their whole decl. -/
-def is_quot_term_kind (k : Lean.SyntaxNodeKind) : Bool :=
-  let spelling := k.toString
+def is_quot_term_kind (keyValue : Lean.SyntaxNodeKind) : Bool :=
+  let spelling := keyValue.toString
   spelling.endsWith ".quot" || spelling.endsWith "Quot"
 
 /-- A metaprogram COMMAND whose whole body is quotation content byte-exact
     (arm padding included — the perturber's META guard mirrors this). -/
-def is_quotation_command (k : Lean.SyntaxNodeKind) : Bool :=
-  k == `Lean.Parser.Command.macro_rules || k == `Lean.Parser.Command.elab_rules
-      || k == `Lean.Parser.Command.syntax
-      || k == `Lean.Parser.Command.syntaxAbbrev
-      || k == `Lean.Parser.Command.notation
-      || k == `Lean.Parser.Command.macro
-      || k == `Lean.Parser.Command.elab
-      || k == `Lean.Parser.Command.mixfix
+def is_quotation_command (keyValue : Lean.SyntaxNodeKind) : Bool :=
+  keyValue == `Lean.Parser.Command.macro_rules || keyValue == `Lean.Parser.Command.elab_rules
+      || keyValue == `Lean.Parser.Command.syntax
+      || keyValue == `Lean.Parser.Command.syntaxAbbrev
+      || keyValue == `Lean.Parser.Command.notation
+      || keyValue == `Lean.Parser.Command.macro
+      || keyValue == `Lean.Parser.Command.elab
+      || keyValue == `Lean.Parser.Command.mixfix
 
 partial
 def has_quotation_kind (stx : Lean.Syntax) : Bool :=
@@ -288,16 +288,16 @@ def quot_term_ranges? (stx : Lean.Syntax) : Option (Array (Nat × Nat)) :=
   collectQuotTermRanges stx (some #[])
   where
     collectQuotTermRanges
-        (s : Lean.Syntax)
+        (source : Lean.Syntax)
         (ranges : Option (Array (Nat × Nat)))
         : Option (Array (Nat × Nat)) :=
       match ranges with
       | none => none
       | some leftValue =>
-        match s with
+        match source with
         | .node _ kind args =>
           if is_quot_term_kind kind then
-            match s.getPos?, s.getTailPos? with
+            match source.getPos?, source.getTailPos? with
             | some pathValue, some rightPos => some (leftValue.push (pathValue.byteIdx, rightPos.byteIdx))
             | _, _ => none
           else args.foldl (fun found child => collectQuotTermRanges child found) (some leftValue)
@@ -306,9 +306,9 @@ def quot_term_ranges? (stx : Lean.Syntax) : Option (Array (Nat × Nat)) :=
 /-- A DSL template opener (`[ident|`) anywhere in the text — the lexical
     counterpart of the perturber's TPL_OPEN guard, for source that parses
     under custom template kinds we cannot enumerate. -/
-def has_template_opener (s : String) : Bool :=
+def has_template_opener (source : String) : Bool :=
   Id.run do
-    let chars : Array Char := s.toList.toArray
+    let chars : Array Char := source.toList.toArray
     let size := chars.size
     for idx in [0:size] do
       if chars[idx]! == '[' && idx + 1 < size

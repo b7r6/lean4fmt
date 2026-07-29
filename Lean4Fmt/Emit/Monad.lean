@@ -29,7 +29,7 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Style
 abbrev emit_m := ReaderT Style (StateM (Array Rules.Diagnostic))
 
 def style : emit_m Style := read
-def emit_diag (d : Rules.Diagnostic) : emit_m Unit := modify (·.push d)
+def emit_diag (document : Rules.Diagnostic) : emit_m Unit := modify (·.push document)
 
 /-- The open-recursion walker type: category emitters receive `walk` so they can
     recurse into children without cross-module mutual recursion. -/
@@ -60,16 +60,16 @@ def append_canonical_piece
     `skipBytes` shifts the range base when `s` is a SUFFIX of the node's bare
     source (spanBodyBlank hands us the tail lines). Whole-node fallbacks: no
     substring/position info, or range geometry that doesn't land inside `s`. -/
-def canon_ws_piecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) : String :=
+def canon_ws_piecewise (stx : Lean.Syntax) (source : String) (skipBytes : Nat := 0) : String :=
   Id.run
     do
       if Lean4Fmt.Syntax.has_quotation_command stx then
-        return s
-      let some ranges := Lean4Fmt.Syntax.quot_term_ranges? stx | return s
-      if ranges.isEmpty then return Lean4Fmt.Doc.canon_verbatim_ws s
-      let some sub := stx.getSubstring? false false | return s
+        return source
+      let some ranges := Lean4Fmt.Syntax.quot_term_ranges? stx | return source
+      if ranges.isEmpty then return Lean4Fmt.Doc.canon_verbatim_ws source
+      let some sub := stx.getSubstring? false false | return source
       let base := sub.startPos.byteIdx + skipBytes
-      let bytes := s.toUTF8
+      let bytes := source.toUTF8
       let send := bytes.size
       -- range boundaries are token edges, so byte slices are valid UTF-8; any
       -- decode surprise bails to the whole text (content-safe)
@@ -80,14 +80,14 @@ def canon_ws_piecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) :
         let startOffset := quoteStart - base              -- Nat sub clamps: partial overlap → 0
         let endOffset := quoteEnd - base
         if endOffset ≤ startOffset || startOffset < state.cursor || endOffset > send then
-          return s
+          return source
         match piece? state.cursor startOffset, piece? startOffset endOffset with
         | some code, some quot =>
           state := append_canonical_piece state code quot endOffset
-        | _, _ => return s
+        | _, _ => return source
       match piece? state.cursor send with
       | some tail => return state.output ++ Lean4Fmt.Doc.canon_verbatim_ws tail
-      | none => return s
+      | none => return source
 
 /-- The opt-out trail entry (debug level): names the kind and position.
     `verbatim` emits it; PROBE constructions (docs built speculatively and
@@ -179,10 +179,10 @@ def arms_aligned
       return fallback
     let mut rows : List (List Doc) := []
     for (pattern, body?) in arms do
-      let some b := body? | return fallback
-      if (Lean4Fmt.Doc.flat_width pattern).isNone || (Lean4Fmt.Doc.flat_width b).isNone then
+      let some rightValue := body? | return fallback
+      if (Lean4Fmt.Doc.flat_width pattern).isNone || (Lean4Fmt.Doc.flat_width rightValue).isNone then
         return fallback
-      rows := rows ++ [[Doc.text "| " ++ pattern, Doc.text "=>", b]]
+      rows := rows ++ [[Doc.text "| " ++ pattern, Doc.text "=>", rightValue]]
     let cap := if mode == Lean4Fmt.Style.align_mode.always then 1000000 else maxDelta
     return Doc.align_or { sep := " ", maxDelta := cap } rows fallback
 

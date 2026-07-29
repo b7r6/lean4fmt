@@ -20,7 +20,7 @@ open Lean
 
 /-- Run an action with stdout redirected to a scratch buffer, so lenient parser
     diagnostics can never pollute our output. -/
-def quietly {α} (act : IO α) : IO α := do
+def quietly {valueType} (act : IO valueType) : IO valueType := do
   let buf ← IO.mkRef { : IO.FS.Stream.Buffer }
   IO.withStdout (IO.FS.Stream.ofBuffer buf) act
 

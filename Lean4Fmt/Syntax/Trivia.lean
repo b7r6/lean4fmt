@@ -38,7 +38,7 @@ def last_token_trailing? (stx : Lean.Syntax) : Option String :=
 
 /-- Does a trivia string contain a line comment `-- …`? (block comments `/- -/`
     are safe; only line comments eat the rest of the line — §0.4). -/
-def has_line_comment (s : String) : Bool := (s.splitOn "--").length > 1
+def has_line_comment (source : String) : Bool := (source.splitOn "--").length > 1
 
 /-- True if any token in the subtree carries a line comment in its trivia. Such
     a subtree must never be inlined/flattened (§0.4). -/
@@ -58,7 +58,7 @@ def subtree_has_line_comment (stx : Lean.Syntax) : Bool :=
 
 /-- Number of line comments in a trivia string (the counting form of
     `hasLineComment`). -/
-def count_line_comments (s : String) : Nat := (s.splitOn "--").length - 1
+def count_line_comments (source : String) : Nat := (source.splitOn "--").length - 1
 
 /-- Total line comments in ALL trivia of a subtree (leading and trailing of every
     token) — the counting form of `subtreeHasLineComment`. Callers exempt a

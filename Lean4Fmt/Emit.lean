@@ -242,11 +242,11 @@ private partial def finish_verbatim
 partial def walk
             (stx : Lean.Syntax)
             : emit_m Doc := do
-  let d ← walkCore stx
-  match d with
+  let document ← walkCore stx
+  match document with
   -- discard the stale opt-out when a single-line bail ships as respaced text.
-  | .verbatim text _ => finish_verbatim stx d text
-  | _ => return d
+  | .verbatim text _ => finish_verbatim stx document text
+  | _ => return document
 
 end
 

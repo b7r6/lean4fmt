@@ -15,16 +15,16 @@ namespace Lean4Fmt.Style
 
 private
 theorem option_apply
-        {α : Type}
-        (base : α)
-        (first second : Option α)
+        {valueType : Type}
+        (base : valueType)
+        (first second : Option valueType)
         : second.getD (first.getD base) = (second <|> first).getD base := by
   cases first <;> cases second <;> rfl
 
 private
 theorem option_overlay_assoc
-        {α : Type}
-        (first second third : Option α)
+        {valueType : Type}
+        (first second third : Option valueType)
         : ((third <|> second) <|> first) = (third <|> (second <|> first)) := by
   cases first <;> cases second <;> cases third <;> rfl
 

@@ -401,43 +401,45 @@ def anonymous_injection_shape : Syntax := Unhygienic.run `(term| by injection sr
 
 private
 def by_cases_shape : Syntax :=
-  Unhygienic.run `(term| by by_cases decisionProof : p; exact decisionProof)
+  Unhygienic.run `(term| by by_cases decisionProof : predicate; exact decisionProof)
 
 private
-def anonymous_by_cases_shape : Syntax := Unhygienic.run `(term| by by_cases p; assumption)
+def anonymous_by_cases_shape : Syntax := Unhygienic.run `(term| by by_cases predicate; assumption)
 
 private
-def suffices_shape : Syntax := Unhygienic.run `(term| by suffices goalProof : p by exact goalProof)
+def suffices_shape : Syntax :=
+  Unhygienic.run `(term| by suffices goalProof : predicate by exact goalProof)
 
 private
 def generalize_shape : Syntax :=
   Unhygienic.run
     `(term| by
-      generalize equationProof : p = generalizedValue at h
+      generalize equationProof : predicate = generalizedValue at h
       exact generalizedValue)
 
 private
 def cases_alternative_shape : Syntax :=
-  Unhygienic.run `(term| by cases p with | z branchValue => exact branchValue)
+  Unhygienic.run `(term| by cases predicate with | z branchValue => exact branchValue)
 
 private
 def induction_alternative_shape : Syntax :=
   Unhygienic.run
     `(term| by
-      induction p generalizing h with
+      induction predicate generalizing h with
       | z => exact h
-      | s predecessor hypothesis => exact hypothesis)
+      | source predecessor hypothesis => exact hypothesis)
 
 private
 def rcases_shape : Syntax :=
-  Unhygienic.run `(term| by rcases p with ⟨leftValue, rfl, _, -, rightValue⟩; exact leftValue)
+  Unhygienic.run
+    `(term| by rcases predicate with ⟨leftValue, rfl, _, -, rightValue⟩; exact leftValue)
 
 private
-def rfl_prefix_shape : Syntax := Unhygienic.run `(term| by rcases p with rfl'; exact rfl')
+def rfl_prefix_shape : Syntax := Unhygienic.run `(term| by rcases predicate with rfl'; exact rfl')
 
 private
 def obtain_shape : Syntax :=
-  Unhygienic.run `(term| by obtain ⟨firstValue, secondValue⟩ : q := p; exact firstValue)
+  Unhygienic.run `(term| by obtain ⟨firstValue, secondValue⟩ : q := predicate; exact firstValue)
 
 private
 def nested_obtain_shape : Syntax :=
@@ -453,39 +455,40 @@ def rintro_shape : Syntax :=
 
 private
 def tactic_have_shape : Syntax :=
-  Unhygienic.run `(term| by have proofName : q := p; exact proofName)
+  Unhygienic.run `(term| by have proofName : q := predicate; exact proofName)
 
 private
-def tactic_let_shape : Syntax := Unhygienic.run `(term| by let valueName : q := p; exact valueName)
+def tactic_let_shape : Syntax :=
+  Unhygienic.run `(term| by let valueName : q := predicate; exact valueName)
 
 private
 def tactic_replace_shape : Syntax :=
-  Unhygienic.run `(term| by replace proofName : q := p; exact proofName)
+  Unhygienic.run `(term| by replace proofName : q := predicate; exact proofName)
 
 private
 def tactic_have_instance_shape : Syntax :=
-  Unhygienic.run `(term| by haveI instanceValue : q := p; exact p)
+  Unhygienic.run `(term| by haveI instanceValue : q := predicate; exact predicate)
 
 private
 def tactic_let_instance_shape : Syntax :=
-  Unhygienic.run `(term| by letI instanceValue : q := p; exact p)
+  Unhygienic.run `(term| by letI instanceValue : q := predicate; exact predicate)
 
 private
 def tactic_pattern_shape : Syntax :=
-  Unhygienic.run `(term| by have ⟨leftValue, rightValue⟩ := p; exact leftValue)
+  Unhygienic.run `(term| by have ⟨leftValue, rightValue⟩ := predicate; exact leftValue)
 
 private
 def tactic_equation_pattern_shape : Syntax :=
   Unhygienic.run
     `(term| by
-      have (eq := equationProof) ⟨leftValue, rightValue⟩ := p
+      have (eq := equationProof) ⟨leftValue, rightValue⟩ := predicate
       exact leftValue)
 
 private
 def tactic_rhs_shape : Syntax :=
   Unhygienic.run
     `(term| by
-      have proofName : q := (let rhsValue := p; rhsValue)
+      have proofName : q := (let rhsValue := predicate; rhsValue)
       exact proofName)
 
 private
@@ -493,7 +496,7 @@ def tactic_function_shape : Syntax :=
   Unhygienic.run
     `(term| by
       have proofFunction (inputValue : q) : q := inputValue
-      exact proofFunction p)
+      exact proofFunction predicate)
 
 private
 def tactic_equations_shape : Syntax :=
@@ -505,45 +508,49 @@ def tactic_equations_shape : Syntax :=
       exact proofFunction 0)
 
 private
-def anonymous_tactic_have_shape : Syntax := Unhygienic.run `(term| by have : q := p; exact this)
+def anonymous_tactic_have_shape : Syntax :=
+  Unhygienic.run `(term| by have : q := predicate; exact this)
 
 private
-def term_let_shape : Syntax := Unhygienic.run `(term| let localValue := p; localValue)
+def term_let_shape : Syntax := Unhygienic.run `(term| let localValue := predicate; localValue)
 
 private
-def short_term_let_shape : Syntax := Unhygienic.run `(term| let x := p; x)
+def short_term_let_shape : Syntax := Unhygienic.run `(term| let inputValue := predicate; inputValue)
 
 private
 def short_do_let_shape : Syntax :=
   Unhygienic.run
     `(term| do
-      let x := p
-      pure x)
+      let inputValue := predicate
+      pure inputValue)
 
 private
 def short_mutable_let_shape : Syntax :=
   Unhygienic.run
     `(term| do
-      let mut x := 0
-      x := x + 1
-      pure x)
+      let mut inputValue := 0
+      inputValue := inputValue + 1
+      pure inputValue)
 
 private
-def term_have_only_shape : Syntax := Unhygienic.run `(term| have x : Nat := 0; x)
+def term_have_only_shape : Syntax := Unhygienic.run `(term| have inputValue : Nat := 0; inputValue)
 
 private
 def quoted_let_only_shape : Syntax :=
-  Unhygienic.run `(command| def quotedFixture : Syntax := Unhygienic.run `(term| let x := p; x))
+  Unhygienic.run
+    `(command| def quotedFixture : Syntax := Unhygienic.run `(term| let inputValue := predicate; inputValue))
 
 private
-def tactic_let_only_shape : Syntax := Unhygienic.run `(term| by let x := p; exact x)
+def tactic_let_only_shape : Syntax :=
+  Unhygienic.run `(term| by let inputValue := predicate; exact inputValue)
 
 private
 def tactic_letI_only_shape : Syntax :=
-  Unhygienic.run `(term| by letI x : Inhabited Nat := inferInstance; exact 0)
+  Unhygienic.run `(term| by letI inputValue : Inhabited Nat := inferInstance; exact 0)
 
 private
-def pattern_let_only_shape : Syntax := Unhygienic.run `(term| let (x, y) := (p, p); x)
+def pattern_let_only_shape : Syntax :=
+  Unhygienic.run `(term| let (inputValue, rightValue) := (predicate, predicate); inputValue)
 
 private
 def let_allow_style : Style := { semantic_let_style with linting.letAllow := [(1, ["x"])] }
@@ -553,7 +560,8 @@ def shared_allow_does_not_reach_let_style : Style :=
   { semantic_let_style with linting.symbolAllow := [(1, ["x"])] }
 
 private
-def parameter_binder_shape : Syntax := Unhygienic.run `(term| ∀ (x : Nat), x = x)
+def parameter_binder_shape : Syntax :=
+  Unhygienic.run `(term| ∀ (inputValue : Nat), inputValue = inputValue)
 
 private
 def lambda_binder_shape : Syntax := Unhygienic.run `(term| fun lambdaFixture => lambdaFixture)
@@ -568,10 +576,11 @@ def shared_allow_does_not_reach_lambda_style : Style :=
 
 private
 def primed_have_shape : Syntax :=
-  Unhygienic.run `(term| by have' proofName : q := p; exact proofName)
+  Unhygienic.run `(term| by have' proofName : q := predicate; exact proofName)
 
 private
-def primed_let_shape : Syntax := Unhygienic.run `(term| by let' valueName : q := p; exact valueName)
+def primed_let_shape : Syntax :=
+  Unhygienic.run `(term| by let' valueName : q := predicate; exact valueName)
 
 private
 def tactic_let_rec_shape : Syntax :=
@@ -634,21 +643,21 @@ private
 def cases_equation_shape : Syntax :=
   Unhygienic.run
     `(term| by
-      cases equationProof : p with
+      cases equationProof : predicate with
       | z introducedBranchValue => exact introducedBranchValue)
 
 private
 def anonymous_cases_target_shape : Syntax :=
   Unhygienic.run
     `(term| by
-      cases p with
+      cases predicate with
       | z introducedBranchValue => exact introducedBranchValue)
 
 private
 def rcases_equation_shape : Syntax :=
   Unhygienic.run
     `(term| by
-      rcases equationProof : p with ⟨introducedLeftPatternValue, introducedRightPatternValue⟩
+      rcases equationProof : predicate with ⟨introducedLeftPatternValue, introducedRightPatternValue⟩
       exact introducedLeftPatternValue)
 
 private

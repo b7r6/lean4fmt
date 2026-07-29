@@ -64,11 +64,11 @@ def import_lines_doc? (imports : Array Lean.Syntax) : Option Doc :=
     trailing, likewise. `none` (verbatim) on a `module`/`prelude` marker, a
     multi-line import span, or a seamless comment. -/
 private
-def header_doc? (h : Lean.Syntax) : Option Doc :=
+def header_doc? (headerSyntax : Lean.Syntax) : Option Doc :=
   Id.run do
-    if h.getKind != ``Lean.Parser.Module.header then
+    if headerSyntax.getKind != ``Lean.Parser.Module.header then
       return none
-    let args := h.getArgs
+    let args := headerSyntax.getArgs
     if args.size != 3 then
       return none
     if !((args[0]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString.isEmpty then

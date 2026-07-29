@@ -21,15 +21,15 @@ open Lean Lean4Fmt.Doc
     bracketed binder kinds; `none` (caller falls back to per-binder verbatim)
     on anything else, a multi-line piece, or a comment (a line comment forces a
     newline into its segment, so the '\n' guard covers it). -/
-def binder_text? (b : Lean.Syntax) (preserve : Bool := false) : Option String :=
+def binder_text? (rightValue : Lean.Syntax) (preserve : Bool := false) : Option String :=
   Id.run
     do
-      let kind := b.getKind
+      let kind := rightValue.getKind
       if kind != ``Lean.Parser.Term.explicitBinder && kind != ``Lean.Parser.Term.implicitBinder
           && kind != ``Lean.Parser.Term.strictImplicitBinder
           && kind != ``Lean.Parser.Term.instBinder then
         return none
-      let args := b.getArgs
+      let args := rightValue.getArgs
       if args.size < 3 then
         return none
       let leftDelim := (bare_src args[0]!).trimAscii.toString
@@ -38,7 +38,7 @@ def binder_text? (b : Lean.Syntax) (preserve : Bool := false) : Option String :=
         return none
       if preserve then
         -- byte-exact interior (the author's `s: String` survives)
-        let text := (bare_src b).trimAscii.toString
+        let text := (bare_src rightValue).trimAscii.toString
         if text.isEmpty || text.any (· == '\n') then
           return none
         return some text
@@ -93,9 +93,9 @@ def broken_binder_doc (walk : Lean4Fmt.Emit.Walk) (binder : Lean.Syntax) : emit_
 /-- A binder doc: active single-line text when `binderText?` can hold it;
     a MULTI-LINE binder walks its type (chains/apps lay out actively inside
     the brackets); verbatim only when the shape offers no seam. -/
-def binder_doc (walk : Lean4Fmt.Emit.Walk) (b : Lean.Syntax) : emit_m Doc := do
-  match binder_text? b (← read).spacing.preserveBinders with
+def binder_doc (walk : Lean4Fmt.Emit.Walk) (rightValue : Lean.Syntax) : emit_m Doc := do
+  match binder_text? rightValue (← read).spacing.preserveBinders with
   | some trailing => pure (.text trailing)
-  | none => broken_binder_doc walk b
+  | none => broken_binder_doc walk rightValue
 
 end Lean4Fmt.Emit

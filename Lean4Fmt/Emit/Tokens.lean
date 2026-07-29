@@ -45,8 +45,8 @@ def has_choice (stx : Lean.Syntax) : Bool :=
     clang-format is the shape of the eventual full table. -/
 private
 def gap_rule (prev next : String) : Option Bool :=
-  let identLike (t : String) :=
-    t.toList.all fun char =>
+  let identLike (textValue : String) :=
+    textValue.toList.all fun char =>
       char.isAlphanum || char == '_' || char == '\'' || char == '.' || char.toNat > 127
   if prev == "(" || prev == "⟨" || prev == "‹" || prev == "⦃" || prev == "¬" then
     some false
@@ -151,14 +151,14 @@ def token_join? (stx : Lean.Syntax) : Option String := token_join_impl? stx fals
     tactics joined into an application). Single-line ones are safe: their
     interior is already one line and the join preserves it. -/
 partial
-def has_newline_semantic (s : Lean.Syntax) : Bool :=
-  ((s.getKind == ``Lean.Parser.Term.do || s.getKind == ``Lean.Parser.Term.byTactic
-      || s.getKind == `Lean.Parser.Term.byTactic'
-      || s.getKind == ``Lean.Parser.Term.let
-      || s.getKind == ``Lean.Parser.Term.letrec
-      || s.getKind == ``Lean.Parser.Term.structInst)
-      && (bare_src s).any (· == '\n'))
-      || s.getArgs.any has_newline_semantic
+def has_newline_semantic (source : Lean.Syntax) : Bool :=
+  ((source.getKind == ``Lean.Parser.Term.do || source.getKind == ``Lean.Parser.Term.byTactic
+      || source.getKind == `Lean.Parser.Term.byTactic'
+      || source.getKind == ``Lean.Parser.Term.let
+      || source.getKind == ``Lean.Parser.Term.letrec
+      || source.getKind == ``Lean.Parser.Term.structInst)
+      && (bare_src source).any (· == '\n'))
+      || source.getArgs.any has_newline_semantic
 
 /-- Canonical FLATTENED token text: like `tokenJoin?` but newline gaps become
     single spaces — the canonical one-line spelling of a multi-line construct.

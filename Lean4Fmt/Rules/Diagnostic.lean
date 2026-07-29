@@ -25,15 +25,15 @@ structure Diagnostic where
   message  : String
   deriving Repr, Inhabited
 
-def Diagnostic.render (d : Diagnostic) : String :=
+def Diagnostic.render (document : Diagnostic) : String :=
   let sev :=
-    match d.severity with
+    match document.severity with
     | .debug   => "debug"
     | .info    => "info"
     | .warning => "warning"
     | .error   => "error"
-  let tag := if d.rule.isEmpty then "" else s!" [{d.rule}]"
-  let role := if d.role.isEmpty then "" else s!" ({d.role})"
-  s!"{d.pos}: {sev}{tag}{role}: {d.message}"
+  let tag := if document.rule.isEmpty then "" else s!" [{document.rule}]"
+  let role := if document.role.isEmpty then "" else s!" ({document.role})"
+  s!"{document.pos}: {sev}{tag}{role}: {document.message}"
 
 end Lean4Fmt.Rules

@@ -64,9 +64,9 @@ def parse_module? (env : Environment) (path contents : String) : IO (Option Lean
   let opts : Options := Options.empty.setBool `debug.byAsSorry true
   quietly do
     try
-      let s ← Lean.Elab.IO.processCommands ictx mps (Lean.Elab.Command.mkState env msgs opts)
-      if s.commands.any (·.hasMissing) then pure none
-      else pure (some (Syntax.node .none ``Lean.Parser.Module.module #[hdr, mkNullNode s.commands]))
+      let source ← Lean.Elab.IO.processCommands ictx mps (Lean.Elab.Command.mkState env msgs opts)
+      if source.commands.any (·.hasMissing) then pure none
+      else pure (some (Syntax.node .none ``Lean.Parser.Module.module #[hdr, mkNullNode source.commands]))
     catch _ => pure none
 
 /-- Flatten every `Info` node of a tree in document order. -/

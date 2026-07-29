@@ -35,19 +35,19 @@ open Lean Lean4Fmt.Doc
 private
 def id_decl_doc?
     (walk : Lean4Fmt.Emit.Walk)
-    (d : Lean.Syntax)
+    (document : Lean.Syntax)
     : Lean4Fmt.Emit.emit_m (Option Doc) := do
-  let args := d.getArgs
+  let args := document.getArgs
   -- doIdDecl = [id, type?, "←", doExpr]; doPatDecl = [pat, type?, "←",
   -- doExpr, else?] — same arrow/expr slots; the pattern joins flat and the
   -- optional `| else` tail bails
   let head ← do
-    if d.getKind == ``Lean.Parser.Term.doIdDecl then
+    if document.getKind == ``Lean.Parser.Term.doIdDecl then
       if args.size != 4 then return none
       let idT := Lean4Fmt.Emit.canon_tok args[0]!
       let tyT := Lean4Fmt.Emit.canon_tok args[1]!
       pure (String.intercalate " " ([idT, tyT].filter (fun text => !text.isEmpty)))
-    else if d.getKind == ``Lean.Parser.Term.doPatDecl then
+    else if document.getKind == ``Lean.Parser.Term.doPatDecl then
       if args.size != 5 then return none
       if !((args[4]?.map (fun syntaxNode =>
           (Lean4Fmt.Emit.bare_src syntaxNode).trimAscii.toString.isEmpty)).getD true) then
@@ -62,8 +62,8 @@ def id_decl_doc?
   let expression := args[3]!
   if expression.getKind != ``Lean.Parser.Term.doExpr then
     return none
-  let some v := expression.getArgs[0]? | return none
-  let vdoc ← walk v
+  let some value := expression.getArgs[0]? | return none
+  let vdoc ← walk value
   -- a bare whole-verbatim value gains nothing; otherwise the ASSEMBLED
   -- layout decides (hasMidlineReanchor — interior verbatims at hardline
   -- seams re-anchor deterministically): a do/by/match value GLUES to the
@@ -74,9 +74,9 @@ def id_decl_doc?
   -- with` — the house shape hangs the value head on the arrow line; its own
   -- doc breaks below); a FLAT value keeps the width-aware group (inline
   -- when it fits, else own line at +2 — unchanged)
-  let glue := v.getKind == ``Lean.Parser.Term.do
-    || v.getKind == ``Lean.Parser.Term.byTactic
-    || v.getKind == ``Lean.Parser.Term.match
+  let glue := value.getKind == ``Lean.Parser.Term.do
+    || value.getKind == ``Lean.Parser.Term.byTactic
+    || value.getKind == ``Lean.Parser.Term.match
     || (Lean4Fmt.Doc.flat_width vdoc).isNone
   let layout : Doc :=
     if glue then .text head ++ .text (" " ++ arrowT ++ " ") ++ vdoc
@@ -115,14 +115,14 @@ def stmts? (seq : Lean.Syntax) : Option (Array Lean.Syntax) :=
     there aborts to `none`. -/
 def seq_lines_doc?
     (walk : Lean4Fmt.Emit.Walk)
-    (ss : Array Lean.Syntax)
+    (strings : Array Lean.Syntax)
     (lastOwned : Bool)
     : Lean4Fmt.Emit.emit_m (Option Doc) := do
   let mut body : Doc := .nil
-  for h : idx in [0:ss.size] do
-    let stmt := ss[idx]
+  for h : idx in [0:strings.size] do
+    let stmt := strings[idx]
     let trailT := ((Lean4Fmt.Syntax.trailing? stmt).getD "").trimAscii.toString
-    let last := idx + 1 == ss.size
+    let last := idx + 1 == strings.size
     if !last && trailT.any (· == '\n') then
       return none
     if last && !lastOwned && !trailT.isEmpty then
@@ -153,20 +153,20 @@ def branch_doc?
     (lastOwned : Bool)
     (guardBreak : Bool := false)
     : Lean4Fmt.Emit.emit_m (Option Doc) := do
-  let some ss := stmts? seq | return none
-  if ss.size == 1 then
-    let lead := (Lean4Fmt.Syntax.leading? ss[0]!).getD ""
+  let some strings := stmts? seq | return none
+  if strings.size == 1 then
+    let lead := (Lean4Fmt.Syntax.leading? strings[0]!).getD ""
     let plainLead := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
     let srcInline := !lead.any (· == '\n')
-    let trailT := ((Lean4Fmt.Syntax.trailing? ss[0]!).getD "").trimAscii.toString
+    let trailT := ((Lean4Fmt.Syntax.trailing? strings[0]!).getD "").trimAscii.toString
     if plainLead && (lastOwned || trailT.isEmpty)
         && (!(← read).breaking.preserveLineBreaks || srcInline) then
-      let sDoc ← walk ss[0]!
+      let sDoc ← walk strings[0]!
       -- guardIfOwnLine: a CONTROL-FLOW branch (`return`/`throw`) keeps its
       -- own line even when it fits — the guard ladder reads vertically;
       -- effect branches still inline by width (the house distinction)
-      let isCtl := ss[0]!.getKind == ``Lean.Parser.Term.doReturn
-        || ((Lean4Fmt.Emit.bare_src ss[0]!).trimAscii.toString.startsWith "throw")
+      let isCtl := strings[0]!.getKind == ``Lean.Parser.Term.doReturn
+        || ((Lean4Fmt.Emit.bare_src strings[0]!).trimAscii.toString.startsWith "throw")
       if (← read).breaking.inlineBranches
           && !(guardBreak && isCtl)
           && (Lean4Fmt.Doc.flat_width sDoc).isSome
@@ -175,13 +175,13 @@ def branch_doc?
       -- a nested `do` GLUES to the branch keyword (`=> do` / `then do`) —
       -- its statements bring their own hardlines (mirrors the eqns arm rule;
       -- without this the `do` lands alone on its own line)
-      let kind := ss[0]!.getKind
+      let kind := strings[0]!.getKind
       if !Lean4Fmt.Doc.hasMultilineVerbatim sDoc
           && (kind == ``Lean.Parser.Term.doNested
             || (kind == ``Lean.Parser.Term.doExpr
-              && (ss[0]!.getArgs[0]?.map (·.getKind)) == some ``Lean.Parser.Term.do)) then
+              && (strings[0]!.getArgs[0]?.map (·.getKind)) == some ``Lean.Parser.Term.do)) then
         return some (.text " " ++ sDoc)
-  match ← seq_lines_doc? walk ss lastOwned with
+  match ← seq_lines_doc? walk strings lastOwned with
   | some body => return some (.nest 2 body)
   | none => return none
 
@@ -277,9 +277,9 @@ def emit_let_else (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emi
   let some head := let_else_head? args | return (← Lean4Fmt.Emit.verbatim stx)
   let vdoc ← walk args[5]!
   if is_verbatim_doc vdoc then return (← Lean4Fmt.Emit.verbatim stx)
-  let some ss := stmts? args[7]! | return (← Lean4Fmt.Emit.verbatim stx)
-  if ss.size != 1 then return (← Lean4Fmt.Emit.verbatim stx)
-  let eDoc ← walk ss[0]!
+  let some strings := stmts? args[7]! | return (← Lean4Fmt.Emit.verbatim stx)
+  if strings.size != 1 then return (← Lean4Fmt.Emit.verbatim stx)
+  let eDoc ← walk strings[0]!
   if is_verbatim_doc eDoc then return (← Lean4Fmt.Emit.verbatim stx)
   -- a[8] carries the CONTINUATION of the do block (the let-else scopes the
   -- rest): emit it through the statement loop at the let's own column
@@ -563,8 +563,8 @@ def emit_loop (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.em
     if !text.isEmpty then head := if head.isEmpty then text else head ++ " " ++ text
   if head.isEmpty then
     return (← Lean4Fmt.Emit.verbatim stx)
-  let some ss := stmts? args[args.size - 1]! | return (← Lean4Fmt.Emit.verbatim stx)
-  match ← seq_lines_doc? walk ss true with
+  let some strings := stmts? args[args.size - 1]! | return (← Lean4Fmt.Emit.verbatim stx)
+  match ← seq_lines_doc? walk strings true with
   | some body => return .text head ++ .nest 2 body
   | none => return (← Lean4Fmt.Emit.verbatim stx)
 
@@ -576,13 +576,13 @@ def emit_do (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit
   if !doKwTrail.isEmpty then
     return (← Lean4Fmt.Emit.verbatim stx)
   let some seq := args[1]? | return (← Lean4Fmt.Emit.verbatim stx)
-  let some ss := stmts? seq | return (← Lean4Fmt.Emit.verbatim stx)
-  if (← read).breaking.compactDo && ss.size == 1
-      && ((Lean4Fmt.Syntax.leading? ss[0]!).getD "").toList.all (·.isWhitespace) then
-    let sDoc ← walk ss[0]!
+  let some strings := stmts? seq | return (← Lean4Fmt.Emit.verbatim stx)
+  if (← read).breaking.compactDo && strings.size == 1
+      && ((Lean4Fmt.Syntax.leading? strings[0]!).getD "").toList.all (·.isWhitespace) then
+    let sDoc ← walk strings[0]!
     if !Lean4Fmt.Doc.hasMultilineVerbatim sDoc then
       return .text "do" ++ .group (.nest 2 (.line ++ sDoc))
-  match ← seq_lines_doc? walk ss true with
+  match ← seq_lines_doc? walk strings true with
   | some body => return .text "do" ++ .nest 2 body
   | none => return (← Lean4Fmt.Emit.verbatim stx)
 
