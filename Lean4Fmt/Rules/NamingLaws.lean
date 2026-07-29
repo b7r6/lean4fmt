@@ -23,7 +23,11 @@ example : binding_kind_inventory.all (fun entry => role_of_kind entry.1 == some 
   native_decide
 
 example : role_of_kind ``Lean.Parser.Command.declId = some .declaration := by decide
-example : role_of_kind ``Lean.Parser.Term.explicitBinder = some .localBinder := by decide
+example : role_of_kind ``Lean.Parser.Command.ctor = some .declaration := by decide
+example : role_of_kind ``Lean.Parser.Term.explicitBinder = some .parameterBinder := by decide
+example : role_of_kind ``Lean.Parser.Term.basicFun = some .lambdaBinder := by decide
+example : role_of_kind ``Lean.Parser.Term.letIdDecl = some .letBinder := by decide
+example : role_of_kind ``Lean.Parser.Term.letRecDecl = some .recursiveHelper := by decide
 example : role_of_kind ``Lean.Parser.Term.letPatDecl = some .patternBinder := by decide
 example : role_of_kind ``Lean.Parser.Term.matchAlt = some .matchBinder := by decide
 example : role_of_kind ``Lean.Parser.Term.doForDecl = some .loopIndex := by decide
@@ -78,15 +82,73 @@ def role_count (stx : Syntax) (role : String) : Nat :=
     0
 
 private
-def semantic_pattern_style : Style := { strict_style with
-  linting.requireSemanticPatternBinders := true
-}
+def semantic_pattern_style : Style :=
+  { strict_style with linting.requireSemanticPatternBinders := true }
 
 private
 def semantic_pattern_rule_count (stx : Syntax) : Nat :=
   (lint semantic_pattern_style stx).foldl
+    (fun count diagnostic => if diagnostic.rule == "symbol-pattern-binder" then count + 1 else count)
+    0
+
+private
+def semantic_recursive_helper_style : Style :=
+  { strict_style with linting.requireSemanticRecursiveHelperNames := true }
+
+private
+def recursive_helper_rule_count (style : Style) (stx : Syntax) : Nat :=
+  (lint style stx).foldl
     (fun count diagnostic =>
-      if diagnostic.rule == "symbol-pattern-binder" then count + 1 else count)
+      if diagnostic.rule == "symbol-recursive-helper" then count + 1 else count)
+    0
+
+private
+def generic_recursive_helper_count (style : Style) (stx : Syntax) : Nat :=
+  (lint style stx).foldl
+    (fun count diagnostic =>
+      if diagnostic.rule == "symbol-length" && diagnostic.role == "recursive-helper" then
+        count + 1
+      else
+        count)
+    0
+
+private
+def semantic_lambda_style : Style :=
+  { strict_style with linting.requireSemanticLambdaNames := true }
+
+private
+def semantic_let_style : Style := { strict_style with linting.requireSemanticLetNames := true }
+
+private
+def lambda_rule_count (style : Style) (stx : Syntax) : Nat :=
+  (lint style stx).foldl
+    (fun count diagnostic => if diagnostic.rule == "symbol-lambda" then count + 1 else count)
+    0
+
+private
+def generic_lambda_count (style : Style) (stx : Syntax) : Nat :=
+  (lint style stx).foldl
+    (fun count diagnostic =>
+      if diagnostic.rule == "symbol-length" && diagnostic.role == "lambda-binder" then
+        count + 1
+      else
+        count)
+    0
+
+private
+def let_rule_count (style : Style) (stx : Syntax) : Nat :=
+  (lint style stx).foldl
+    (fun count diagnostic => if diagnostic.rule == "symbol-let" then count + 1 else count)
+    0
+
+private
+def generic_let_count (style : Style) (stx : Syntax) : Nat :=
+  (lint style stx).foldl
+    (fun count diagnostic =>
+      if diagnostic.rule == "symbol-length" && diagnostic.role == "let-binder" then
+        count + 1
+      else
+        count)
     0
 
 private
@@ -97,6 +159,95 @@ def instance_rule_count (stx : Syntax) : Nat :=
   (lint instance_style stx).foldl
     (fun count diagnostic => if diagnostic.rule == "symbol-instance" then count + 1 else count)
     0
+
+private
+def semantic_field_style : Style := { strict_style with linting.requireSemanticFieldNames := true }
+
+private
+def semantic_field_rule_count (style : Style) (stx : Syntax) : Nat :=
+  (lint style stx).foldl
+    (fun count diagnostic => if diagnostic.rule == "symbol-field" then count + 1 else count)
+    0
+
+private
+def packet_field_shape : Syntax := Unhygienic.run `(command| structure Packet where api : Nat)
+
+private
+def message_field_shape : Syntax := Unhygienic.run `(command| structure Message where api : Nat)
+
+private
+def semantic_field_allow_style : Style :=
+  { semantic_field_style with linting.fieldAllow := [(3, ["Packet.api"])] }
+
+private
+def broad_field_allow_style : Style :=
+  { semantic_field_style with linting.fieldAllow := [(3, ["api"])] }
+
+private
+def namespace_qualified_field_allow_style : Style :=
+  { semantic_field_style with linting.fieldAllow := [(3, ["Example.Protocol.Packet.api"])] }
+
+example : semantic_field_rule_count semantic_field_style packet_field_shape = 1 := by native_decide
+
+/-- An owner-qualified exception admits only that owner's exact field. -/
+example : semantic_field_rule_count semantic_field_allow_style packet_field_shape = 0 := by
+  native_decide
+
+example : semantic_field_rule_count semantic_field_allow_style message_field_shape = 1 := by
+  native_decide
+
+example : semantic_field_rule_count namespace_qualified_field_allow_style packet_field_shape = 0 := by
+  native_decide
+
+/-- Bare entries remain explicit broad compatibility exceptions. -/
+example : semantic_field_rule_count broad_field_allow_style message_field_shape = 0 := by
+  native_decide
+
+private
+def semantic_declaration_style : Style :=
+  { strict_style with linting.requireSemanticDeclarationNames := true }
+
+private
+def semantic_declaration_rule_count (style : Style) (stx : Syntax) : Nat :=
+  (lint style stx).foldl
+    (fun count diagnostic => if diagnostic.rule == "symbol-declaration" then count + 1 else count)
+    0
+
+private
+def short_definition_shape : Syntax := Unhygienic.run `(command| def api : Nat := 0)
+
+private
+def short_constructor_shape : Syntax :=
+  Unhygienic.run `(command| inductive SemanticResultContainer where | api)
+
+private
+def other_short_constructor_shape : Syntax :=
+  Unhygienic.run `(command| inductive SemanticMessageContainer where | api)
+
+private
+def qualified_definition_allow_style : Style :=
+  { semantic_declaration_style with linting.declarationAllow := [(3, ["Example.Protocol.api"])] }
+
+private
+def qualified_constructor_allow_style : Style :=
+  { semantic_declaration_style with
+    linting.declarationAllow := [(3, ["SemanticResultContainer.api"])] }
+
+example : semantic_declaration_rule_count semantic_declaration_style short_definition_shape = 1 := by
+  native_decide
+
+example : semantic_declaration_rule_count qualified_definition_allow_style short_definition_shape = 0 := by
+  native_decide
+
+example : semantic_declaration_rule_count semantic_declaration_style short_constructor_shape = 1 := by
+  native_decide
+
+example : semantic_declaration_rule_count qualified_constructor_allow_style short_constructor_shape = 0 := by
+  native_decide
+
+/-- A constructor exception is isolated to its syntactic owner. -/
+example : semantic_declaration_rule_count qualified_constructor_allow_style other_short_constructor_shape = 1 := by
+  native_decide
 
 private
 def greek_instance_shape : Syntax := Unhygienic.run `(term| fun [β₂ : Target Ty] => β₂)
@@ -116,6 +267,17 @@ def positional_rule_count (stx : Syntax) : Nat :=
     0
 
 private
+def collection_loop_style : Style :=
+  { strict_style with linting.requireSemanticCollectionLoopNames := true }
+
+private
+def collection_loop_rule_count (stx : Syntax) : Nat :=
+  (lint collection_loop_style stx).foldl
+    (fun count diagnostic =>
+      if diagnostic.rule == "symbol-loop-collection" then count + 1 else count)
+    0
+
+private
 def nested_range_shape : Syntax :=
   Unhygienic.run
     `(term| do
@@ -124,7 +286,60 @@ def nested_range_shape : Syntax :=
           pure (idx, jdx))
 
 private
-def collection_loop_shape : Syntax := Unhygienic.run `(term| do for event in events do pure event)
+def collection_loop_shape : Syntax :=
+  Unhygienic.run
+    `(term| do
+      for semanticCollectionElement in events do
+        pure semanticCollectionElement)
+
+private
+def short_collection_loop_shape : Syntax :=
+  Unhygienic.run `(term| do for element in events do pure element)
+
+private partial
+def rewrite_identifier (source target : String) : Syntax → Syntax
+  | .ident info raw value preResolved =>
+    if raw.toString == source then
+      .ident info target.toRawSubstring (Name.mkSimple target) preResolved
+    else
+      .ident info raw value preResolved
+  | .node info kind children => .node info kind (children.map (rewrite_identifier source target))
+  | otherSyntax => otherSyntax
+
+private
+def correct_range_shape : Syntax := Unhygienic.run `(term| do for idx in [ 0 : count ] do pure idx)
+
+private
+def positional_vocabulary_collection_shape : Syntax :=
+  rewrite_identifier "semanticCollectionElement" "idx" collection_loop_shape
+
+private
+def wrong_range_shape : Syntax := rewrite_identifier "idx" "event" correct_range_shape
+
+private
+def destructured_collection_shape : Syntax :=
+  Unhygienic.run `(term| do for (entryKey, entryValue) in entries do pure (entryKey, entryValue))
+
+private
+def semantic_destructured_collection_shape : Syntax :=
+  Unhygienic.run
+    `(term| do
+      for (semanticCollectionKey, semanticCollectionValue) in entries do
+        pure (semanticCollectionKey, semanticCollectionValue))
+
+private
+def parallel_range_shape : Syntax :=
+  Unhygienic.run
+    `(term| do
+      for idx in [ 0 : rows ], jdx in [ 0 : columns ] do
+        pure (idx, jdx))
+
+private
+def mixed_parallel_shape : Syntax :=
+  Unhygienic.run
+    `(term| do
+      for semanticCollectionElement in events, idx in [ 0 : count ] do
+        pure (semanticCollectionElement, idx))
 
 example : positional_loop_name 0 = "idx" := by decide
 example : positional_loop_name 1 = "jdx" := by decide
@@ -134,9 +349,35 @@ example : positional_loop_name 7 = "kdx" := by decide
 example : positional_loop_iterable (Unhygienic.run `(term| [ 0 : count ])) = true := by
   native_decide
 
+example : positional_loop_iterable (Unhygienic.run `(term| [ 0 : 2 : count ])) = true := by
+  native_decide
+
+example : positional_loop_iterable (Unhygienic.run `(term| [ : count ])) = true := by native_decide
+
 example : positional_loop_iterable (Unhygienic.run `(term| events)) = false := by native_decide
+
+example : positional_loop_iterable (Unhygienic.run `(term| List.range count)) = false := by
+  native_decide
+
 example : positional_rule_count nested_range_shape = 0 := by native_decide
 example : positional_rule_count collection_loop_shape = 0 := by native_decide
+example : collection_loop_rule_count collection_loop_shape = 0 := by native_decide
+example : collection_loop_rule_count short_collection_loop_shape = 1 := by native_decide
+example : collection_loop_rule_count positional_vocabulary_collection_shape = 1 := by native_decide
+example : collection_loop_rule_count correct_range_shape = 0 := by native_decide
+example : positional_rule_count correct_range_shape = 0 := by native_decide
+example : collection_loop_rule_count wrong_range_shape = 0 := by native_decide
+example : positional_rule_count wrong_range_shape = 1 := by native_decide
+example : collection_loop_rule_count destructured_collection_shape = 2 := by native_decide
+example : collection_loop_rule_count semantic_destructured_collection_shape = 0 := by native_decide
+example : role_count short_collection_loop_shape "collection-element" = 1 := by native_decide
+example : role_count short_collection_loop_shape "loop-index" = 0 := by native_decide
+example : role_count correct_range_shape "collection-element" = 0 := by native_decide
+example : role_count correct_range_shape "loop-index" = 1 := by native_decide
+example : positional_rule_count parallel_range_shape = 0 := by native_decide
+example : collection_loop_rule_count parallel_range_shape = 0 := by native_decide
+example : positional_rule_count mixed_parallel_shape = 0 := by native_decide
+example : collection_loop_rule_count mixed_parallel_shape = 0 := by native_decide
 
 private
 def intro_shape : Syntax := Unhygienic.run `(term| by intro introducedName; exact introducedName)
@@ -270,6 +511,62 @@ private
 def term_let_shape : Syntax := Unhygienic.run `(term| let localValue := p; localValue)
 
 private
+def short_term_let_shape : Syntax := Unhygienic.run `(term| let x := p; x)
+
+private
+def short_do_let_shape : Syntax :=
+  Unhygienic.run
+    `(term| do
+      let x := p
+      pure x)
+
+private
+def short_mutable_let_shape : Syntax :=
+  Unhygienic.run
+    `(term| do
+      let mut x := 0
+      x := x + 1
+      pure x)
+
+private
+def term_have_only_shape : Syntax := Unhygienic.run `(term| have x : Nat := 0; x)
+
+private
+def quoted_let_only_shape : Syntax :=
+  Unhygienic.run `(command| def quotedFixture : Syntax := Unhygienic.run `(term| let x := p; x))
+
+private
+def tactic_let_only_shape : Syntax := Unhygienic.run `(term| by let x := p; exact x)
+
+private
+def tactic_letI_only_shape : Syntax :=
+  Unhygienic.run `(term| by letI x : Inhabited Nat := inferInstance; exact 0)
+
+private
+def pattern_let_only_shape : Syntax := Unhygienic.run `(term| let (x, y) := (p, p); x)
+
+private
+def let_allow_style : Style := { semantic_let_style with linting.letAllow := [(1, ["x"])] }
+
+private
+def shared_allow_does_not_reach_let_style : Style :=
+  { semantic_let_style with linting.symbolAllow := [(1, ["x"])] }
+
+private
+def parameter_binder_shape : Syntax := Unhygienic.run `(term| ∀ (x : Nat), x = x)
+
+private
+def lambda_binder_shape : Syntax := Unhygienic.run `(term| fun lambdaFixture => lambdaFixture)
+
+private
+def lambda_allow_style : Style :=
+  { semantic_lambda_style with linting.lambdaAllow := [(13, ["lambdaFixture"])] }
+
+private
+def shared_allow_does_not_reach_lambda_style : Style :=
+  { semantic_lambda_style with linting.symbolAllow := [(13, ["lambdaFixture"])] }
+
+private
 def primed_have_shape : Syntax :=
   Unhygienic.run `(term| by have' proofName : q := p; exact proofName)
 
@@ -308,6 +605,32 @@ def term_let_rec_shape : Syntax :=
     `(term| let rec recursiveFunction (inputValue : Nat) : Nat := inputValue; recursiveFunction 0)
 
 private
+def short_term_let_rec_shape : Syntax :=
+  Unhygienic.run
+    `(term| let rec recursiveFixture (inputValue : Nat) : Nat := inputValue; recursiveFixture 0)
+
+private
+def short_equation_term_let_rec_shape : Syntax :=
+  Unhygienic.run
+    `(term| let rec recursiveFixture : Nat → Nat
+        | 0 => 0
+        | remainingValue + 1 => recursiveFixture remainingValue
+      recursiveFixture 0)
+
+private
+def recursive_helper_allow_style : Style :=
+  { semantic_recursive_helper_style with
+    linting.recursiveHelperAllow := [(16, ["recursiveFixture"])] }
+
+private
+def short_where_helper_shape : Syntax :=
+  Unhygienic.run
+    `(command| partial def outerFunction (value : Nat) : Nat :=
+        recursiveFixture value
+        where
+          recursiveFixture (inputValue : Nat) : Nat := inputValue)
+
+private
 def cases_equation_shape : Syntax :=
   Unhygienic.run
     `(term| by
@@ -335,6 +658,60 @@ def pattern_shape : Syntax :=
 private
 def match_shape : Syntax :=
   Unhygienic.run `(term| match (1, 2) with | (firstValue, secondValue) => firstValue + secondValue)
+
+private
+def multiple_pattern_shape : Syntax :=
+  Unhygienic.run
+    `(term| match value with
+      | .namespace_ _, .vm branchValue => branchValue
+      | .vm _, .namespace_ otherValue => otherValue)
+
+private
+def grouped_constructor_shape : Syntax :=
+  Unhygienic.run `(term| match value with | .none | .some itemValue => itemValue)
+
+private
+def qualified_constructor_shape : Syntax :=
+  Unhygienic.run `(term| match value with | Option.some itemValue => itemValue)
+
+private
+def dotted_qualified_constructor_shape : Syntax :=
+  Unhygienic.run `(term| match value with | .Foo.bar itemValue => itemValue)
+
+private
+def nullary_constructor_shape : Syntax := Unhygienic.run `(term| match value with | none => 0)
+
+private
+def qualified_nullary_constructor_shape : Syntax :=
+  Unhygienic.run `(term| match value with | Option.none => 0)
+
+private
+def typed_pattern_shape : Syntax :=
+  Unhygienic.run `(term| match value with | (itemValue : Nat) => itemValue)
+
+private
+def typed_tuple_pattern_shape : Syntax :=
+  Unhygienic.run `(term| match value with | ((itemValue, otherValue) : Nat × Nat) => itemValue)
+
+private
+def named_pattern_shape : Syntax :=
+  Unhygienic.run `(term| match value with | whole@some itemValue => itemValue)
+
+private
+def named_equation_pattern_shape : Syntax :=
+  Unhygienic.run `(term| match value with | whole@proof:some itemValue => itemValue)
+
+private
+def named_dotted_pattern_shape : Syntax :=
+  Unhygienic.run `(term| match value with | whole@(.some itemValue) => itemValue)
+
+private
+def inaccessible_pattern_shape : Syntax :=
+  Unhygienic.run `(term| match value with | .(knownValue) => 0)
+
+private
+def grouped_reference_pattern_shape : Syntax :=
+  Unhygienic.run `(term| match value with | some itemValue | none => 0)
 
 /-- Tactic binders are harvested from real parser shapes; references are not. -/
 example : symbol_length_count intro_shape = 1 := by native_decide
@@ -383,7 +760,7 @@ example : role_count obtain_shape "tactic-binder" = 2 := by native_decide
 
 example : role_count obtain_shape "pattern-binder" = 0 := by native_decide
 
-example : role_count obtain_shape "local-binder" = 0 := by native_decide
+example : role_count obtain_shape "let-binder" = 0 := by native_decide
 
 /-- Nested tuple structure and type/RHS references are not mistaken for binders. -/
 example : role_count nested_obtain_shape "tactic-binder" = 3 := by native_decide
@@ -397,7 +774,7 @@ example : symbol_length_count rintro_shape = 1 := by native_decide
 /-- Tactic declaration heads consume the ancestor's role claim exactly once. -/
 example : role_count tactic_have_shape "tactic-binder" = 1 := by native_decide
 
-example : role_count tactic_have_shape "local-binder" = 0 := by native_decide
+example : role_count tactic_have_shape "let-binder" = 0 := by native_decide
 
 example : role_count tactic_let_shape "tactic-binder" = 1 := by native_decide
 
@@ -416,12 +793,12 @@ example : role_count tactic_equation_pattern_shape "tactic-binder" = 3 := by nat
 /-- The claim is consumed at the tactic head; declarations in its RHS remain local. -/
 example : role_count tactic_rhs_shape "tactic-binder" = 1 := by native_decide
 
-example : role_count tactic_rhs_shape "local-binder" = 1 := by native_decide
+example : role_count tactic_rhs_shape "let-binder" = 1 := by native_decide
 
 /-- Function parameters nested under a tactic declaration retain their local-binder role. -/
 example : role_count tactic_function_shape "tactic-binder" = 1 := by native_decide
 
-example : role_count tactic_function_shape "local-binder" = 1 := by native_decide
+example : role_count tactic_function_shape "parameter-binder" = 1 := by native_decide
 
 /-- Equation declarations claim their head while arm patterns retain their match role. -/
 example : role_count tactic_equations_shape "tactic-binder" = 1 := by native_decide
@@ -432,9 +809,72 @@ example : role_count tactic_equations_shape "match-binder" = 1 := by native_deci
 example : role_count anonymous_tactic_have_shape "tactic-binder" = 0 := by native_decide
 
 /-- Term-mode declarations do not inherit a tactic claim. -/
-example : role_count term_let_shape "local-binder" = 1 := by native_decide
+example : role_count term_let_shape "let-binder" = 1 := by native_decide
 
 example : role_count term_let_shape "tactic-binder" = 0 := by native_decide
+
+/-- Immutable term lets and do-block lets each produce one dedicated finding at
+    the declaration, while their resolved uses remain silent. -/
+example : let_rule_count semantic_let_style short_term_let_shape = 1 := by native_decide
+
+example : let_rule_count semantic_let_style short_do_let_shape = 1 := by native_decide
+
+/-- A mutable let is harvested once at its origin; assignment targets and RHS
+    references do not multiply the finding. -/
+example : let_rule_count semantic_let_style short_mutable_let_shape = 1 := by native_decide
+
+example : generic_let_count semantic_let_style short_mutable_let_shape = 0 := by native_decide
+
+/-- Let policy is role-local in both directions. -/
+example : let_rule_count let_allow_style short_term_let_shape = 0 := by native_decide
+
+example : let_rule_count shared_allow_does_not_reach_let_style short_term_let_shape = 1 := by
+  native_decide
+
+/-- Tactic lets, tactic instances, destructuring patterns, and recursive helper
+    heads remain separated from the ordinary let gate. -/
+example : let_rule_count semantic_let_style tactic_let_only_shape = 0 := by native_decide
+
+example : let_rule_count semantic_let_style tactic_letI_only_shape = 0 := by native_decide
+
+example : let_rule_count semantic_let_style pattern_let_only_shape = 0 := by native_decide
+
+example : let_rule_count semantic_let_style short_term_let_rec_shape = 0 := by native_decide
+
+example : let_rule_count semantic_let_style term_have_only_shape = 0 := by native_decide
+
+example : let_rule_count semantic_let_style quoted_let_only_shape = 0 := by native_decide
+
+/-- The ordinary binding surface is an exact syntactic partition: parameter,
+    lambda, and let sites are each harvested once under only their own role. -/
+example : role_count parameter_binder_shape "parameter-binder" = 1 := by native_decide
+
+example : role_count parameter_binder_shape "lambda-binder" = 0 := by native_decide
+
+example : role_count parameter_binder_shape "let-binder" = 0 := by native_decide
+
+example : role_count lambda_binder_shape "parameter-binder" = 0 := by native_decide
+
+example : role_count lambda_binder_shape "lambda-binder" = 1 := by native_decide
+
+example : role_count lambda_binder_shape "let-binder" = 0 := by native_decide
+
+/-- The dedicated lambda gate replaces the generic floor finding and harvests
+    one binder exactly once. -/
+example : lambda_rule_count semantic_lambda_style lambda_binder_shape = 1 := by native_decide
+
+example : generic_lambda_count semantic_lambda_style lambda_binder_shape = 0 := by native_decide
+
+/-- Lambda allowances are role-local; the shared symbol bucket cannot admit a
+    lambda binder with the same spelling. -/
+example : lambda_rule_count lambda_allow_style lambda_binder_shape = 0 := by native_decide
+
+example : lambda_rule_count shared_allow_does_not_reach_lambda_style lambda_binder_shape = 1 := by
+  native_decide
+
+example : role_count term_let_shape "parameter-binder" = 0 := by native_decide
+
+example : role_count term_let_shape "lambda-binder" = 0 := by native_decide
 
 /-- Primed declaration tactics share the same exact one-shot claim algebra. -/
 example : role_count primed_have_shape "tactic-binder" = 1 := by native_decide
@@ -444,12 +884,14 @@ example : role_count primed_let_shape "tactic-binder" = 1 := by native_decide
 /-- A recursive tactic head is claimed; its parameter and RHS declaration remain local. -/
 example : role_count tactic_let_rec_shape "tactic-binder" = 1 := by native_decide
 
-example : role_count tactic_let_rec_shape "local-binder" = 2 := by native_decide
+example : role_count tactic_let_rec_shape "parameter-binder" = 1 := by native_decide
+
+example : role_count tactic_let_rec_shape "let-binder" = 1 := by native_decide
 
 /-- Every mutual-recursion member consumes one claim, while parameters remain local. -/
 example : role_count tactic_mutual_let_rec_shape "tactic-binder" = 2 := by native_decide
 
-example : role_count tactic_mutual_let_rec_shape "local-binder" = 2 := by native_decide
+example : role_count tactic_mutual_let_rec_shape "parameter-binder" = 2 := by native_decide
 
 /-- Equation-style recursive heads are tactic binders; arm patterns remain match binders. -/
 example : role_count tactic_equation_let_rec_shape "tactic-binder" = 1 := by native_decide
@@ -459,7 +901,48 @@ example : role_count tactic_equation_let_rec_shape "match-binder" = 1 := by nati
 /-- Term-mode recursion cannot inherit a tactic claim. -/
 example : role_count term_let_rec_shape "tactic-binder" = 0 := by native_decide
 
-example : role_count term_let_rec_shape "local-binder" = 2 := by native_decide
+example : role_count term_let_rec_shape "recursive-helper" = 1 := by native_decide
+
+example : role_count term_let_rec_shape "parameter-binder" = 1 := by native_decide
+
+/-- Term recursive heads are harvested once under their dedicated role. -/
+example : role_count short_term_let_rec_shape "recursive-helper" = 1 := by native_decide
+
+/-- Enabling the semantic helper gate replaces, rather than duplicates, the
+    generic symbol-floor diagnostic. -/
+example : recursive_helper_rule_count semantic_recursive_helper_style short_term_let_rec_shape = 1 := by
+  native_decide
+
+example :
+    generic_recursive_helper_count semantic_recursive_helper_style short_term_let_rec_shape = 0 := by
+  native_decide
+
+/-- An exact-length helper allowance admits only the dedicated helper finding. -/
+example : recursive_helper_rule_count recursive_helper_allow_style short_term_let_rec_shape = 0 := by
+  native_decide
+
+/-- Equation-style term recursion closes the alternate parser-shape coverage
+    hole without claiming its arm pattern as another helper. -/
+example : role_count short_equation_term_let_rec_shape "recursive-helper" = 1 := by native_decide
+
+example :
+    recursive_helper_rule_count semantic_recursive_helper_style short_equation_term_let_rec_shape
+        = 1 := by native_decide
+
+example :
+    generic_recursive_helper_count semantic_recursive_helper_style short_equation_term_let_rec_shape
+        = 0 := by native_decide
+
+/-- Recursive `where` declarations share the helper role and single-report
+    contract despite their distinct container syntax. -/
+example : role_count short_where_helper_shape "recursive-helper" = 1 := by native_decide
+
+example : recursive_helper_rule_count semantic_recursive_helper_style short_where_helper_shape = 1 := by
+  native_decide
+
+example :
+    generic_recursive_helper_count semantic_recursive_helper_style short_where_helper_shape = 0 := by
+  native_decide
 
 /-- Elimination targets expose only their optional equation binder. -/
 example : role_count cases_equation_shape "tactic-binder" = 1 := by native_decide
@@ -478,5 +961,38 @@ example : symbol_length_count match_shape = 2 := by native_decide
 example : semantic_pattern_rule_count pattern_shape = 2 := by native_decide
 
 example : semantic_pattern_rule_count match_shape = 2 := by native_decide
+
+/-- Each dotted constructor is excluded independently in multi-pattern arms. -/
+example : semantic_pattern_rule_count multiple_pattern_shape = 2 := by native_decide
+
+/-- Grouped dotted alternatives exclude every constructor while retaining binders. -/
+example : semantic_pattern_rule_count grouped_constructor_shape = 1 := by native_decide
+
+/-- Qualified and multi-segment dotted constructor heads remain references. -/
+example : semantic_pattern_rule_count qualified_constructor_shape = 1 := by native_decide
+
+example : semantic_pattern_rule_count dotted_qualified_constructor_shape = 1 := by native_decide
+
+/-- Pre-resolved nullary constructors introduce no source-level binder. -/
+example : semantic_pattern_rule_count nullary_constructor_shape = 0 := by native_decide
+
+example : semantic_pattern_rule_count qualified_nullary_constructor_shape = 0 := by native_decide
+
+/-- Type ascriptions contribute their pattern binders, never identifiers from the type. -/
+example : semantic_pattern_rule_count typed_pattern_shape = 1 := by native_decide
+
+example : semantic_pattern_rule_count typed_tuple_pattern_shape = 2 := by native_decide
+
+/-- Named patterns bind the outer name and subpattern, plus their optional equation proof. -/
+example : semantic_pattern_rule_count named_pattern_shape = 2 := by native_decide
+
+example : semantic_pattern_rule_count named_equation_pattern_shape = 3 := by native_decide
+
+example : semantic_pattern_rule_count named_dotted_pattern_shape = 2 := by native_decide
+
+/-- Inaccessible terms are references and grouped nullary constructors remain references. -/
+example : semantic_pattern_rule_count inaccessible_pattern_shape = 0 := by native_decide
+
+example : semantic_pattern_rule_count grouped_reference_pattern_shape = 1 := by native_decide
 
 end Lean4Fmt.Rules.Naming

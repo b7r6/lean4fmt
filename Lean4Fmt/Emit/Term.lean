@@ -35,21 +35,24 @@ def comma_group
   -- an authored TRAILING comma (`[a, b,]`) has no slot in the rebuilt list
   -- (commas go BETWEEN items) — `none` rather than drop the token
   -- (gate-caught on aleph CLI.lean, tokens; the listItems? lesson again)
-  if (children.back?.map (fun c =>
-      c.isAtom && (bare_src c).trimAscii.toString == ",")).getD false then
+  if (children.back?.map (fun child =>
+      child.isAtom && (bare_src child).trimAscii.toString == ",")).getD false then
     return none
-  let mut ds : Array Doc := #[]
-  for c in children do
-    if c.isAtom then continue
-    ds := ds.push (← walk c)
+  let mut documents : Array Doc := #[]
+  for child in children do
+    if child.isAtom then continue
+    documents := documents.push (← walk child)
   -- literal pools (§5 fill): many short flat items — byte tables, opcode
   -- lists — pack and wrap at the width instead of exploding one per line
-  if ds.size ≥ 8 && ds.all (fun d => ((Lean4Fmt.Doc.flat_width d).getD 1000) ≤ 12) then
+  if documents.size ≥ 8
+      && documents.all (fun document => ((Lean4Fmt.Doc.flat_width document).getD 1000) ≤ 12) then
     let items :=
-      ((Array.range ds.size).map
-        (fun i => ds[i]! ++ (if i + 1 == ds.size then Doc.nil else Doc.text ","))).toList
+      ((Array.range documents.size).map
+        (fun index =>
+          documents[index]!
+            ++ (if index + 1 == documents.size then Doc.nil else Doc.text ","))).toList
     return some (.text l ++ .nest 2 (Doc.fillSep items) ++ .text r)
-  return some (Lean4Fmt.Doc.comma_list l r ds)
+  return some (Lean4Fmt.Doc.comma_list l r documents)
 
 /-- Comment-bearing comma list, FORCED broken (a line comment cannot flatten,
     §0.4): one element per line at +2, each element's leading comment/blank
@@ -84,7 +87,7 @@ def seam_comma_list?
   if openTrail.any (· == '\n') then
     return none
   -- comments directly before the closer have no seam yet
-  let isWs (t : String) : Bool := t.all (fun c => c == ' ' || c == '\t')
+  let isWs (text : String) : Bool := text.all (fun char => char == ' ' || char == '\t')
   let closerLead := (Lean4Fmt.Syntax.leading? closer).getD ""
   if !(((closerLead.splitOn "\n").drop 1).dropLast.all isWs) then
     return none
@@ -92,21 +95,22 @@ def seam_comma_list?
     return none
   let mut body : Doc := .nil
   for h : idx in [0:pairs.size] do
-    let (e, comma?) := pairs[idx]
+    let (elementBinding, comma?) := pairs[idx]
     let last := idx + 1 == pairs.size
-    let some sep := Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? e).getD "")
+    let some sep := Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? elementBinding).getD "")
       | return none
-    let eDoc ← walk e
+    let eDoc ← walk elementBinding
     -- the same-line comment can trail the ELEMENT (comma-leading style:
-    -- `e  -- note` with `, e₂` on the next line) or the COMMA (`e, -- note`);
+    -- `elementBinding  -- note` with `, e₂` on the next line) or the COMMA (`elementBinding, -- note`);
     -- own both zones. Content in a comma's own LEADING has no seam — bail.
-    let eTrail := ((Lean4Fmt.Syntax.trailing? e).getD "").trimAscii.toString
+    let eTrail := ((Lean4Fmt.Syntax.trailing? elementBinding).getD "").trimAscii.toString
     -- inter-element comments in LEADING-COMMA style live in the COMMA's
     -- leading full lines — own them via the seam kit (placed after this
     -- element's comma, before the next element; pend collapse merges the
     -- separators). Plain whitespace comma-leading contributes nothing.
     let some (commaLeadSep, cTrail) := comma_trivia? comma? | return none
-    let trailT := String.intercalate " " (([eTrail, cTrail].filter (fun t => !t.isEmpty)))
+    let trailT :=
+      String.intercalate " " (([eTrail, cTrail].filter (fun text => !text.isEmpty)))
     if trailT.any (· == '\n') then return none
     -- when the comma is the LAST element's trailing zone owner, drop through:
     let _ := ()
@@ -154,22 +158,23 @@ def paren_doc (walk : Walk) (stx content : Lean.Syntax) : emit_m Doc := do
     ended early — tokens). -/
 private partial
 def tail_glue_safe (s : Lean.Syntax) : Bool :=
-  let k := s.getKind
-  if k == ``Lean.Parser.Term.byTactic || k == `Lean.Parser.Term.byTactic'
-      || k == ``Lean.Parser.Term.do then
+  let kind := s.getKind
+  if kind == ``Lean.Parser.Term.byTactic || kind == `Lean.Parser.Term.byTactic'
+      || kind == ``Lean.Parser.Term.do then
     true
-  else if k == ``Lean.Parser.Term.app then
+  else if kind == ``Lean.Parser.Term.app then
     ((s.getArgs[1]?.bind (·.getArgs.back?)).map tail_glue_safe).getD false
-  else if k == ``Lean.Parser.Term.fun then
+  else if kind == ``Lean.Parser.Term.fun then
     match s.getArgs[1]? with
-    | some bf => ((bf.getArgs.back?).map tail_glue_safe).getD false
-    | none    => false
-  else if k == ``Lean.Parser.Term.show then
+    | some bodyForm => ((bodyForm.getArgs.back?).map tail_glue_safe).getD false
+    | none          => false
+  else if kind == ``Lean.Parser.Term.show then
     ((s.getArgs.back?).map
-      (fun r =>
-        r.getKind == `Lean.Parser.Term.byTactic' || r.getKind == ``Lean.Parser.Term.byTactic
-            || (r.getKind == ``Lean.Parser.Term.fromTerm
-                && ((r.getArgs.back?).map tail_glue_safe).getD false))).getD
+      (fun result =>
+        result.getKind == `Lean.Parser.Term.byTactic'
+            || result.getKind == ``Lean.Parser.Term.byTactic
+            || (result.getKind == ``Lean.Parser.Term.fromTerm
+                && ((result.getArgs.back?).map tail_glue_safe).getD false))).getD
       false
   else
     false
@@ -191,17 +196,17 @@ def contains_comma_struct_inst (s : Lean.Syntax) : Bool :=
     leaf itself spans lines (nothing to wrap on). -/
 private partial
 def head_pieces? (s : Lean.Syntax) : Option (Array String) :=
-  let t := Lean4Fmt.Emit.canon_tok s
-  if !t.any (· == '\n') then
-    if t.isEmpty then some #[] else some #[t]
+  let text := Lean4Fmt.Emit.canon_tok s
+  if !text.any (· == '\n') then
+    if text.isEmpty then some #[] else some #[text]
   else if s.getArgs.isEmpty then
     none
   else
     Id.run do
       let mut pieces : Array String := #[]
-      for c in s.getArgs do
-        match head_pieces? c with
-        | some ps => pieces := pieces ++ ps
+      for child in s.getArgs do
+        match head_pieces? child with
+        | some piecesBinding => pieces := pieces ++ piecesBinding
         | none => return none
       return some pieces
 
@@ -229,8 +234,8 @@ def struct_field_value_doc
     (rest : Array Lean.Syntax)
     (fd : Lean.Syntax)
     : emit_m Doc := do
-  let da := fd.getArgs
-  let v := da[da.size - 1]?.getD Lean.Syntax.missing -- [":=", null?, value]
+  let defArgs := fd.getArgs
+  let value := defArgs[defArgs.size - 1]?.getD Lean.Syntax.missing -- [":=", null?, value]
   -- a field with BINDERS or type ascription (`symm _ _ h := …`) carries
   -- tokens between the lval and the value — the lval++":="++value shape
   -- would DELETE them (gate-caught on mathlib): join the HEAD (lval +
@@ -238,46 +243,47 @@ def struct_field_value_doc
   -- plain field. The old whole-field token join required the VALUE
   -- single-line too — the functor-instance idiom (`map {X Y} f := <app
   -- with (by …)>`) rode verbatim on it.
-  let expected := Lean4Fmt.Syntax.leaf_toks lvalStx ++ #[":="] ++ Lean4Fmt.Syntax.leaf_toks v
+  let expected := Lean4Fmt.Syntax.leaf_toks lvalStx ++ #[":="] ++ Lean4Fmt.Syntax.leaf_toks value
   if Lean4Fmt.Syntax.leaf_toks field != expected then
     let mut headT := Lean4Fmt.Emit.canon_tok lvalStx
-    let mut ok := !headT.isEmpty && !headT.any (· == '\n')
-    for r in rest do
-      if !ok then break
-      if r.getKind == ``Lean.Parser.Term.structInstFieldDef then continue
-      let t := Lean4Fmt.Emit.canon_tok r
-      if t.any (· == '\n') then ok := false
-      else if !t.isEmpty then headT := headT ++ " " ++ t
+    let mut valid := !headT.isEmpty && !headT.any (· == '\n')
+    for remaining in rest do
+      if !valid then break
+      if remaining.getKind == ``Lean.Parser.Term.structInstFieldDef then continue
+      let text := Lean4Fmt.Emit.canon_tok remaining
+      if text.any (· == '\n') then valid := false
+      else if !text.isEmpty then headT := headT ++ " " ++ text
     -- the def node must be exactly the assign shape (`:=` + value)
-    if ok && Lean4Fmt.Syntax.leaf_toks fd == #[":="] ++ Lean4Fmt.Syntax.leaf_toks v then
-      let vdoc ← walk v
-      if chain_own_line v vdoc then
+    if valid
+        && Lean4Fmt.Syntax.leaf_toks fd == #[":="] ++ Lean4Fmt.Syntax.leaf_toks value then
+      let vdoc ← walk value
+      if chain_own_line value vdoc then
         return .text (headT ++ " :=") ++ .nest 2 (.hardline ++ vdoc)
       return .text (headT ++ " := ") ++ vdoc
-    let t := Lean4Fmt.Emit.canon_tok field
-    if t.isEmpty || t.any (· == '\n') then
+    let text := Lean4Fmt.Emit.canon_tok field
+    if text.isEmpty || text.any (· == '\n') then
       return (← verbatim field)
-    return .text t
-  let vdoc ← walk v
+    return .text text
+  let vdoc ← walk value
   -- a LET-chain value's body sits at hardline seams that ANCHOR AT THE
   -- CURRENT INDENT — glued after `lval := ` that is the FIELD column, so
   -- the comma-less field list ends at the chain body on reparse (the
   -- sepByIndent colGe law; gate-caught on Configuration as a hidden
   -- reparse-fail). A breaking chain value goes OWN-LINE at +2 instead
   -- (the mathlib source shape); flat ones still glue.
-  if chain_own_line v vdoc then
+  if chain_own_line value vdoc then
     return lval ++ .text " :=" ++ .nest 2 (.hardline ++ vdoc)
   return lval ++ .text " := " ++ vdoc
 
 private partial
 def struct_field_doc (walk : Walk) (field : Lean.Syntax) : emit_m Doc := do
-  let fa := field.getArgs
-  let lvalStx := fa[0]?.getD .missing
+  let fieldArgs := field.getArgs
+  let lvalStx := fieldArgs[0]?.getD .missing
   let lvalT := bare_src lvalStx
   let lval ← if !lvalT.isEmpty && !lvalT.any (· == '\n') then
       pure (Doc.text (Lean4Fmt.Emit.canon_tok lvalStx))
     else verbatim lvalStx
-  let rest := (fa[1]?.getD Lean.Syntax.missing).getArgs
+  let rest := (fieldArgs[1]?.getD Lean.Syntax.missing).getArgs
   let fd? := rest.find? (·.getKind == ``Lean.Parser.Term.structInstFieldDef)
   match fd? with
   | some fd => struct_field_value_doc walk field lvalStx lval rest fd
@@ -744,16 +750,16 @@ def anonymous_ctor_doc
   let children := (args[1]?.map (·.getArgs)).getD #[]
   if Lean4Fmt.Syntax.interior_has_line_comment stx then
     let mut pairs : Array (Lean.Syntax × Option Lean.Syntax) := #[]
-    for c in children do
-      if c.isAtom then
+    for child in children do
+      if child.isAtom then
         if !pairs.isEmpty then
-          pairs := pairs.set! (pairs.size - 1) (pairs[pairs.size - 1]!.1, some c)
-      else pairs := pairs.push (c, none)
+          pairs := pairs.set! (pairs.size - 1) (pairs[pairs.size - 1]!.1, some child)
+      else pairs := pairs.push (child, none)
     match ← seam_comma_list? walk "⟨" "⟩" (args[0]?.getD .missing) pairs (args[2]?.getD .missing) with
-    | some d => return d
+    | some document => return document
     | none => return (← verbatim stx)
   match ← comma_group walk "⟨" "⟩" children with
-  | some d => return d
+  | some document => return document
   | none => return (← verbatim stx "trailing-comma")
 
 private partial
@@ -767,8 +773,9 @@ def dependent_ite_doc
   -- dependent `if h : c then … else …`; same layout as termIfThenElse,
   -- same interior-tail comment bail (no seam for `… then x -- note`).
   for slot in [args[3]?, args[5]?] do
-    let t := ((slot.bind Lean4Fmt.Syntax.last_token_trailing?).getD "").trimAscii.toString
-    if !t.isEmpty then
+    let trailingText :=
+      ((slot.bind Lean4Fmt.Syntax.last_token_trailing?).getD "").trimAscii.toString
+    if !trailingText.isEmpty then
       return (← verbatim stx)
   -- and the branch-LEADING comment bail (see termIfThenElse)
   for slot in [args[5]?, args[args.size - 1]?] do
@@ -782,7 +789,9 @@ def dependent_ite_doc
   -- glues (`else if … then`) instead of breaking to `else` + line
   let elseIsIte :=
     (args[args.size-1]?.map
-      (fun e => e.getKind == Lean4Fmt.Syntax.ite_kind || e.getKind == Lean4Fmt.Syntax.dite_kind)).getD
+      (fun expression =>
+        expression.getKind == Lean4Fmt.Syntax.ite_kind
+            || expression.getKind == Lean4Fmt.Syntax.dite_kind)).getD
       false
   let elseTail : Doc :=
     if (← read).breaking.elseIfChain && elseIsIte then
@@ -935,9 +944,9 @@ def literal_doc
     : emit_m Doc := do
   -- literal: exact token; multi-line strings are CONTENT (quiet — not an
   -- actionable opt-out)
-  let t := bare_src stx
-  if !t.isEmpty && !t.any (· == '\n') then
-    return .text t
+  let text := bare_src stx
+  if !text.isEmpty && !text.any (· == '\n') then
+    return .text text
   return (← verbatim_quiet stx)
 
 private partial

@@ -41,8 +41,8 @@ def Case.of_string? : String → Option Case
 private
 def cap (s : String) : String :=
   match s.toList with
-  | []      => ""
-  | c :: cs => String.ofList (c.toUpper :: cs)
+  | [] => ""
+  | headChar :: tailChars => String.ofList (headChar.toUpper :: tailChars)
 
 /-- Split one `_`-free piece on lower/digit → Upper boundaries; each word
     lowercased. An all-caps acronym run stays ONE word (the documented limit). -/

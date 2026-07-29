@@ -67,9 +67,11 @@ class PolicyScopeTests(unittest.TestCase):
         results = {
             "src/A.lean": {
                 "diagnostics": [
-                    {"rule": "symbol-length", "role": "local-binder"},
+                    {"rule": "symbol-length", "role": "parameter-binder"},
+                    {"rule": "symbol-length", "role": "lambda-binder"},
+                    {"rule": "symbol-length", "role": "let-binder"},
                     {"rule": "symbol-length", "role": "tactic-binder"},
-                    {"rule": "symbol-name", "role": "local-binder"},
+                    {"rule": "symbol-name", "role": "parameter-binder"},
                 ]
             },
             "src/core/base/B.lean": {
@@ -79,10 +81,28 @@ class PolicyScopeTests(unittest.TestCase):
         summary, total = DISTRIBUTED.summarize_symbol_length_roles(
             results, manifest_files, scopes
         )
-        self.assertEqual(total, 3)
-        self.assertEqual(sum(scope["symbol_length_total"] for scope in summary), 3)
+        self.assertEqual(total, 5)
+        self.assertEqual(sum(scope["symbol_length_total"] for scope in summary), 5)
         preset_scope = next(scope for scope in summary if scope["name"] == "preset:straylight")
+        self.assertEqual(preset_scope["symbol_length_by_role"]["parameter-binder"], 1)
+        self.assertEqual(preset_scope["symbol_length_by_role"]["lambda-binder"], 1)
+        self.assertEqual(preset_scope["symbol_length_by_role"]["let-binder"], 1)
         self.assertEqual(preset_scope["symbol_length_by_role"]["tactic-binder"], 1)
+
+    def test_recursive_helper_has_named_exact_cover_bucket(self):
+        files = [record("src/Recursive.lean")]
+        scopes = DISTRIBUTED.classify_policy_scopes(files)
+        summary, total = DISTRIBUTED.summarize_symbol_length_roles(
+            {
+                "src/Recursive.lean": {
+                    "diagnostics": [{"rule": "symbol-length", "role": "recursive-helper"}]
+                }
+            },
+            {"src/Recursive.lean": files[0]},
+            scopes,
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(summary[0]["symbol_length_by_role"], {"recursive-helper": 1})
 
     def test_missing_symbol_role_fails_closed(self):
         files = [record("src/A.lean")]

@@ -134,9 +134,9 @@ def modifiers_doc
       let attrText := (margs[1]?.map bare_src).getD "" |>.trimAscii.toString
       let restParts :=
         (margs.toList.drop 2).filterMap
-          (fun c =>
-            let s := (bare_src c).trimAscii.toString;
-            if s.isEmpty then none else some s)
+          (fun child =>
+            let text := (bare_src child).trimAscii.toString
+            if text.isEmpty then none else some text)
       -- placed comment seams: full-line comments in a LATER piece's leading
       -- (`/-- doc -/` then `-- TODO` then `@[attr]` — the mathlib idiom) sit
       -- at the own-line seams between pieces and place via leadingSep?; the
@@ -145,9 +145,9 @@ def modifiers_doc
       -- otherwise, the ElementaryMaps law). Unownable shapes bailed in
       -- modifiersCommentHazard before we got here.
       let sepOf : String → Option Doc :=
-        fun l =>
-          if Lean4Fmt.Syntax.has_line_comment l || (l.splitOn "/-").length > 1 then
-            Lean4Fmt.Doc.leading_sep? l
+        fun line =>
+          if Lean4Fmt.Syntax.has_line_comment line || (line.splitOn "/-").length > 1 then
+            Lean4Fmt.Doc.leading_sep? line
           else
             none
       let attrSep : Option Doc :=
@@ -156,11 +156,12 @@ def modifiers_doc
         else
           none
       let mut state : modifier_state := { seen := !docText.isEmpty || !attrText.isEmpty }
-      for c in margs.toList.drop 2 do
-        if (bare_src c).trimAscii.toString.isEmpty then continue
+      for child in margs.toList.drop 2 do
+        if (bare_src child).trimAscii.toString.isEmpty then continue
         if state.seen then
-          match sepOf ((Lean4Fmt.Syntax.leading? c).getD "") with
-          | some s => state := { state with restSep := some ((state.restSep.getD .nil) ++ s) }
+          match sepOf ((Lean4Fmt.Syntax.leading? child).getD "") with
+          | some textValue =>
+            state := { state with restSep := some ((state.restSep.getD .nil) ++ textValue) }
           | none => pure ()
         state := { state with seen := true }
       let kwSep : Option Doc := if state.seen then sepOf kwLead else none
@@ -217,20 +218,20 @@ def eqns_formattable (declVal : Lean.Syntax) : Bool :=
       -- content (a comment leadingSep? cannot place) keeps whole-decl verbatim
       for slot in margs.toList.drop 1 do
         if (bare_src slot).trimAscii.toString.isEmpty then continue
-        let isWsL (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
+        let isWsL (line : String) : Bool := line.all (fun char => char == ' ' || char == '\t')
         if !isWsL ((((Lean4Fmt.Syntax.leading? slot).getD "").splitOn "\n").headD "") then
           return false
         -- ws-sensitivity CLASS 5 (Emit/WsSensitivity): a multi-line
         -- comment/docstring inside the suffix — the verbatim tail re-anchors by
         -- column and would shift the token's interior bytes
-        let st := bare_src slot
-        if reanchors_multiline_token st then
+        let slotText := bare_src slot
+        if reanchors_multiline_token slotText then
           return false
       let altsNode := (margs[0]?).getD .missing
       let mut alts : Array Lean.Syntax := #[]
-      for g in altsNode.getArgs do
-        for c in g.getArgs do
-          if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+      for group in altsNode.getArgs do
+        for child in group.getArgs do
+          if child.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push child
       if alts.isEmpty then
         return false
       -- the per-arm seam conditions, mirrored from the valForm loop: any bail
@@ -242,7 +243,7 @@ def eqns_formattable (declVal : Lean.Syntax) : Bool :=
         if Lean4Fmt.Syntax.has_unowned_interior_comment alt then
           return false
         let lead := (Lean4Fmt.Syntax.leading? alt).getD ""
-        let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
+        let isWs (line : String) : Bool := line.all (fun char => char == ' ' || char == '\t')
         if !isWs ((lead.splitOn "\n").headD "") then
           return false
         let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
@@ -258,17 +259,21 @@ def eqns_formattable (declVal : Lean.Syntax) : Bool :=
 private
 def comment_block? (trivia : String) : Option String :=
   Id.run do
-    let isWs (l : String) : Bool := l.all (fun c => c == ' ' || c == '\t')
-    let mut ls := trivia.splitOn "\n"
-    ls := ls.dropWhile isWs
-    ls := (ls.reverse.dropWhile isWs).reverse
-    if ls.isEmpty then
+    let isWs (line : String) : Bool := line.all (fun char => char == ' ' || char == '\t')
+    let mut lines := trivia.splitOn "\n"
+    lines := lines.dropWhile isWs
+    lines := (lines.reverse.dropWhile isWs).reverse
+    if lines.isEmpty then
       return none
-    let indentOf (l : String) : Nat := (l.toList.takeWhile (· == ' ')).length
-    let base := (ls.filter (fun l => !isWs l)).foldl (fun m l => Nat.min m (indentOf l)) 1000000
+    let indentOf (line : String) : Nat := (line.toList.takeWhile (· == ' ')).length
+    let base :=
+      (lines.filter (fun line => !isWs line)).foldl
+        (fun minimum line => Nat.min minimum (indentOf line))
+        1000000
     let base := if base == 1000000 then 0 else base
     let dedented :=
-      ls.map (fun l => if l.length ≥ base then String.ofList (l.toList.drop base) else l)
+      lines.map
+        (fun line => if line.length ≥ base then String.ofList (line.toList.drop base) else line)
     return some (String.intercalate "\n" dedented)
 
 /-- Signature return-type info: `none` if there is no type spec, else
@@ -283,23 +288,28 @@ def type_info
     (walk : Lean4Fmt.Emit.Walk)
     (sig : Lean.Syntax)
     : emit_m (Option (Doc × Doc × Nat × Bool)) := do
-  let a := sig.getArgs
+  let args := sig.getArgs
   let tsNode : Option Lean.Syntax :=
-    a[1]?.bind (fun x => if x.getKind == ``Lean.Parser.Term.typeSpec then some x else x.getArgs[0]?)
+    args[1]?.bind
+      (fun candidate =>
+        if candidate.getKind == ``Lean.Parser.Term.typeSpec then
+          some candidate
+        else
+          candidate.getArgs[0]?)
   match tsNode with
-  | some ts =>
-    if ts.getKind == ``Lean.Parser.Term.typeSpec
-        && !Lean4Fmt.Syntax.subtree_has_line_comment ts then
-      let term ← walk (ts.getArgs[1]?.getD .missing)
-      let colonType ← verbatim_quiet ts   -- probe: logged only if the span is TAKEN
+  | some tokens =>
+    if tokens.getKind == ``Lean.Parser.Term.typeSpec
+        && !Lean4Fmt.Syntax.subtree_has_line_comment tokens then
+      let term ← walk (tokens.getArgs[1]?.getD .missing)
+      let colonType ← verbatim_quiet tokens   -- probe: logged only if the span is TAKEN
       -- wide types are ACTIVE now: commaGroups carry fillSep pools (§5), so a
       -- byte table reflows as a packed fill instead of exploding one-per-line
       if Lean4Fmt.Doc.hasMultilineVerbatim term then
-        log_opt_out ts
+        log_opt_out tokens
         return some (colonType, colonType, (Lean4Fmt.Doc.flat_width colonType).getD 0, true)
       return some (term, colonType, (Lean4Fmt.Doc.flat_width term).getD 0, false)
     else
-      let ct ← verbatim ts
+      let ct ← verbatim tokens
       return some (ct, ct, (Lean4Fmt.Doc.flat_width ct).getD 0, true)  -- comment/unexpected: whole span
   | none => return none
 
@@ -533,9 +543,9 @@ def glue_body_blank (d : Doc) : Doc :=
     -- `.line` must be REPLACED by the blank, not preceded by it — a flat-decided
     -- group after a pending blank renders the line's space after the indent
     -- flush (a spurious column; caught as an idempotence failure)
-    | .cat kw (.group (.nest n (.cat .line rest))) => .cat kw (.nest n (.cat (.blank 1) rest))
-    | .cat kw rest => .cat kw (.cat (.blank 1) rest)
-    | d => d
+    | .cat keyword (.group (.nest count (.cat .line rest))) => .cat keyword (.nest count (.cat (.blank 1) rest))
+    | .cat keyword rest => .cat keyword (.cat (.blank 1) rest)
+    | document => document
 
 /-- `bodyOwnLine` for VERBATIM value spans: when the span's first line is
     exactly `:=` / `:= by` / `:= do`, split that keyword line off the opaque
@@ -570,11 +580,11 @@ def span_body_blank_lines
 
 private
 def span_body_blank (bodyOwnLine : Bool) (declVal : Lean.Syntax) : val_form → val_form
-  | .span d =>
+  | .span document =>
     match (bare_src declVal).splitOn "\n" with
-    | first :: rest => span_body_blank_lines bodyOwnLine declVal d first rest
-    | _             => .span d
-  | vf => vf
+    | first :: rest => span_body_blank_lines bodyOwnLine declVal document first rest
+    | _             => .span document
+  | valueForm => valueForm
 
 private
 structure simple_value_context where
@@ -724,18 +734,19 @@ def equation_value (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : emit_m 
 private
 def valForm (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : emit_m val_form := do
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
-    let a := declVal.getArgs
+    let args := declVal.getArgs
     -- a same-line comment after `:=` lives in the ASSIGN ATOM's trailing
     -- (Lean trivia: same-line comments attach to the preceding token) — no
     -- layout here has a seam for it, and the value's leading never sees it
     -- (gate-caught on aleph EDSL.lean: `Claim :=   -- needs hardware`,
     -- comments class). The slot-tail-trailing rule, applied to `:=` itself.
-    if !(((a[0]?.bind Lean4Fmt.Syntax.trailing?).getD "").trimAscii.toString.isEmpty) then
+    if !(((args[0]?.bind Lean4Fmt.Syntax.trailing?).getD "").trimAscii.toString.isEmpty) then
       return .span (← verbatim declVal "assign-trailing-comment")
-    let hasSuffix := (a[2]?.map (fun s => !(bare_src s).trimAscii.toString.isEmpty)).getD false
-    let hasWhere := (a[3]?.map (fun s => !s.getArgs.isEmpty)).getD false
-    let some value := a[1]? | return .span (← verbatim declVal "val-shape")
-    let context : simple_value_context := { declVal, args := a, value }
+    let hasSuffix :=
+      (args[2]?.map (fun suffix => !(bare_src suffix).trimAscii.toString.isEmpty)).getD false
+    let hasWhere := (args[3]?.map (fun whereBody => !whereBody.getArgs.isEmpty)).getD false
+    let some value := args[1]? | return .span (← verbatim declVal "val-shape")
+    let context : simple_value_context := { declVal, args, value }
     if hasSuffix || hasWhere then simple_value_with_suffix walk context
     else simple_value_body walk context
   else if declVal.getKind == ``Lean.Parser.Command.declValEqns then equation_value walk declVal
@@ -746,9 +757,9 @@ def valForm (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : emit_m val_for
     line). span includes `:=` (+1 for the leading space); body adds ` := ` (4). -/
 private
 def val_form.flat_width : val_form → Option Nat
-  | .span d   => (Lean4Fmt.Doc.flat_width d).map (· + 1)
-  | .body d _ => (Lean4Fmt.Doc.flat_width d).map (· + 4)
-  | .eqns _   => none
+  | .span document   => (Lean4Fmt.Doc.flat_width document).map (· + 1)
+  | .body document _ => (Lean4Fmt.Doc.flat_width document).map (· + 4)
+  | .eqns _          => none
 
 private
 structure broken_value_context where
@@ -1039,36 +1050,37 @@ def finish_defn_doc (walk : Lean4Fmt.Emit.Walk) (head : defn_head_context) : emi
     count toward the one-line budget.) -/
 private
 def defn_doc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.Syntax) : emit_m Doc := do
-  let a := defn.getArgs
+  let args := defn.getArgs
   -- content in slots past the value (a standalone `deriving` clause on a
   -- def) has no placement yet — dropping it would DELETE code (gate-caught
   -- on mathlib): whole-decl verbatim
-  for h : idx in [4:a.size] do
-    if !(bare_src a[idx]).trimAscii.toString.isEmpty then
+  for h : idx in [4:args.size] do
+    if !(bare_src args[idx]).trimAscii.toString.isEmpty then
       return (← verbatim defn "defn-extra-slot")
-  let kw :=
-    match a[0]? with
-    | some (Lean.Syntax.atom _ v) => v
+  let keyword :=
+    match args[0]? with
+    | some (Lean.Syntax.atom _ value) => value
     | _ => "def"
-  let declId := (a[1]?.map bare_src).getD ""
-  let vf ← match a[3]? with | some v => valForm walk v | none => pure (.body .nil false)
+  let declId := (args[1]?.map bare_src).getD ""
+  let valueForm ←
+    match args[3]? with | some value => valForm walk value | none => pure (.body .nil false)
   let bodyOwn := (← read).breaking.bodyOwnLine
-  let vf :=
-    match a[3]? with
-    | some v => span_body_blank bodyOwn v vf
-    | none   => vf
-  let nameCol := modsWidth + kw.length + 1
+  let valueForm :=
+    match args[3]? with
+    | some value => span_body_blank bodyOwn value valueForm
+    | none       => valueForm
+  let nameCol := modsWidth + keyword.length + 1
   finish_defn_doc
     walk
     { defnSyntax := defn,
-      args := a,
-      keyword := kw,
+      args,
+      keyword,
       identifier := declId,
-      valueForm := vf,
+      valueForm,
       nameCol,
       prefixWidth := nameCol + declId.length,
       lineWidth := (← read).layout.lineWidth,
-      signature? := a[2]? }
+      signature? := args[2]? }
 
 private
 def where_field_value_doc
@@ -1126,17 +1138,17 @@ def where_field_doc? (walk : Lean4Fmt.Emit.Walk) (f : Lean.Syntax) : emit_m (Opt
   if f.getKind != ``Lean.Parser.Term.structInstField then
     return none
   if (← read).breaking.preserveLineBreaks then
-    let t := (bare_src f).trimAscii.toString
-    if !t.isEmpty && !t.any (· == '\n')
+    let text := (bare_src f).trimAscii.toString
+    if !text.isEmpty && !text.any (· == '\n')
         && !Lean4Fmt.Syntax.interior_has_line_comment f then
-      return some (.text t)
-  let fa := f.getArgs
-  if fa.size != 2 then
+      return some (.text text)
+  let fieldArgs := f.getArgs
+  if fieldArgs.size != 2 then
     return none
-  let lvalT := Lean4Fmt.Emit.canon_tok fa[0]!
+  let lvalT := Lean4Fmt.Emit.canon_tok fieldArgs[0]!
   if lvalT.isEmpty || lvalT.any (· == '\n') then
     return none
-  let rest := fa[1]!.getArgs
+  let rest := fieldArgs[1]!.getArgs
   let some state := parse_where_field_state? lvalT rest | return none
   if let some e := state.eqns? then
     -- pattern-matching field (`le_sup_left | lift a, lift b => …` — no
@@ -1156,13 +1168,14 @@ def where_field_doc? (walk : Lean4Fmt.Emit.Walk) (f : Lean.Syntax) : emit_m (Opt
     if alts.isEmpty then
       return none
     let some pieces ← Lean4Fmt.Emit.arm_pieces? walk alts Lean4Fmt.Emit.token_join_flat? | return none
-    let al := (← read).alignment
+    let alignment := (← read).alignment
     return some (.text state.head
-      ++ .nest 2 (Lean4Fmt.Emit.arms_aligned_runs al.matchArms al.maxDelta pieces))
+      ++ .nest 2
+        (Lean4Fmt.Emit.arms_aligned_runs alignment.matchArms alignment.maxDelta pieces))
   let some fdef := state.defn? | return none
-  let da := fdef.getArgs
-  let some v := da[da.size - 1]? | return none
-  where_field_value_doc walk f state.head v
+  let defArgs := fdef.getArgs
+  let some value := defArgs[defArgs.size - 1]? | return none
+  where_field_value_doc walk f state.head value
 
 /-- `<head> := value` placement shared by instance/example heads: inline when
     it fits, else per the bodyOwnLine knob (glued do/by keep the keyword on the
@@ -1173,35 +1186,39 @@ def head_val_doc?
     (head : String)
     (declVal : Lean.Syntax)
     : emit_m (Option Doc) := do
-  let w := (← read).layout.lineWidth
+  let width := (← read).layout.lineWidth
   let bodyOwnLine := (← read).breaking.bodyOwnLine
   let alwaysBreak := (← read).breaking.bodyAlwaysBreak
   match span_body_blank bodyOwnLine declVal (← valForm walk declVal) with
-  | .span d => return some (.text head ++ .space ++ d)
-  | .body d glue =>
-    match Lean4Fmt.Doc.flat_width d with
-    | some fw =>
-      if head.length + 4 + fw ≤ w && !alwaysBreak && !glue then
-        return some (.text head ++ .text " := " ++ .flatten d)
-      else if glue && head.length + 4 + fw ≤ w && !alwaysBreak then
-        return some (.text head ++ .text " := " ++ .flatten d)
+  | .span document => return some (.text head ++ .space ++ document)
+  | .body document glue =>
+    match Lean4Fmt.Doc.flat_width document with
+    | some flatWidth =>
+      if head.length + 4 + flatWidth ≤ width && !alwaysBreak && !glue then
+        return some (.text head ++ .text " := " ++ .flatten document)
+      else if glue && head.length + 4 + flatWidth ≤ width && !alwaysBreak then
+        return some (.text head ++ .text " := " ++ .flatten document)
       else if glue then
-        return some (.text head ++ .text " := " ++ (if bodyOwnLine then glue_body_blank d else d))
+        return some
+          (.text head ++ .text " := "
+              ++ (if bodyOwnLine then glue_body_blank document else document))
       else if bodyOwnLine then
-        return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
+        return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ document))
       else if alwaysBreak then
-        return some (.text head ++ .text " :=" ++ .nest 2 (.hardline ++ d))
+        return some (.text head ++ .text " :=" ++ .nest 2 (.hardline ++ document))
       else
-        return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ d)))
+        return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ document)))
     | none =>
       if glue then
-        return some (.text head ++ .text " := " ++ (if bodyOwnLine then glue_body_blank d else d))
+        return some
+          (.text head ++ .text " := "
+              ++ (if bodyOwnLine then glue_body_blank document else document))
       else if bodyOwnLine then
-        return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
+        return some (.text head ++ .text " :=" ++ .nest 2 (.blank 1 ++ document))
       else if alwaysBreak then
-        return some (.text head ++ .text " :=" ++ .nest 2 (.hardline ++ d))
+        return some (.text head ++ .text " :=" ++ .nest 2 (.hardline ++ document))
       else
-        return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ d)))
+        return some (.text head ++ .text " :=" ++ .group (.nest 2 (.line ++ document)))
   | .eqns _ => return none
 
 /-- The field block of a `whereStructInst` declVal: one field per line, the
@@ -1209,33 +1226,34 @@ def head_val_doc?
     and nests. -/
 private
 def where_body_doc? (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : emit_m (Option Doc) := do
-  let wa := declVal.getArgs
-  if wa.size != 3 then
+  let whereArgs := declVal.getArgs
+  if whereArgs.size != 3 then
     return none
-  if !((wa[2]?.map bare_src).getD "").trimAscii.toString.isEmpty then
+  if !((whereArgs[2]?.map bare_src).getD "").trimAscii.toString.isEmpty then
     return none
-  if !((Lean4Fmt.Syntax.trailing? wa[0]!).getD "").trimAscii.toString.isEmpty then
+  if !((Lean4Fmt.Syntax.trailing? whereArgs[0]!).getD "").trimAscii.toString.isEmpty then
     return none
-  let fields := ((wa[1]?.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
+  let fields := ((whereArgs[1]?.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
   let mut body : Doc := .nil
-  let mut n := 0
+  let mut fieldCount := 0
   for h : idx in [0:fields.size] do
-    let f := fields[idx]
-    if (bare_src f).trimAscii.toString.isEmpty then continue -- separator slot
-    if f.isAtom then
+    let field := fields[idx]
+    if (bare_src field).trimAscii.toString.isEmpty then continue -- separator slot
+    if field.isAtom then
       return none
     -- field-interior comments: whereFieldDoc? owns the accounting now (the
     -- VALUE's leading is a placeable zone — mathlib's `-- Porting note:`
     -- idiom); anything it cannot place still bails there
-    n := n + 1
-    let trailT := ((Lean4Fmt.Syntax.trailing? f).getD "").trimAscii.toString
+    fieldCount := fieldCount + 1
+    let trailT := ((Lean4Fmt.Syntax.trailing? field).getD "").trimAscii.toString
     let last := idx + 1 == fields.size
     if !last && trailT.any (· == '\n') then
       return none
     let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-    let some sep := Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? f).getD "") | return none
-    let some d ← where_field_doc? walk f | return none
-    body := body ++ sep ++ d ++ trailDoc
+    let some sep := Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? field).getD "")
+        | return none
+    let some document ← where_field_doc? walk field | return none
+    body := body ++ sep ++ document ++ trailDoc
   -- n == 0 is the EMPTY where (`instance … : T where` — every field
   -- defaulted; the mathlib Prop-class idiom): a bare `where` tail, no body
   return some body
@@ -1248,15 +1266,15 @@ def def_where_doc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : emit_m (Op
   if dargs.size < 4 then
     return none
   for h : idx in [0:3] do
-    let c := dargs[idx]!
+    let child := dargs[idx]!
     -- first child's leading = the FORM's own leading — the enclosing seam
     -- owns it (see exampleDoc?); interior comments still bail
     let ownLead :=
       if idx == 0 then
-        Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? c).getD "")
+        Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? child).getD "")
       else
         0
-    if Lean4Fmt.Syntax.count_subtree_line_comments c > ownLead then
+    if Lean4Fmt.Syntax.count_subtree_line_comments child > ownLead then
       return none
   let some body ← where_body_doc? walk dargs[3]! | return none
   let kwT := Lean4Fmt.Emit.canon_tok dargs[0]!
@@ -1290,30 +1308,30 @@ def example_doc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : emit_m (Opti
     return none
   let mut head := ""
   for h : idx in [0:2] do
-    let c := dargs[idx]!
+    let child := dargs[idx]!
     -- the FIRST child's leading is the DECL's leading — the Module seam owns
     -- it (a `-- note` above an example must not evict the inline path; found
     -- as first-after-comment examples breaking while identical twins inline)
     let ownLead :=
       if idx == 0 then
-        Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? c).getD "")
+        Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? child).getD "")
       else
         0
-    if Lean4Fmt.Syntax.count_subtree_line_comments c > ownLead then
+    if Lean4Fmt.Syntax.count_subtree_line_comments child > ownLead then
       return none
-    let t := Lean4Fmt.Emit.canon_tok c
+    let text := Lean4Fmt.Emit.canon_tok child
     -- flatten-first: a multi-line signature's canonical one-line spelling
     let wLim := (← read).layout.lineWidth
-    let t :=
-      if t.any (· == '\n') then
-        match Lean4Fmt.Emit.token_join_flat? c with
-        | some ft => if ft.length + 16 ≤ wLim then ft else t
-        | none    => t
+    let text :=
+      if text.any (· == '\n') then
+        match Lean4Fmt.Emit.token_join_flat? child with
+        | some ftValue => if ftValue.length + 16 ≤ wLim then ftValue else text
+        | none         => text
       else
-        t
-    if t.any (· == '\n') then
+        text
+    if text.any (· == '\n') then
       return none
-    if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
+    if !text.isEmpty then head := if head.isEmpty then text else head ++ " " ++ text
   if head.isEmpty then
     return none
   if dargs[2]!.getKind != ``Lean.Parser.Command.declValSimple then
@@ -1330,14 +1348,15 @@ def doc_head_val_doc?
     : emit_m (Option Doc) := do
   let bodyOwnLine := (← read).breaking.bodyOwnLine
   match span_body_blank bodyOwnLine declVal (← valForm walk declVal) with
-  | .span d => return some (hd ++ .text " " ++ d)
-  | .body d glue =>
+  | .span document => return some (hd ++ .text " " ++ document)
+  | .body document glue =>
     if glue then
-      return some (hd ++ .text " := " ++ (if bodyOwnLine then glue_body_blank d else d))
+      return some
+        (hd ++ .text " := " ++ (if bodyOwnLine then glue_body_blank document else document))
     else if bodyOwnLine then
-      return some (hd ++ .text " :=" ++ .nest 2 (.blank 1 ++ d))
+      return some (hd ++ .text " :=" ++ .nest 2 (.blank 1 ++ document))
     else
-      return some (hd ++ .text " :=" ++ .nest 2 (.hardline ++ d))
+      return some (hd ++ .text " :=" ++ .nest 2 (.hardline ++ document))
   | .eqns _ => return none
 
 /-- An `example` whose signature cannot flatten: binders via the kit, the
@@ -1351,18 +1370,22 @@ def example_walked_doc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : emit_
     return none
   if dargs[2]!.getKind != ``Lean.Parser.Command.declValSimple then
     return none
-  let sa := dargs[1]!.getArgs
-  if sa.size < 2 then
+  let signatureArgs := dargs[1]!.getArgs
+  if signatureArgs.size < 2 then
     return none
-  let mut hd : Doc := .text ((bare_src dargs[0]!).trimAscii.toString)
-  for b in ((sa[0]?).map (·.getArgs)).getD #[] do
-    let bd ← Lean4Fmt.Emit.binder_doc walk b
+  let mut head : Doc := .text ((bare_src dargs[0]!).trimAscii.toString)
+  for binder in ((signatureArgs[0]?).map (·.getArgs)).getD #[] do
+    let bd ← Lean4Fmt.Emit.binder_doc walk binder
     if Lean4Fmt.Doc.hasMultilineVerbatim bd then
       return none
-    hd := hd ++ .space ++ bd
+    head := head ++ .space ++ bd
   let tyNode :=
-    (sa[1]?.bind
-      (fun x => if x.getKind == ``Lean.Parser.Term.typeSpec then some x else x.getArgs[0]?)).getD
+    (signatureArgs[1]?.bind
+      (fun candidate =>
+        if candidate.getKind == ``Lean.Parser.Term.typeSpec then
+          some candidate
+        else
+          candidate.getArgs[0]?)).getD
       .missing
   if tyNode.getKind != ``Lean.Parser.Term.typeSpec then
     return none
@@ -1370,7 +1393,7 @@ def example_walked_doc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : emit_
   if Lean4Fmt.Doc.hasMultilineVerbatim tyDoc then
     return none
   let cont := (← read).layout.continuationIndent
-  doc_head_val_doc? walk (hd ++ .text " :" ++ .group (.nest cont (.line ++ tyDoc))) dargs[2]!
+  doc_head_val_doc? walk (head ++ .text " :" ++ .group (.nest cont (.line ++ tyDoc))) dargs[2]!
 
 /-- Fallback for an `example` whose SIGNATURE spans lines (quasiquote types):
     the keyword rides active, everything from the signature on is ONE
@@ -1385,8 +1408,8 @@ def example_span_doc? (defn : Lean.Syntax) : emit_m (Option Doc) := do
   if kwT.isEmpty || kwT.any (· == '\n') then
     return none
   let rest := Lean.mkNullNode (dargs.extract 1 dargs.size)
-  let t := bare_src rest
-  if t.isEmpty then
+  let text := bare_src rest
+  if text.isEmpty then
     return none
   return some (.text (kwT ++ " ") ++ (← verbatim_quiet rest))
 
@@ -1474,21 +1497,21 @@ def instance_doc_head_value?
 
 private
 def instance_doc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : emit_m (Option Doc) := do
-  let a := defn.getArgs
+  let args := defn.getArgs
   let some (state, hd0, sigSyntax) ← instance_head? walk defn | return none
-  let w := (← read).layout.lineWidth
-  if !state.flatOk || (state.headTail?.isNone && state.head.length + 6 > w) then
+  let width := (← read).layout.lineWidth
+  if !state.flatOk || (state.headTail?.isNone && state.head.length + 6 > width) then
     -- over-width or unjoinable flat head: the shared sig machinery breaks it
     -- (the defwhere recipe) — binders/type per the knob under the keyword,
     -- the value behind the Doc head (docHeadValDoc?) or the where body
     let sigD ← sig_doc walk 9 state.head.length 6 sigSyntax
     if Lean4Fmt.Doc.hasMultilineReanchor sigD then
       return none
-    return (← instance_doc_head_value? walk (.text hd0 ++ sigD) a[5]!)
+    return (← instance_doc_head_value? walk (.text hd0 ++ sigD) args[5]!)
   match state.headTail? with
-  | some tail => return (← instance_doc_head_value? walk (.text state.head ++ tail) a[5]!)
+  | some tail => return (← instance_doc_head_value? walk (.text state.head ++ tail) args[5]!)
   | none => pure ()
-  let declVal := a[5]!
+  let declVal := args[5]!
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
     head_val_doc? walk state.head declVal
   else if declVal.getKind == ``Lean.Parser.Command.whereStructInst then
@@ -1519,29 +1542,31 @@ def modifiers_comment_hazard (m defn : Lean.Syntax) : Bool :=
       -- (token content, not a comment) — the naive test sent every such
       -- decl verbatim (round-6 census regression, 13 files dropped)
       let hasCommentContent :=
-        fun (l : String) => Lean4Fmt.Syntax.has_line_comment l || (l.splitOn "/-").length > 1
+        fun (line : String) =>
+          Lean4Fmt.Syntax.has_line_comment line || (line.splitOn "/-").length > 1
       let unownable :=
-        fun (l : String) => hasCommentContent l && (Lean4Fmt.Doc.leading_sep? l).isNone
+        fun (line : String) => hasCommentContent line && (Lean4Fmt.Doc.leading_sep? line).isNone
       let mut seenTokens := false
-      for c in m.getArgs do
+      for child in m.getArgs do
         if seenTokens then
-          let lead := (Lean4Fmt.Syntax.leading? c).getD ""
+          let lead := (Lean4Fmt.Syntax.leading? child).getD ""
           let leadC := Lean4Fmt.Syntax.count_line_comments lead
-          if Lean4Fmt.Syntax.count_subtree_line_comments c > leadC then
+          if Lean4Fmt.Syntax.count_subtree_line_comments child > leadC then
             return true
           if unownable lead then
             return true
-        else if !(bare_src c).isEmpty then
+        else if !(bare_src child).isEmpty then
           seenTokens := true
           -- the docComment slot is a null WRAPPER around the docComment node, and
           -- docstring text starts with `/--` — which contains `--` — so the bare-text
           -- check must exempt it (its interior holds no trivia anyway)
           let isDocWrap :=
-            c.getKind == ``Lean.Parser.Command.docComment
-                || (c.getArgs[0]?.map (·.getKind == ``Lean.Parser.Command.docComment)).getD false
-          if !isDocWrap && Lean4Fmt.Syntax.has_line_comment (bare_src c) then
+            child.getKind == ``Lean.Parser.Command.docComment
+                || (child.getArgs[0]?.map (·.getKind == ``Lean.Parser.Command.docComment)).getD
+                  false
+          if !isDocWrap && Lean4Fmt.Syntax.has_line_comment (bare_src child) then
             return true
-          if Lean4Fmt.Syntax.has_line_comment ((Lean4Fmt.Syntax.trailing? c).getD "") then
+          if Lean4Fmt.Syntax.has_line_comment ((Lean4Fmt.Syntax.trailing? child).getD "") then
             return true
       -- gap between the last modifier and the keyword = the defn head's leading;
       -- with no modifier tokens at all that gap IS the outer leading (exempt).
@@ -1549,7 +1574,7 @@ def modifiers_comment_hazard (m defn : Lean.Syntax) : Bool :=
       -- their line — a comment between them has no own-line seam: bail.
       let kwLead := (Lean4Fmt.Syntax.leading? defn).getD ""
       let restNonempty :=
-        (m.getArgs.toList.drop 2).any (fun c => !(bare_src c).trimAscii.toString.isEmpty)
+        (m.getArgs.toList.drop 2).any (fun child => !(bare_src child).trimAscii.toString.isEmpty)
       if seenTokens && restNonempty && Lean4Fmt.Syntax.has_line_comment kwLead then
         return true
       return seenTokens && unownable kwLead

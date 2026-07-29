@@ -42,11 +42,11 @@ structure config_entry where
     (numbers, `true`/`false`, bare enum names all arrive as their token). -/
 private
 def unquote (v : String) : String :=
-  let v := v.trimAscii.toString
-  if v.length ≥ 2 && v.startsWith "\"" && v.endsWith "\"" then
-    ((v.drop 1).dropRight 1).toString
+  let value := v.trimAscii.toString
+  if value.length ≥ 2 && value.startsWith "\"" && value.endsWith "\"" then
+    ((value.drop 1).dropRight 1).toString
   else
-    v
+    value
 
 private
 def config_entry_of_parts (rawKey value : String) (line : Nat) : Except String config_entry := do
@@ -61,26 +61,66 @@ def parse_config_entry (text : String) (line : Nat) : Except String config_entry
   | [rawKey, value] => config_entry_of_parts rawKey value line
   | _               => throw s!"line {line}: expected `def <key> := <value>` (got: {text})"
 
-/-- Parse fmt.lean text into entries. Accepted lines: blank, full-line `--`
-    comment, or `def <dotted.key> := <literal>`. Anything else is an error —
-    the DSL is deliberately small; taste lives in the keys, not the syntax. -/
+/-- State threaded through the line-oriented configuration parser. -/
+private
+structure config_parse_state where
+  entries : List config_entry := []
+  line    : Nat := 0
+  pending : Option (String × Nat) := none
+
+private
+def consume_pending_config_line
+    (state : config_parse_state)
+    (text header : String)
+    (headerLine : Nat)
+    : Except String config_parse_state := do
+  if text.startsWith "def " then
+    throw s!"line {headerLine}: expected a literal after `:=`"
+  let entry ← parse_config_entry s!"{header} {text}" headerLine
+  return { state with entries := state.entries ++ [entry], pending := none }
+
+private
+def consume_fresh_config_line
+    (state : config_parse_state)
+    (text : String)
+    : Except String config_parse_state := do
+  if !text.startsWith "def " then
+    throw s!"line {state.line}: expected `def <key> := <value>` (got: {text})"
+  if text.endsWith ":=" then
+    return { state with pending := some (text, state.line) }
+  let entry ← parse_config_entry text state.line
+  return { state with entries := state.entries ++ [entry] }
+
+private
+def consume_config_line
+    (state : config_parse_state)
+    (line : String)
+    : Except String config_parse_state := do
+  let state := { state with line := state.line + 1 }
+  let text := line.trimAscii.toString
+  if text.isEmpty || text.startsWith "--" then
+    return state
+  match state.pending with
+  | some (header, headerLine) => consume_pending_config_line state text header headerLine
+  | none => consume_fresh_config_line state text
+
+/-- Parse fmt.lean text into entries. Accepted forms are a one-line definition
+    or the formatter's canonical two-line form with the literal on the next
+    nonblank line. Anything else is an error — the DSL is deliberately small;
+    taste lives in the keys, not the syntax. -/
 def parse_config (text : String) : Except String (List config_entry) := do
-  let mut out : List config_entry := []
-  let mut n := 0
+  let mut state : config_parse_state := {}
   for line in text.splitOn "\n" do
-    n := n + 1
-    let t := line.trimAscii.toString
-    if t.isEmpty || t.startsWith "--" then continue
-    if !t.startsWith "def " then
-      throw s!"line {n}: expected `def <key> := <value>` (got: {t})"
-    out := out ++ [← parse_config_entry t n]
-  return out
+    state ← consume_config_line state line
+  match state.pending with
+  | some (_, headerLine) => throw s!"line {headerLine}: expected a literal after `:=`"
+  | none => return state.entries
 
 private
 def as_nat (e : config_entry) : Except String Nat :=
   match e.val.toNat? with
-  | some n => pure n
-  | none   => throw s!"line {e.line}: `{e.key}` expects a number (got `{e.val}`)"
+  | some count => pure count
+  | none       => throw s!"line {e.line}: `{e.key}` expects a number (got `{e.val}`)"
 
 private
 def as_bool (e : config_entry) : Except String Bool :=
@@ -92,13 +132,13 @@ def as_bool (e : config_entry) : Except String Bool :=
 private
 def as_align (e : config_entry) : Except String align_mode :=
   match align_mode.of_string? e.val with
-  | some m => pure m
-  | none   => throw s!"line {e.line}: `{e.key}` expects always/whenShort/never (got `{e.val}`)"
+  | some candidate => pure candidate
+  | none => throw s!"line {e.line}: `{e.key}` expects always/whenShort/never (got `{e.val}`)"
 
 private
 def as_case (e : config_entry) : Except String Lean4Fmt.Casing.Case :=
   match Lean4Fmt.Casing.Case.of_string? e.val with
-  | some c => pure c
+  | some headChar => pure headChar
   | none =>
     throw s!"line {e.line}: `{e.key}` expects snake/camel/upperCamel/preserve (got `{e.val}`)"
 
@@ -117,25 +157,106 @@ def field_allow (s : Style) (e : config_entry) (size : Nat) : Except String Styl
   let names :=
     if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
   for name in names do
-    if name.isEmpty || name.length != size then
-      throw s!"line {e.line}: `{e.key}` entries must have exactly {size} characters (got `{name}`)"
+    let segments := name.splitOn "."
+    let leaf := segments.getLast!
+    if name.isEmpty || segments.any (·.isEmpty) || leaf.length != size then
+      throw
+        s!"line {e.line}: `{e.key}` entries must have a leaf with exactly {size} characters (got `{name}`)"
   let allow := (s.linting.fieldAllow.filter (·.1 != size)) ++ [(size, names)]
   pure { s with linting.fieldAllow := allow }
 
 private
-def apply_dynamic_entry (s : Style) (e : config_entry) (key : String) : Except String Style := do
-  let optionPrefix := "lint.symbolAllow."
-  let fieldPrefix := "lint.fieldAllow."
-  if key.startsWith optionPrefix then
-    match (key.drop optionPrefix.length).toString.toNat? with
-    | some size => symbol_allow s e size
-    | none => throw s!"line {e.line}: `{key}` expects a numeric exact-length suffix"
-  else if key.startsWith fieldPrefix then
-    match (key.drop fieldPrefix.length).toString.toNat? with
-    | some size => field_allow s e size
-    | none => throw s!"line {e.line}: `{key}` expects a numeric exact-length suffix"
+def declaration_allow (s : Style) (e : config_entry) (size : Nat) : Except String Style := do
+  let names :=
+    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
+  for name in names do
+    let segments := name.splitOn "."
+    let leaf := segments.getLast!
+    if name.isEmpty || segments.any (·.isEmpty) || leaf.length != size then
+      throw
+        s!"line {e.line}: `{e.key}` entries must have a leaf with exactly {size} characters (got `{name}`)"
+  let allow := (s.linting.declarationAllow.filter (·.1 != size)) ++ [(size, names)]
+  pure { s with linting.declarationAllow := allow }
+
+private
+def recursive_helper_allow (s : Style) (e : config_entry) (size : Nat) : Except String Style := do
+  let names :=
+    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
+  for name in names do
+    if name.isEmpty || name.length != size then
+      throw s!"line {e.line}: `{e.key}` entries must have exactly {size} characters (got `{name}`)"
+  let allow := (s.linting.recursiveHelperAllow.filter (·.1 != size)) ++ [(size, names)]
+  pure { s with linting.recursiveHelperAllow := allow }
+
+private
+def lambda_allow (s : Style) (e : config_entry) (size : Nat) : Except String Style := do
+  let names :=
+    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
+  for name in names do
+    if name.isEmpty || name.length != size then
+      throw s!"line {e.line}: `{e.key}` entries must have exactly {size} characters (got `{name}`)"
+  let allow := (s.linting.lambdaAllow.filter (·.1 != size)) ++ [(size, names)]
+  pure { s with linting.lambdaAllow := allow }
+
+private
+def let_allow (s : Style) (e : config_entry) (size : Nat) : Except String Style := do
+  let names :=
+    if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
+  for name in names do
+    if name.isEmpty || name.length != size then
+      throw s!"line {e.line}: `{e.key}` entries must have exactly {size} characters (got `{name}`)"
+  let allow := (s.linting.letAllow.filter (·.1 != size)) ++ [(size, names)]
+  pure { s with linting.letAllow := allow }
+
+private
+def apply_bucket_alias?
+    (style : Style)
+    (entry : config_entry)
+    (key aliasPrefix : String)
+    (applyBucket : Style → config_entry → Nat → Except String Style)
+    : Option (Except String Style) :=
+  if key.startsWith aliasPrefix then
+    some do
+      let some size := (key.drop aliasPrefix.length).toString.toNat?
+          | throw s!"line {entry.line}: `{key}` expects a numeric exact-length suffix"
+      applyBucket style entry size
   else
-    throw s!"line {e.line}: unknown option `{key}`"
+    none
+
+private
+def apply_dotted_bucket_entry?
+    (style : Style)
+    (entry : config_entry)
+    (key : String)
+    : Option (Except String Style) :=
+  apply_bucket_alias? style entry key "lint.symbolAllow." symbol_allow
+      <|> apply_bucket_alias? style entry key "lint.fieldAllow." field_allow
+      <|> apply_bucket_alias? style entry key "lint.declarationAllow." declaration_allow
+      <|> apply_bucket_alias? style entry key "lint.recursiveHelperAllow." recursive_helper_allow
+      <|> apply_bucket_alias? style entry key "lint.lambdaAllow." lambda_allow
+      <|> apply_bucket_alias? style entry key "lint.letAllow." let_allow
+
+private
+def apply_lean_bucket_entry?
+    (style : Style)
+    (entry : config_entry)
+    (key : String)
+    : Option (Except String Style) :=
+  apply_bucket_alias? style entry key "lint.symbolAllow" symbol_allow
+      <|> apply_bucket_alias? style entry key "lint.fieldAllow" field_allow
+      <|> apply_bucket_alias? style entry key "lint.declarationAllow" declaration_allow
+      <|> apply_bucket_alias? style entry key "lint.recursiveHelperAllow" recursive_helper_allow
+      <|> apply_bucket_alias? style entry key "lint.lambdaAllow" lambda_allow
+      <|> apply_bucket_alias? style entry key "lint.letAllow" let_allow
+
+private
+def apply_dynamic_entry (s : Style) (e : config_entry) (key : String) : Except String Style :=
+  match apply_dotted_bucket_entry? s e key with
+  | some result => result
+  | none =>
+    match apply_lean_bucket_entry? s e key with
+    | some result => result
+    | none        => throw s!"line {e.line}: unknown option `{key}`"
 
 private
 def apply_layout_or_breaking_entry (s : Style) (e : config_entry) : Except String Style := do
@@ -186,15 +307,49 @@ def apply_symbol_deny (s : Style) (e : config_entry) : Style :=
     if e.val.trimAscii.isEmpty then [] else (e.val.splitOn ",").map (·.trimAscii.toString)
   { s with linting.symbolDeny := names }
 
+private
+def apply_lint_entry (s : Style) (e : config_entry) : Except String Style := do
+  match e.key with
+  | "lint.symbolMinChars" => pure { s with linting.symbolMinChars := ← as_nat e }
+  | "lint.branchDensityMax" => pure { s with linting.branchDensityMax := ← as_nat e }
+  | "lint.handlerParameterMax" => pure { s with linting.handlerParameterMax := ← as_nat e }
+  | "lint.requireStanzaComments" => pure { s with linting.requireStanzaComments := ← as_bool e }
+  | "lint.symbolDeny" => pure (apply_symbol_deny s e)
+  | "lint.symbolPolicy" => apply_symbol_policy s e
+  | "lint.allowGreekSymbols" => pure { s with linting.allowGreekSymbols := ← as_bool e }
+  | "lint.allowHebrewSymbols" => pure { s with linting.allowHebrewSymbols := ← as_bool e }
+  | "lint.allowTraditionalInstances" =>
+    pure { s with linting.allowTraditionalInstances := ← as_bool e }
+  | "lint.requireTraditionalInstances" =>
+    pure { s with linting.requireTraditionalInstances := ← as_bool e }
+  | "lint.requirePositionalLoopNames" =>
+    pure { s with linting.requirePositionalLoopNames := ← as_bool e }
+  | "lint.requireSemanticPatternBinders" =>
+    pure { s with linting.requireSemanticPatternBinders := ← as_bool e }
+  | "lint.requireSemanticCollectionLoopNames" =>
+    pure { s with linting.requireSemanticCollectionLoopNames := ← as_bool e }
+  | "lint.requireSemanticFieldNames" =>
+    pure { s with linting.requireSemanticFieldNames := ← as_bool e }
+  | "lint.requireSemanticDeclarationNames" =>
+    pure { s with linting.requireSemanticDeclarationNames := ← as_bool e }
+  | "lint.requireSemanticRecursiveHelperNames" =>
+    pure { s with linting.requireSemanticRecursiveHelperNames := ← as_bool e }
+  | "lint.requireSemanticLambdaNames" =>
+    pure { s with linting.requireSemanticLambdaNames := ← as_bool e }
+  | "lint.requireSemanticLetNames" => pure { s with linting.requireSemanticLetNames := ← as_bool e }
+  | key => apply_dynamic_entry s e key
+
 /-- Apply one entry to a style. The single source of truth for the key space —
     an unknown key is an error here, which is what makes a typo'd axis LOUD. -/
 def apply_entry (s : Style) (e : config_entry) : Except String Style := do
   if e.key.startsWith "layout." || e.key.startsWith "breaking." then
     return ← apply_layout_or_breaking_entry s e
+  if e.key.startsWith "lint." then
+    return ← apply_lint_entry s e
   match e.key with
   | "preset" =>
     match by_name? e.val with
-    | some p => pure p
+    | some pathValue => pure pathValue
     | none => throw s!"line {e.line}: unknown preset `{e.val}`"
   | "alignment.structFields" => pure { s with alignment.structFields := ← as_align e }
   | "alignment.matchArms" => pure { s with alignment.matchArms := ← as_align e }
@@ -205,7 +360,7 @@ def apply_entry (s : Style) (e : config_entry) : Except String Style := do
   | "alignment.maxDelta" => pure { s with alignment.maxDelta := ← as_nat e }
   | "blankLines.policy" =>
     match blank_policy.of_string? e.val with
-    | some v => pure { s with blankLines.policy := v }
+    | some value => pure { s with blankLines.policy := value }
     | none => throw s!"line {e.line}: `{e.key}` expects preserve/impose/normalize"
   | "blankLines.betweenTopLevelDecls" =>
     pure { s with blankLines.betweenTopLevelDecls := ← as_nat e }
@@ -230,23 +385,7 @@ def apply_entry (s : Style) (e : config_entry) : Except String Style := do
   | "naming.types" => pure { s with naming.types := ← as_case e }
   | "naming.theorems" => pure { s with naming.theorems := ← as_case e }
   | "naming.terms" => pure { s with naming.terms := ← as_case e }
-  | "lint.symbolMinChars" => pure { s with linting.symbolMinChars := ← as_nat e }
-  | "lint.branchDensityMax" => pure { s with linting.branchDensityMax := ← as_nat e }
-  | "lint.handlerParameterMax" => pure { s with linting.handlerParameterMax := ← as_nat e }
-  | "lint.requireStanzaComments" => pure { s with linting.requireStanzaComments := ← as_bool e }
-  | "lint.symbolDeny" => pure (apply_symbol_deny s e)
-  | "lint.symbolPolicy" => apply_symbol_policy s e
-  | "lint.allowGreekSymbols" => pure { s with linting.allowGreekSymbols := ← as_bool e }
-  | "lint.allowHebrewSymbols" => pure { s with linting.allowHebrewSymbols := ← as_bool e }
-  | "lint.allowTraditionalInstances" =>
-    pure { s with linting.allowTraditionalInstances := ← as_bool e }
-  | "lint.requireTraditionalInstances" =>
-    pure { s with linting.requireTraditionalInstances := ← as_bool e }
-  | "lint.requirePositionalLoopNames" =>
-    pure { s with linting.requirePositionalLoopNames := ← as_bool e }
-  | "lint.requireSemanticPatternBinders" =>
-    pure { s with linting.requireSemanticPatternBinders := ← as_bool e }
-  | key => apply_dynamic_entry s e key
+  | key => throw s!"line {e.line}: unknown option `{key}`"
 
 /-- Apply a whole config (one fmt.lean) onto a base style, in entry order. -/
 def apply_config (s : Style) (entries : List config_entry) : Except String Style :=

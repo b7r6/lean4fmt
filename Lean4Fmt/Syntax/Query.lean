@@ -18,10 +18,10 @@ open Lean
     atoms. A meaning-preserving formatter keeps this exactly (§0.1). -/
 partial
 def leaf_toks : Lean.Syntax → Array String
-  | .atom _ v      => if v.isEmpty then #[] else #[v]
-  | .ident _ _ n _ => #[n.toString]
-  | .missing       => #[]
-  | .node _ _ args => args.foldl (fun tokens child => tokens ++ leaf_toks child) #[]
+  | .atom _ value      => if value.isEmpty then #[] else #[value]
+  | .ident _ _ count _ => #[count.toString]
+  | .missing           => #[]
+  | .node _ _ args     => args.foldl (fun tokens child => tokens ++ leaf_toks child) #[]
 
 /-- The trivia (leading+trailing) of a leaf's `SourceInfo`, as raw text. -/
 private
@@ -42,7 +42,7 @@ def trivia_text : Lean.Syntax → String
     not catch a DROPPED comment; the gate compares this too. Whitespace is stripped
     so that reflowed/re-indented (but content-identical) comments still match. -/
 def comment_content (stx : Lean.Syntax) : String :=
-  String.ofList ((trivia_text stx).toList.filter (fun c => !c.isWhitespace))
+  String.ofList ((trivia_text stx).toList.filter (fun char => !char.isWhitespace))
 
 /-- The kind SPINE: every node kind in preorder. Token equality alone
     under-specifies meaning in whitespace-sensitive regions — dedenting a tactic
@@ -58,7 +58,7 @@ def kind_spine (stx : Lean.Syntax) : Array Name :=
 /-- First identifier appearing in a subtree (the target of `namespace`/`open`). -/
 partial
 def first_ident : Lean.Syntax → Name
-  | .ident _ _ n _ => n
+  | .ident _ _ count _ => count
   | .node _ _ args =>
     args.foldl
       (fun found child => if found.isAnonymous then first_ident child else found)

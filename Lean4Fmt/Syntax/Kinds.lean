@@ -47,8 +47,8 @@ def dite_kind : SyntaxNodeKind := `termDepIfThenElse
     `Quiver.«term_⟶_»` — the mathlib operator families): the pattern applies
     to the LAST name component. -/
 def is_bin_op (kind : SyntaxNodeKind) : Bool :=
-  let s := ((kind.components.getLast?.map toString).getD "")
-  s.startsWith "«term_" && (s.toList.filter (· == '_')).length >= 2
+  let spelling := ((kind.components.getLast?.map toString).getD "")
+  spelling.startsWith "«term_" && (spelling.toList.filter (· == '_')).length >= 2
 
 #guard is_bin_op `«term_=_»
 #guard is_bin_op `CategoryTheory.«term_≫_»
@@ -61,8 +61,8 @@ def is_bin_op (kind : SyntaxNodeKind) : Bool :=
     These all share the binder-predicate layout: head tokens canonical, body
     width-aware at the continuation. -/
 def is_binder_comma (kind : SyntaxNodeKind) : Bool :=
-  let s := ((kind.components.getLast?.map toString).getD "")
-  (s.startsWith "«term" && s.endsWith "_,_»" && !is_bin_op kind)
+  let spelling := ((kind.components.getLast?.map toString).getD "")
+  (spelling.startsWith "«term" && spelling.endsWith "_,_»" && !is_bin_op kind)
     -- the NAMED big-operator binders (`∑ x ∈ s, body` parses as
     -- `BigOperators.bigsum`, not a «term…» spelling): same
     -- head-comma-body shape, same extended source-exact-head route
@@ -174,11 +174,12 @@ def owns_seams (kind : SyntaxNodeKind) : Bool :=
 def is_fun_block_value (v : Lean.Syntax) : Bool :=
   v.getKind == ``Lean.Parser.Term.fun
       && (match v.getArgs[1]? with
-      | some bf =>
-        bf.getKind == ``Lean.Parser.Term.basicFun
-            && (match bf.getArgs.back? with
-            | some b =>
-              b.getKind == ``Lean.Parser.Term.do || b.getKind == ``Lean.Parser.Term.byTactic
+      | some bodyForm =>
+        bodyForm.getKind == ``Lean.Parser.Term.basicFun
+            && (match bodyForm.getArgs.back? with
+            | some rightValue =>
+              rightValue.getKind == ``Lean.Parser.Term.do
+                  || rightValue.getKind == ``Lean.Parser.Term.byTactic
             | none => false)
       | none => false)
 
@@ -197,13 +198,13 @@ def is_never_inline (kind : SyntaxNodeKind) : Bool :=
     token's trailing stays exempt (the enclosing seam owns it). -/
 partial
 def has_unowned_line_comment (stx : Lean.Syntax) : Bool :=
-  go stx > count_line_comments ((last_token_trailing? stx).getD "")
+  countUnownedComments stx > count_line_comments ((last_token_trailing? stx).getD "")
   where
-    go (s : Lean.Syntax) : Nat :=
+    countUnownedComments (s : Lean.Syntax) : Nat :=
       match s with
-      | .node _ k args =>
-        if owns_seams k then 0
-        else args.foldl (fun n c => n + go c) 0
+      | .node _ kind args =>
+        if owns_seams kind then 0
+    else args.foldl (fun count child => count + countUnownedComments child) 0
       | _ =>
         count_line_comments ((leading? s).getD "")
           + count_line_comments ((trailing? s).getD "")
@@ -223,9 +224,9 @@ def has_unowned_interior_comment (stx : Lean.Syntax) : Bool :=
   where
     goI (s : Lean.Syntax) : Nat :=
       match s with
-      | .node _ k args =>
-        if owns_seams k then count_line_comments ((leading? s).getD "")
-        else args.foldl (fun n c => n + goI c) 0
+      | .node _ kind args =>
+        if owns_seams kind then count_line_comments ((leading? s).getD "")
+    else args.foldl (fun count child => count + goI child) 0
       | _ =>
         count_line_comments ((leading? s).getD "")
           + count_line_comments ((trailing? s).getD "")
@@ -235,8 +236,8 @@ def has_unowned_interior_comment (stx : Lean.Syntax) : Bool :=
     (`quotedName`) are single tokens — nothing inside them to respace — and
     must NOT poison their whole decl. -/
 def is_quot_term_kind (k : Lean.SyntaxNodeKind) : Bool :=
-  let s := k.toString
-  s.endsWith ".quot" || s.endsWith "Quot"
+  let spelling := k.toString
+  spelling.endsWith ".quot" || spelling.endsWith "Quot"
 
 /-- A metaprogram COMMAND whose whole body is quotation content byte-exact
     (arm padding included — the perturber's META guard mirrors this). -/
@@ -252,15 +253,16 @@ def is_quotation_command (k : Lean.SyntaxNodeKind) : Bool :=
 partial
 def has_quotation_kind (stx : Lean.Syntax) : Bool :=
   match stx with
-  | .node _ k args => is_quot_term_kind k || is_quotation_command k || args.any has_quotation_kind
-  | _              => false
+  | .node _ kind args =>
+    is_quot_term_kind kind || is_quotation_command kind || args.any has_quotation_kind
+  | _ => false
 
 /-- Whether the subtree carries one of the byte-exact metaprogram COMMANDS. -/
 partial
 def has_quotation_command (stx : Lean.Syntax) : Bool :=
   match stx with
-  | .node _ k args => is_quotation_command k || args.any has_quotation_command
-  | _              => false
+  | .node _ kind args => is_quotation_command kind || args.any has_quotation_command
+  | _                 => false
 
 /-- Bytes of CONTENT-BY-POLICY nodes (module docstrings, the header, quotation
     commands): permanently verbatim by design, NOT portable residue — the
@@ -270,12 +272,12 @@ def has_quotation_command (stx : Lean.Syntax) : Bool :=
 partial
 def policy_content_bytes (stx : Lean.Syntax) : Nat :=
   match stx with
-  | .node _ k args =>
-    if k == ``Lean.Parser.Module.header || k == `Lean.Parser.Command.moduleDoc
-        || is_quotation_command k then
+  | .node _ kind args =>
+    if kind == ``Lean.Parser.Module.header || kind == `Lean.Parser.Command.moduleDoc
+        || is_quotation_command kind then
       ((stx.getSubstring? false false).map (·.toString.utf8ByteSize)).getD 0
     else
-      args.foldl (fun n c => n + policy_content_bytes c) 0
+      args.foldl (fun count child => count + policy_content_bytes child) 0
   | _ => 0
 
 /-- The byte ranges of embedded quotation TERMS (outermost only — interiors
@@ -283,35 +285,40 @@ def policy_content_bytes (stx : Lean.Syntax) : Nat :=
     (the caller must then treat the WHOLE text as content). -/
 partial
 def quot_term_ranges? (stx : Lean.Syntax) : Option (Array (Nat × Nat)) :=
-  go stx (some #[])
+  collectQuotTermRanges stx (some #[])
   where
-    go (s : Lean.Syntax) (ranges : Option (Array (Nat × Nat))) : Option (Array (Nat × Nat)) :=
+    collectQuotTermRanges
+        (s : Lean.Syntax)
+        (ranges : Option (Array (Nat × Nat)))
+        : Option (Array (Nat × Nat)) :=
       match ranges with
       | none => none
-      | some a =>
+      | some leftValue =>
         match s with
-        | .node _ k args =>
-          if is_quot_term_kind k then
+        | .node _ kind args =>
+          if is_quot_term_kind kind then
             match s.getPos?, s.getTailPos? with
-            | some p, some q => some (a.push (p.byteIdx, q.byteIdx))
+            | some pathValue, some rightPos => some (leftValue.push (pathValue.byteIdx, rightPos.byteIdx))
             | _, _ => none
-          else args.foldl (fun found child => go child found) (some a)
-        | _ => some a
+          else args.foldl (fun found child => collectQuotTermRanges child found) (some leftValue)
+        | _ => some leftValue
 
 /-- A DSL template opener (`[ident|`) anywhere in the text — the lexical
     counterpart of the perturber's TPL_OPEN guard, for source that parses
     under custom template kinds we cannot enumerate. -/
 def has_template_opener (s : String) : Bool :=
   Id.run do
-    let a : Array Char := s.toList.toArray
-    let n := a.size
-    for idx in [0:n] do
-      if a[idx]! == '[' && idx + 1 < n && (a[idx+1]!.isAlpha || a[idx+1]! == '_') then
-        let mut j := idx + 1
-        while _hj : j < n && (a[j]!.isAlphanum || a[j]! == '_' || a[j]! == '.') do
-          j := j + 1
-        if _hj : j < n then
-          if a[j]! == '|' then
+    let chars : Array Char := s.toList.toArray
+    let size := chars.size
+    for idx in [0:size] do
+      if chars[idx]! == '[' && idx + 1 < size
+          && (chars[idx+1]!.isAlpha || chars[idx+1]! == '_') then
+        let mut cursor := idx + 1
+        while _hj : cursor < size
+            && (chars[cursor]!.isAlphanum || chars[cursor]! == '_' || chars[cursor]! == '.') do
+          cursor := cursor + 1
+        if _hj : cursor < size then
+          if chars[cursor]! == '|' then
             return true
     return false
 

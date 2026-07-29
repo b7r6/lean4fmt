@@ -167,4 +167,243 @@ theorem resolve_preserves_symbol_floor
     exact patch_preserves_symbol_floor override.patch
   · exact tightened
 
+/-- Enabling semantic collection-loop names tightens the policy; disabling the
+    rule is the least element of this Boolean axis. -/
+def semantic_collection_loops_tighten : Tightening := fun lowerStyle upperStyle =>
+  lowerStyle.linting.requireSemanticCollectionLoopNames = true
+      → upperStyle.linting.requireSemanticCollectionLoopNames = true
+
+/-- Group-level patches preserve collection-loop tightening: the linting group
+    is either untouched on both sides or replaced by the same value. -/
+theorem patch_preserves_semantic_collection_loops
+        (patch : style_patch)
+        : patch.preserves_tightening semantic_collection_loops_tighten := by
+  intro lowerStyle upperStyle tightened
+  cases patch with
+  | mk layout breaking alignment blankLines spacing imports comments naming linting =>
+    cases linting with
+    | none => exact tightened
+    | some value =>
+      intro enabled
+      exact enabled
+
+/-- Root-to-leaf policy resolution preserves collection-loop tightening. -/
+theorem resolve_preserves_semantic_collection_loops
+        (tree : override_tree)
+        (path : List String)
+        {lowerStyle upperStyle : Style}
+        (tightened : semantic_collection_loops_tighten lowerStyle upperStyle)
+        : semantic_collection_loops_tighten
+          (tree.resolve lowerStyle path)
+          (tree.resolve upperStyle path) := by
+  apply resolve_preserves_tightening semantic_collection_loops_tighten tree path
+  · intro override _
+    exact patch_preserves_semantic_collection_loops override.patch
+  · exact tightened
+
+/-- Enabling semantic field names tightens the policy; disabling the rule is
+    the least element of this Boolean axis. -/
+def semantic_field_names_tighten : Tightening := fun lowerStyle upperStyle =>
+  lowerStyle.linting.requireSemanticFieldNames = true
+      → upperStyle.linting.requireSemanticFieldNames = true
+
+/-- Group-level patches preserve semantic-field tightening by leaving both
+    policies alone or replacing both linting groups with the same value. -/
+theorem patch_preserves_semantic_field_names
+        (patch : style_patch)
+        : patch.preserves_tightening semantic_field_names_tighten := by
+  intro lowerStyle upperStyle tightened
+  cases patch with
+  | mk layout breaking alignment blankLines spacing imports comments naming linting =>
+    cases linting with
+    | none => exact tightened
+    | some value =>
+      intro enabled
+      exact enabled
+
+/-- Root-to-leaf policy resolution preserves semantic-field tightening. -/
+theorem resolve_preserves_semantic_field_names
+        (tree : override_tree)
+        (path : List String)
+        {lowerStyle upperStyle : Style}
+        (tightened : semantic_field_names_tighten lowerStyle upperStyle)
+        : semantic_field_names_tighten (tree.resolve lowerStyle path) (tree.resolve upperStyle path) := by
+  apply resolve_preserves_tightening semantic_field_names_tighten tree path
+  · intro override _
+    exact patch_preserves_semantic_field_names override.patch
+  · exact tightened
+
+/-- Enabling semantic declaration names tightens the policy; disabling the rule
+    is the least element of this Boolean axis. -/
+def semantic_declaration_names_tighten : Tightening := fun lowerStyle upperStyle =>
+  lowerStyle.linting.requireSemanticDeclarationNames = true
+      → upperStyle.linting.requireSemanticDeclarationNames = true
+
+/-- Group-level patches preserve semantic-declaration tightening by leaving
+    both policies alone or replacing both linting groups with the same value. -/
+theorem patch_preserves_semantic_declaration_names
+        (patch : style_patch)
+        : patch.preserves_tightening semantic_declaration_names_tighten := by
+  intro lowerStyle upperStyle tightened
+  cases patch with
+  | mk layout breaking alignment blankLines spacing imports comments naming linting =>
+    cases linting with
+    | none => exact tightened
+    | some value =>
+      intro enabled
+      exact enabled
+
+/-- Root-to-leaf policy resolution preserves semantic-declaration tightening. -/
+theorem resolve_preserves_semantic_declaration_names
+        (tree : override_tree)
+        (path : List String)
+        {lowerStyle upperStyle : Style}
+        (tightened : semantic_declaration_names_tighten lowerStyle upperStyle)
+        : semantic_declaration_names_tighten
+          (tree.resolve lowerStyle path)
+          (tree.resolve upperStyle path) := by
+  apply resolve_preserves_tightening semantic_declaration_names_tighten tree path
+  · intro override _
+    exact patch_preserves_semantic_declaration_names override.patch
+  · exact tightened
+
+/-- The empty patch is an identity for the recursive-helper policy projection. -/
+theorem recursive_helper_policy_apply_identity
+        (style : Style)
+        : (style.apply {}).linting.requireSemanticRecursiveHelperNames
+            = style.linting.requireSemanticRecursiveHelperNames := by rw [apply_empty]
+
+/-- Patch grouping cannot change the recursive-helper policy projection. -/
+theorem recursive_helper_policy_patch_assoc
+        (first second third : style_patch)
+        : (style_patch.append (style_patch.append first second) third).linting
+            = (style_patch.append first (style_patch.append second third)).linting := by
+  rw [patch_append_assoc]
+
+/-- Enabling semantic recursive-helper names tightens the policy; disabling the
+    rule is the least element of this Boolean axis. -/
+def semantic_recursive_helper_names_tighten : Tightening := fun lowerStyle upperStyle =>
+  lowerStyle.linting.requireSemanticRecursiveHelperNames = true
+      → upperStyle.linting.requireSemanticRecursiveHelperNames = true
+
+/-- Group-level patches preserve recursive-helper tightening by leaving both
+    policies alone or replacing both linting groups with the same value. -/
+theorem patch_preserves_semantic_recursive_helper_names
+        (patch : style_patch)
+        : patch.preserves_tightening semantic_recursive_helper_names_tighten := by
+  intro lowerStyle upperStyle tightened
+  cases patch with
+  | mk layout breaking alignment blankLines spacing imports comments naming linting =>
+    cases linting with
+    | none => exact tightened
+    | some value =>
+      intro enabled
+      exact enabled
+
+/-- Root-to-leaf policy resolution preserves recursive-helper tightening. -/
+theorem resolve_preserves_semantic_recursive_helper_names
+        (tree : override_tree)
+        (path : List String)
+        {lowerStyle upperStyle : Style}
+        (tightened : semantic_recursive_helper_names_tighten lowerStyle upperStyle)
+        : semantic_recursive_helper_names_tighten
+          (tree.resolve lowerStyle path)
+          (tree.resolve upperStyle path) := by
+  apply resolve_preserves_tightening semantic_recursive_helper_names_tighten tree path
+  · intro override _
+    exact patch_preserves_semantic_recursive_helper_names override.patch
+  · exact tightened
+
+/-- The empty patch is an identity for the semantic-lambda policy projection. -/
+theorem lambda_policy_apply_identity
+        (style : Style)
+        : (style.apply {}).linting.requireSemanticLambdaNames
+            = style.linting.requireSemanticLambdaNames := by rw [apply_empty]
+
+/-- Patch grouping cannot change the semantic-lambda policy projection. -/
+theorem lambda_policy_patch_assoc
+        (first second third : style_patch)
+        : (style_patch.append (style_patch.append first second) third).linting
+            = (style_patch.append first (style_patch.append second third)).linting := by
+  rw [patch_append_assoc]
+
+/-- Enabling semantic lambda names tightens the policy; disabling the rule is
+    the least element of this Boolean axis. -/
+def semantic_lambda_names_tighten : Tightening := fun lowerStyle upperStyle =>
+  lowerStyle.linting.requireSemanticLambdaNames = true
+      → upperStyle.linting.requireSemanticLambdaNames = true
+
+/-- Group-level patches preserve lambda-name tightening by leaving both
+    policies alone or replacing both linting groups with the same value. -/
+theorem patch_preserves_semantic_lambda_names
+        (patch : style_patch)
+        : patch.preserves_tightening semantic_lambda_names_tighten := by
+  intro lowerStyle upperStyle tightened
+  cases patch with
+  | mk layout breaking alignment blankLines spacing imports comments naming linting =>
+    cases linting with
+    | none => exact tightened
+    | some value =>
+      intro enabled
+      exact enabled
+
+/-- Root-to-leaf policy resolution preserves semantic-lambda tightening. -/
+theorem resolve_preserves_semantic_lambda_names
+        (tree : override_tree)
+        (path : List String)
+        {lowerStyle upperStyle : Style}
+        (tightened : semantic_lambda_names_tighten lowerStyle upperStyle)
+        : semantic_lambda_names_tighten
+          (tree.resolve lowerStyle path)
+          (tree.resolve upperStyle path) := by
+  apply resolve_preserves_tightening semantic_lambda_names_tighten tree path
+  · intro override _
+    exact patch_preserves_semantic_lambda_names override.patch
+  · exact tightened
+
+/-- The empty patch is an identity for the semantic-let policy projection. -/
+theorem let_policy_apply_identity
+        (style : Style)
+        : (style.apply {}).linting.requireSemanticLetNames = style.linting.requireSemanticLetNames := by
+  rw [apply_empty]
+
+/-- Patch grouping cannot change the semantic-let policy projection. -/
+theorem let_policy_patch_assoc
+        (first second third : style_patch)
+        : (style_patch.append (style_patch.append first second) third).linting
+            = (style_patch.append first (style_patch.append second third)).linting := by
+  rw [patch_append_assoc]
+
+/-- Enabling semantic let names tightens the policy; disabling the rule is the
+    least element of this Boolean axis. -/
+def semantic_let_names_tighten : Tightening := fun lowerStyle upperStyle =>
+  lowerStyle.linting.requireSemanticLetNames = true
+      → upperStyle.linting.requireSemanticLetNames = true
+
+/-- Group-level patches preserve let-name tightening by leaving both policies
+    alone or replacing both linting groups with the same value. -/
+theorem patch_preserves_semantic_let_names
+        (patch : style_patch)
+        : patch.preserves_tightening semantic_let_names_tighten := by
+  intro lowerStyle upperStyle tightened
+  cases patch with
+  | mk layout breaking alignment blankLines spacing imports comments naming linting =>
+    cases linting with
+    | none => exact tightened
+    | some value =>
+      intro enabled
+      exact enabled
+
+/-- Root-to-leaf policy resolution preserves semantic-let tightening. -/
+theorem resolve_preserves_semantic_let_names
+        (tree : override_tree)
+        (path : List String)
+        {lowerStyle upperStyle : Style}
+        (tightened : semantic_let_names_tighten lowerStyle upperStyle)
+        : semantic_let_names_tighten (tree.resolve lowerStyle path) (tree.resolve upperStyle path) := by
+  apply resolve_preserves_tightening semantic_let_names_tighten tree path
+  · intro override _
+    exact patch_preserves_semantic_let_names override.patch
+  · exact tightened
+
 end Lean4Fmt.Style

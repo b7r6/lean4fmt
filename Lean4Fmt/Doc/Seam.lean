@@ -22,7 +22,7 @@ import Lean4Fmt.Doc.Render
 namespace Lean4Fmt.Doc
 
 /-- A whitespace-only trivia line (spaces/tabs — a blank line or pure indent). -/
-def ws_line (l : List Char) : Bool := l.all (fun c => c == ' ' || c == '\t')
+def ws_line (line : List Char) : Bool := line.all (fun char => char == ' ' || char == '\t')
 
 /-- The separator for a run of `blanks` blank lines (none → plain newline). -/
 def seam_sep (blanks : Nat) : Doc := if blanks > 0 then .blank blanks else .hardline
@@ -32,18 +32,18 @@ def seam_sep (blanks : Nat) : Doc := if blanks > 0 then .blank blanks else .hard
     `base` (spaces only — `dedent`'s guard) and trailing-trimmed. -/
 def seam_lines (base : Nat) : Nat → List (List Char) → Doc
   | blanks, [] => seam_sep blanks
-  | blanks, l :: ls =>
-    if ws_line l then
-      seam_lines base (blanks + 1) ls
+  | blanks, leading :: lsValue =>
+    if ws_line leading then
+      seam_lines base (blanks + 1) lsValue
     else
-      seam_sep blanks ++ .textRaw (String.ofList (trim_end_ws (dedent base l)))
-          ++ seam_lines base 0 ls
+      seam_sep blanks ++ .textRaw (String.ofList (trim_end_ws (dedent base leading)))
+          ++ seam_lines base 0 lsValue
 
 /-- The dedent column of a seam run: the minimum space-indent over its comment
     lines (relative offsets between comments survive the re-anchoring). -/
 def seam_base (full : List (List Char)) : Nat :=
-  (full.filter (fun l => !ws_line l)).foldl
-    (fun m l => Nat.min m (l.takeWhile (· == ' ')).length)
+  (full.filter (fun line => !ws_line line)).foldl
+    (fun minimum line => Nat.min minimum (line.takeWhile (· == ' ')).length)
     1000000
 
 /-- Structural placement of a form's leading trivia, as the separator doc that

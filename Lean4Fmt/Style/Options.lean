@@ -210,11 +210,15 @@ structure Linting where
   /-- Require every blank-line stanza break inside an executable definition to
       introduce the next block with an immediately following comment. -/
   requireStanzaComments : Bool := false
-  symbolAllow               : List (Nat × List String) := []
-  symbolDeny                : List String := []
-  fieldAllow                : List (Nat × List String) := []
-  allowGreekSymbols         : Bool := false
-  allowHebrewSymbols        : Bool := false
+  symbolAllow : List (Nat × List String) := []
+  symbolDeny : List String := []
+  declarationAllow : List (Nat × List String) := []
+  fieldAllow : List (Nat × List String) := []
+  recursiveHelperAllow : List (Nat × List String) := []
+  lambdaAllow : List (Nat × List String) := []
+  letAllow : List (Nat × List String) := []
+  allowGreekSymbols : Bool := false
+  allowHebrewSymbols : Bool := false
   allowTraditionalInstances : Bool := true
   /-- Require every named instance binder to use a Greek or Hebrew base letter
       followed only by Unicode modifier/subscript characters. -/
@@ -225,6 +229,24 @@ structure Linting where
   /-- Require pattern and match-arm binders to meet the configured semantic
       symbol floor; pattern position grants no blanket short-name exemption. -/
   requireSemanticPatternBinders : Bool := false
+  /-- Require non-range collection loops to use semantic element names rather
+      than the positional `idx`/`jdx`/`kdx` counter vocabulary. -/
+  requireSemanticCollectionLoopNames : Bool := false
+  /-- Require structure and class fields to use semantic names, subject to the
+      exact-length `fieldAllow` exception buckets. -/
+  requireSemanticFieldNames : Bool := false
+  /-- Require source-level declarations and constructors to use semantic names,
+      subject to exact-length `declarationAllow` exception buckets. -/
+  requireSemanticDeclarationNames : Bool := false
+  /-- Require local recursive helper declarations to use semantic names, subject
+      to exact-length `recursiveHelperAllow` exception buckets. -/
+  requireSemanticRecursiveHelperNames : Bool := false
+  /-- Require lambda binders to use semantic names, subject to exact-length
+      `lambdaAllow` exception buckets. -/
+  requireSemanticLambdaNames : Bool := false
+  /-- Require let binders to use semantic names, subject to exact-length
+      `letAllow` exception buckets. -/
+  requireSemanticLetNames : Bool := false
   deriving Repr, Inhabited
 
 /-- The fully-resolved style. -/

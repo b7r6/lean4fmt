@@ -73,16 +73,17 @@ def canon_ws_piecewise (stx : Lean.Syntax) (s : String) (skipBytes : Nat := 0) :
       let send := bytes.size
       -- range boundaries are token edges, so byte slices are valid UTF-8; any
       -- decode surprise bails to the whole text (content-safe)
-      let piece? := fun (a b : Nat) => String.fromUTF8? (bytes.extract a b)
+      let piece? := fun (start stop : Nat) => String.fromUTF8? (bytes.extract start stop)
       let mut state : canonical_piece_state := {}
-      for (qs, qe) in ranges do
-        if qe ≤ base then continue               -- range before our suffix window
-        let a := qs - base                        -- Nat sub clamps: partial overlap → 0
-        let b := qe - base
-        if b ≤ a || a < state.cursor || b > send then return s   -- geometry surprise: content-safe
-        match piece? state.cursor a, piece? a b with
+      for (quoteStart, quoteEnd) in ranges do
+        if quoteEnd ≤ base then continue               -- range before our suffix window
+        let startOffset := quoteStart - base              -- Nat sub clamps: partial overlap → 0
+        let endOffset := quoteEnd - base
+        if endOffset ≤ startOffset || startOffset < state.cursor || endOffset > send then
+          return s
+        match piece? state.cursor startOffset, piece? startOffset endOffset with
         | some code, some quot =>
-          state := append_canonical_piece state code quot b
+          state := append_canonical_piece state code quot endOffset
         | _, _ => return s
       match piece? state.cursor send with
       | some tail => return state.output ++ Lean4Fmt.Doc.canon_verbatim_ws tail
@@ -124,13 +125,13 @@ def verbatim_quiet (stx : Lean.Syntax) : emit_m Doc := do
   -- subtrees ride whole-node byte-exact, embedded quotation TERMS byte-exact
   -- by range, templates via canonVerbatimWs' own template mode — everything
   -- else collapses
-  let canon := fun (t : String) => if preserve then t else canon_ws_piecewise stx t
-  let s := bare_src stx
-  if s.isEmpty then
+  let canon := fun text => if preserve then text else canon_ws_piecewise stx text
+  let source := bare_src stx
+  if source.isEmpty then
     match stx.reprint with
-    | some r => pure (.verbatim (canon r) base)
+    | some row => pure (.verbatim (canon row) base)
     | none => pure .nil
-  else pure (.verbatim (canon s) base)
+  else pure (.verbatim (canon source) base)
 
 /-- Opaque reproduction WITH the opt-out trail entry — the safe default. -/
 def verbatim (stx : Lean.Syntax) (why : String := "") : emit_m Doc := do
@@ -177,11 +178,11 @@ def arms_aligned
     if mode == Lean4Fmt.Style.align_mode.never || arms.size < 2 then
       return fallback
     let mut rows : List (List Doc) := []
-    for (p, b?) in arms do
-      let some b := b? | return fallback
-      if (Lean4Fmt.Doc.flat_width p).isNone || (Lean4Fmt.Doc.flat_width b).isNone then
+    for (pattern, body?) in arms do
+      let some b := body? | return fallback
+      if (Lean4Fmt.Doc.flat_width pattern).isNone || (Lean4Fmt.Doc.flat_width b).isNone then
         return fallback
-      rows := rows ++ [[Doc.text "| " ++ p, Doc.text "=>", b]]
+      rows := rows ++ [[Doc.text "| " ++ pattern, Doc.text "=>", b]]
     let cap := if mode == Lean4Fmt.Style.align_mode.always then 1000000 else maxDelta
     return Doc.align_or { sep := " ", maxDelta := cap } rows fallback
 
@@ -244,12 +245,13 @@ def arms_aligned_runs
             return out
           let mut state : arm_run_state := {}
           for h : idx in [0:sect.size] do
-            let p := sect[idx]
+            let piece := sect[idx]
             state :=
               { state with
-                plainDoc := state.plainDoc ++ (if idx == 0 then Doc.nil else Doc.hardline) ++ p.doc }
-            match p.gridRow with
-            | some r => state := { state with rows := state.rows.push r }
+                plainDoc := state.plainDoc ++ (if idx == 0 then Doc.nil else Doc.hardline)
+                    ++ piece.doc }
+            match piece.gridRow with
+            | some row => state := { state with rows := state.rows.push row }
             | none => state := { state with allGrid := false }
           let body :=
             if state.allGrid then
@@ -258,13 +260,13 @@ def arms_aligned_runs
               state.plainDoc
           return out ++ sectLead ++ body
     let mut state : arm_runs_state := {}
-    for p in pieces do
-      if p.plain && !state.run.isEmpty then state := { state with run := state.run.push p }
+    for piece in pieces do
+      if piece.plain && !state.run.isEmpty then state := { state with run := state.run.push piece }
       else
         state := {
           output := flush state.output state.sectionLead state.run
-          run := #[p]
-          sectionLead := p.sep
+          run := #[piece]
+          sectionLead := piece.sep
         }
     return flush state.output state.sectionLead state.run
 
@@ -272,9 +274,9 @@ def arms_aligned_runs
 def match_alts_of (altsNode : Lean.Syntax) : Array Lean.Syntax :=
   Id.run do
     let mut alts : Array Lean.Syntax := #[]
-    for g in altsNode.getArgs do
-      for c in g.getArgs do
-        if c.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push c
+    for group in altsNode.getArgs do
+      for child in group.getArgs do
+        if child.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push child
     return alts
 
 private
@@ -321,18 +323,18 @@ def alt_pattern_stack?
     : emit_m (Option (Doc × Bool)) := do
   let width := (← read).layout.lineWidth
   let mut state : alt_pattern_state := {}
-  for c in patStx.getArgs do
-    match c with
+  for child in patStx.getArgs do
+    match child with
     | .atom _ "|" =>
       -- a comment riding the separator's trivia has no seam here
-      state := push_alt_pattern_separator joinFlat? c state
-    | _ => state := { state with current := state.current.push c }
+      state := push_alt_pattern_separator joinFlat? child state
+    | _ => state := { state with current := state.current.push child }
   match flush_alt_pattern_group joinFlat? state.current with
-  | some t => state := { state with groups := state.groups.push t }
+  | some trailing => state := { state with groups := state.groups.push trailing }
   | none => state := { state with valid := false }
   if !state.valid || state.groups.size < 2 then
     return none
-  if state.groups.any (fun g => g.length + 8 > width) then
+  if state.groups.any (fun group => group.length + 8 > width) then
     return none
   let result ← do
     let joined := " | ".intercalate state.groups.toList
@@ -340,17 +342,18 @@ def alt_pattern_stack?
       pure ((Doc.text joined), false)
     else
       state := { state with doc := .text state.groups[0]! }
-      for g in state.groups.toList.drop 1 do
-        state := { state with doc := state.doc ++ .hardline ++ .text ("| " ++ g) }
+      for group in state.groups.toList.drop 1 do
+        state := { state with doc := state.doc ++ .hardline ++ .text ("| " ++ group) }
       pure (state.doc, true)
   -- the initial walk logged the pattern null's opt-out, but the rebuilt
   -- set ships — pop the stale entry
   let pos := (patStx.getPos?.map (·.byteIdx)).getD 0
-  modify fun ds =>
-    if ds.size > 0 && ds[ds.size - 1]!.pos == pos && ds[ds.size - 1]!.rule == "verbatim" then
-      ds.pop
+  modify fun documents =>
+    if documents.size > 0 && documents[documents.size - 1]!.pos == pos
+        && documents[documents.size - 1]!.rule == "verbatim" then
+      documents.pop
     else
-      ds
+      documents
   return some result
 
 private
@@ -415,10 +418,10 @@ def arm_pieces?
     if !last && trailT.any (· == '\n') then return none
     let hasTrail := !last && !trailT.isEmpty
     let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
-    let aa := alt.getArgs
-    let patStx := aa[1]?.getD .missing
+    let altArgs := alt.getArgs
+    let patStx := altArgs[1]?.getD .missing
     state := { state with
-      patternDoc := ← walk (aa[1]?.getD .missing)
+      patternDoc := ← walk (altArgs[1]?.getD .missing)
       patternBroken := false }
     -- ws-sensitivity (fixed-point class): a multi-line re-anchoring PATTERN
     -- glued after "| " re-indents by its placement column, which the previous
@@ -428,12 +431,12 @@ def arm_pieces?
     -- verbatim, as before.
     if Lean4Fmt.Doc.hasMultilineReanchor state.patternDoc then
       match ← alt_pattern_stack? patStx joinFlat? with
-      | some (pd, broken) =>
-        state := { state with patternDoc := pd, patternBroken := broken }
+      | some (pieceDoc, broken) =>
+        state := { state with patternDoc := pieceDoc, patternBroken := broken }
       | none => return none
-    let arrowT := (bare_src (aa[2]?.getD .missing)).trimAscii.toString
+    let arrowT := (bare_src (altArgs[2]?.getD .missing)).trimAscii.toString
     let arrowT := if arrowT.isEmpty then "=>" else arrowT
-    let body := aa[aa.size-1]?.getD .missing
+    let body := altArgs[altArgs.size-1]?.getD .missing
     let bodyDoc ← walk body
     let srcBroken := ((Lean4Fmt.Syntax.leading? body).getD "").any (· == '\n')
     let preserveLB := (← read).breaking.preserveLineBreaks

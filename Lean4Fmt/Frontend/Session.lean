@@ -155,18 +155,18 @@ def resolve_idents
   let ictx := Parser.mkInputContext contents path
   let (_, mps, msgs) ← Parser.parseHeader ictx
   let st0 := Lean.Elab.Command.mkState env msgs Options.empty
-  let st := { st0 with infoState := { st0.infoState with enabled := true } }
+  let commandState := { st0 with infoState := { st0.infoState with enabled := true } }
   quietly
     do
       try
-        let s ← Lean.Elab.IO.processCommands ictx mps st
+        let processedState ← Lean.Elab.IO.processCommands ictx mps commandState
         let mut state : resolution_state := {}
         -- local BINDER names (fn params, `let`s, `match` vars) in scope at any term.
         -- A type snaking onto a binder name shadows it — `(action : Action)` →
         -- `(action : action)`, where `action → …` then reads the value, not the type.
         -- Binders aren't env consts, so they must be harvested from each term's local
         -- context; they feed the COLLISION set only (never renamed).
-        for tree in s.commandState.infoState.trees do
+        for tree in processedState.commandState.infoState.trees do
           for info in collect_infos tree #[] do
             match info with
             | .ofTermInfo term_info => state := record_term_info state term_info
@@ -179,8 +179,8 @@ def resolve_idents
         -- defs, letting a type snake onto an unseen term (`Attr` → `attr`). Plus the
         -- local binders (collision-only) that close the type↔binder shadow class.
         state := { state with locals := state.binders.toList.toArray }
-        for (nm, _) in s.commandState.env.constants.map₂.toList do
-          unless nm.isInternal do state := { state with locals := state.locals.push nm }
+        for (name, _) in processedState.commandState.env.constants.map₂.toList do
+          unless name.isInternal do state := { state with locals := state.locals.push name }
         -- the elaborator records an ident in several info nodes; dedup exact
         -- (start, stop, name, isDef) so the rewrite never double-edits a range
         pure (state.resolutions.toList.eraseDups.toArray, state.locals)

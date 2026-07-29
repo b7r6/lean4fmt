@@ -74,16 +74,17 @@ def syntax_stats (style : Lean4Fmt.Style.Style) (stx : Lean.Syntax) : Nat × Nat
 unsafe
 def batch_env (paths : Array System.FilePath) : IO Environment := do
   let mut all : Array Import := #[]
-  for p in paths do
-    all := all ++ (← file_imports p)
+  for path in paths do
+    all := all ++ (← file_imports path)
   imports_env all
 
 /-- Prepend a prebuilt farm dir to the search path. Built ONCE per invocation and
     shared (in-process, or handed to a worker via `--farm`), so no rebuild. -/
 def apply_farm (farm : Option String) : IO Unit :=
   match farm with
-  | some f => Lean.searchPathRef.modify (fun sp => (⟨f⟩ : System.FilePath) :: sp)
-  | none   => pure ()
+  | some filePath =>
+    Lean.searchPathRef.modify (fun searchPath => (⟨filePath⟩ : System.FilePath) :: searchPath)
+  | none => pure ()
 
 private
 structure root_search_state where
@@ -118,13 +119,13 @@ def make_olean_farm (files : List String) : IO (Option String) := do
       let r ← IO.Process.output
         { cmd := "find",
           args := #[root.toString, "-type", "d", "-path", "*/.lake/build/lib/lean", "-prune"] }
-      pure ((r.stdout.splitOn "\n").filter (fun s => !s.isEmpty))
+      pure ((r.stdout.splitOn "\n").filter (fun line => !line.isEmpty))
     catch _ => pure ([] : List String)
   if dirs.isEmpty then
     return none
   let farm := (← IO.Process.run { cmd := "mktemp", args := #["-d"] }).trim
-  for d in dirs do
-    try let _ ← IO.Process.output { cmd := "cp", args := #["-rsn", s!"{d}/.", s!"{farm}/"] }
+  for directory in dirs do
+    try let _ ← IO.Process.output { cmd := "cp", args := #["-rsn", s!"{directory}/.", s!"{farm}/"] }
     catch _ => pure ()
   Lean4Fmt.Log.log .debug s!"olean farm: {farm} ({dirs.length} lib dirs merged)"
   return some farm

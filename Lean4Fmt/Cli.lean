@@ -70,34 +70,34 @@ structure Options where
 
 /-- Parse argv into `Options`. -/
 def parse (args : List String) : Options :=
-  go {} args
+  parseArgs {} args
   where
-    go (options : Options) : List String → Options
-      | "--check" :: rest => go { options with mode := .check } rest
-      | "--stats" :: rest => go { options with mode := .stats } rest
-      | "--lint" :: rest => go { options with mode := .lint } rest
-      | "--rename-plan" :: rest => go { options with mode := .renamePlan } rest
-      | "--rename-apply" :: rest => go { options with mode := .renameApply } rest
-      | "--rename-decls" :: rest => go { options with mode := .renameDecls } rest
-      | "--rename-rewrite" :: rest => go { options with mode := .renameRewrite } rest
-      | "--resolve-dump" :: rest => go { options with mode := .resolveDump } rest
-      | "--map" :: file :: rest => go { options with mapFile := some file } rest
-      | "--resolve" :: rest => go { options with resolve := true } rest
-      | "--farm" :: dir :: rest => go { options with farmDir := some dir } rest
+    parseArgs (options : Options) : List String → Options
+      | "--check" :: rest => parseArgs { options with mode := .check } rest
+      | "--stats" :: rest => parseArgs { options with mode := .stats } rest
+      | "--lint" :: rest => parseArgs { options with mode := .lint } rest
+      | "--rename-plan" :: rest => parseArgs { options with mode := .renamePlan } rest
+      | "--rename-apply" :: rest => parseArgs { options with mode := .renameApply } rest
+      | "--rename-decls" :: rest => parseArgs { options with mode := .renameDecls } rest
+      | "--rename-rewrite" :: rest => parseArgs { options with mode := .renameRewrite } rest
+      | "--resolve-dump" :: rest => parseArgs { options with mode := .resolveDump } rest
+      | "--map" :: file :: rest => parseArgs { options with mapFile := some file } rest
+      | "--resolve" :: rest => parseArgs { options with resolve := true } rest
+      | "--farm" :: dir :: rest => parseArgs { options with farmDir := some dir } rest
       | "--protect" :: file :: rest =>
-        go { options with protect := options.protect ++ [file] } rest
-      | "--write" :: rest => go { options with mode := .write } rest
-      | "-w" :: rest => go { options with mode := .write } rest
+        parseArgs { options with protect := options.protect ++ [file] } rest
+      | "--write" :: rest => parseArgs { options with mode := .write } rest
+      | "-w" :: rest => parseArgs { options with mode := .write } rest
       | "--width" :: width :: rest =>
-        go { options with width := some width.toNat! } rest
-      | "--style" :: preset :: rest => go { options with preset } rest
-      | "--log-level" :: level :: rest => go { options with logLevel := level } rest
-      | "--json" :: rest => go { options with json := true } rest
+        parseArgs { options with width := some width.toNat! } rest
+      | "--style" :: preset :: rest => parseArgs { options with preset } rest
+      | "--log-level" :: level :: rest => parseArgs { options with logLevel := level } rest
+      | "--json" :: rest => parseArgs { options with json := true } rest
       | "--elab" :: value :: rest =>
-        go { options with elabFallback := value != "off" } rest
-      | "--no-retry" :: rest => go { options with retry := false } rest
-      | "--lake" :: value :: rest => go { options with lakeEnv := value != "off" } rest
-      | file :: rest => go { options with files := options.files ++ [file] } rest
+        parseArgs { options with elabFallback := value != "off" } rest
+      | "--no-retry" :: rest => parseArgs { options with retry := false } rest
+      | "--lake" :: value :: rest => parseArgs { options with lakeEnv := value != "off" } rest
+      | file :: rest => parseArgs { options with files := options.files ++ [file] } rest
       | [] => options
 
 def usage : String :=

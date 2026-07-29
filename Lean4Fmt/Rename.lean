@@ -79,11 +79,13 @@ def build_plan
       (fun uniqueTargets target =>
         if uniqueTargets.any (·.1 == target.1) then uniqueTargets else uniqueTargets ++ [target])
       []
-  let tgtCount := fun t => (byName.filter (·.2 == t)).length
+  let tgtCount := fun target => (byName.filter (·.2 == target)).length
   -- a target is BLOCKED by: a collision (two sources → one target), a keyword,
   -- or the source colliding a module basename (the local exemption)
-  let blocked := fun (nm t : String) => tgtCount t > 1 || keywords.contains t || modules.contains nm
-  let changed := byName.filter (fun p => p.1 ≠ p.2)
+  let blocked :=
+    fun (name target : String) =>
+      tgtCount target > 1 || keywords.contains target || modules.contains name
+  let changed := byName.filter (fun pair => pair.1 ≠ pair.2)
   { renames := changed.filter (fun (nm, t) => !blocked nm t),
     skipped := changed.filter (fun (nm, t) => blocked nm t) }
 
@@ -93,7 +95,7 @@ def build_plan
     leaf on the apply path — matching ANY dotted component catches use-sites
     regardless of qualification; the build is the floor for the rare over-match. -/
 def ident_replacement (map : List (String × String)) (name : String) : Option String :=
-  let parts := (name.splitOn ".").map (fun p => ((map.find? (·.1 == p)).map (·.2)).getD p)
+  let parts := (name.splitOn ".").map (fun part => ((map.find? (·.1 == part)).map (·.2)).getD part)
   let joined := String.intercalate "." parts
   if joined == name then none else some joined
 
@@ -160,8 +162,9 @@ def resolved_rewrite (map : List (String × String)) (tokenText full : String) :
     let newFull := rename_full map full
     if newFull == full then none
     else
-      let k := (tokenText.splitOn ".").length
-      let joined := String.intercalate "." (((newFull.splitOn ".").reverse.take k).reverse)
+      let componentCount := (tokenText.splitOn ".").length
+      let joined :=
+        String.intercalate "." (((newFull.splitOn ".").reverse.take componentCount).reverse)
       if joined == tokenText then none else some joined
 
 /-- The RESOLUTION plan: from the full names of DEFINED decls, `(full-name →
@@ -181,18 +184,46 @@ def plan_resolved
         let last := comps.getLastD full
         let newLast := convert c last
         (full, last, newLast, String.intercalate "." (comps.dropLast ++ [newLast])))
-  let collides := fun (nf : String) => (rows.filter (fun (_, _, _, x) => x == nf)).length > 1
-  let ok :=
+  let collides :=
+    fun candidate => (rows.filter (fun (_, _, _, target) => target == candidate)).length > 1
+  let admissible :=
     fun (last newLast newFull : String) =>
       last != newLast && !keywords.contains newLast && !collides newFull
   (
     rows.filterMap
       (fun (full, last, newLast, newFull) =>
-        if ok last newLast newFull then some (full, newLast) else none),
+        if admissible last newLast newFull then some (full, newLast) else none),
     rows.filterMap
       (fun (full, last, newLast, newFull) =>
-        if last != newLast && !ok last newLast newFull then some (full, newLast) else none)
+        if last != newLast && !admissible last newLast newFull then some (full, newLast) else none)
   )
+
+/-- Collect the unambiguous source declarations that the hybrid planner may
+    rename, pairing each simple spelling with its identity and converted target. -/
+private
+def hybrid_candidates
+    (targetCase : Case)
+    (modules : List String)
+    (occs : List (String × String))
+    (defs : List String)
+    (protect : List String)
+    : List (String × String × String) :=
+  let defSet := defs.eraseDups
+  let protSet := protect.eraseDups
+  let simples := (occs.map (·.1)).eraseDups
+  let fullsOf := fun source => ((occs.filter (·.1 == source)).map (·.2)).eraseDups
+  simples.filterMap
+    (fun source =>
+      if modules.contains source then
+        none
+      else
+        match fullsOf source with
+        | [full] =>
+          if defSet.contains full && !protSet.contains full then
+            some (source, full, convert targetCase source)
+          else
+            none
+        | _ => none)
 
 /-- The HYBRID plan (G-L7.4e): resolution DECIDES, a token rewrite ACTS. A simple
     name is renamed iff EVERY resolved occurrence of it points to the SAME full
@@ -224,35 +255,23 @@ def plan_hybrid
     : List (String × String) × List (String × String) :=
   let defSet := defs.eraseDups
   let existSet := exists_.eraseDups
-  let protSet := protect.eraseDups
-  let simples := (occs.map (·.1)).eraseDups
-  let fullsOf := fun (s : String) => ((occs.filter (·.1 == s)).map (·.2)).eraseDups
   -- unambiguous (one full name) AND authorized (a real source decl) AND not a
   -- module basename (the token rewrite hits `import`/`open` paths too, so a type
   -- sharing a module name — `Toolchain` in `Toolchain.lean` — must be exempted)
   -- AND not in a protected file's closure (would break an untouchable study)
-  let rows : List (String × String × String) :=
-    simples.filterMap
-      (fun s =>
-        if modules.contains s then
-          none
-        else
-          match fullsOf s with
-          | [full] =>
-            if defSet.contains full && !protSet.contains full then
-              some (s, full, convert c s)
-            else
-              none
-          | _ => none)
+  let rows := hybrid_candidates c modules occs defs protect
   -- two distinct safe sources snaking to one target collide (both skipped)
-  let collides := fun (t : String) => (rows.filter (fun (_, _, x) => x == t)).length > 1
+  let collides :=
+    fun target => (rows.filter (fun (_, _, candidate) => candidate == target)).length > 1
   -- TARGET-TAKEN (the type↔field guard): a rename `S → t` is unsafe if some OTHER
   -- name already EXISTS as `t`. The token rewrite is global-by-simple-name, so the
   -- new `t` shadows that name wherever they share a scope — `Lang → lang` atop the
   -- `lang` FIELD of `target_def`, or `Attr → attr` atop `def attr` (DIFFERENT
   -- namespaces), so the check is identity-aware but namespace-BLIND. Checked against
   -- `existSet` (ALL local consts) so a clash with a non-renamable name still blocks.
-  let taken := fun (sFull t : String) => existSet.any (fun d => d != sFull && last_comp d == t)
+  let taken :=
+    fun (sourceFull target : String) =>
+      existSet.any (fun declaration => declaration != sourceFull && last_comp declaration == target)
   -- GENERATED-NAME reference: Lean derives names that spell a type INLINE (not
   -- dotted) — an anonymous `instance : C T` → `instCT`, `extends T` → the `toT`
   -- projection — and code references them explicitly (`unfold instLETrustDistance`,
@@ -262,14 +281,17 @@ def plan_hybrid
   -- is NOT itself a source decl (i.e. generated). Dotted generated names (`T.rec`,
   -- `T.mk`) need no guard — `T` is a component there, so they rename correctly.
   let gen_ref :=
-    fun (s : String) =>
-      occs.any (fun (n, nFull) => n != s && is_suffix s n && !defSet.contains nFull)
-  let changed := rows.filter (fun (s, _, t) => s != t)
-  let ok :=
-    fun (s sFull t : String) => !keywords.contains t && !collides t && !taken sFull t && !gen_ref s
+    fun (source : String) =>
+      occs.any
+        (fun (name, nameFull) =>
+          name != source && is_suffix source name && !defSet.contains nameFull)
+  let changed := rows.filter (fun (source, _, target) => source != target)
+  let admissible :=
+    fun (source sourceFull target : String) =>
+      !keywords.contains target && !collides target && !taken sourceFull target && !gen_ref source
   (
-    changed.filterMap (fun (s, full, t) => if ok s full t then some (s, t) else none),
-    changed.filterMap (fun (s, full, t) => if ok s full t then none else some (s, t))
+    changed.filterMap (fun (s, full, t) => if admissible s full t then some (s, t) else none),
+    changed.filterMap (fun (s, full, t) => if admissible s full t then none else some (s, t))
   )
 
 -- ── #guard-locked: identity rewrite + resolution plan ─────────────────────────

@@ -24,32 +24,33 @@ open Lean Lean4Fmt.Doc
 def binder_text? (b : Lean.Syntax) (preserve : Bool := false) : Option String :=
   Id.run
     do
-      let k := b.getKind
-      if k != ``Lean.Parser.Term.explicitBinder && k != ``Lean.Parser.Term.implicitBinder
-          && k != ``Lean.Parser.Term.strictImplicitBinder && k != ``Lean.Parser.Term.instBinder then
+      let kind := b.getKind
+      if kind != ``Lean.Parser.Term.explicitBinder && kind != ``Lean.Parser.Term.implicitBinder
+          && kind != ``Lean.Parser.Term.strictImplicitBinder
+          && kind != ``Lean.Parser.Term.instBinder then
         return none
-      let a := b.getArgs
-      if a.size < 3 then
+      let args := b.getArgs
+      if args.size < 3 then
         return none
-      let l := (bare_src a[0]!).trimAscii.toString
-      let r := (bare_src a[a.size-1]!).trimAscii.toString
-      if l.isEmpty || r.isEmpty then
+      let leftDelim := (bare_src args[0]!).trimAscii.toString
+      let rightDelim := (bare_src args[args.size-1]!).trimAscii.toString
+      if leftDelim.isEmpty || rightDelim.isEmpty then
         return none
       if preserve then
         -- byte-exact interior (the author's `s: String` survives)
-        let t := (bare_src b).trimAscii.toString
-        if t.isEmpty || t.any (· == '\n') then
+        let text := (bare_src b).trimAscii.toString
+        if text.isEmpty || text.any (· == '\n') then
           return none
-        return some t
+        return some text
       let mut interior := ""
-      for c in a.extract 1 (a.size - 1) do
-        let t := Lean4Fmt.Emit.canon_tok c
-        if t.any (· == '\n') then
+      for character in args.extract 1 (args.size - 1) do
+        let text := Lean4Fmt.Emit.canon_tok character
+        if text.any (· == '\n') then
           return none
-        if !t.isEmpty then interior := if interior.isEmpty then t else interior ++ " " ++ t
+        if !text.isEmpty then interior := if interior.isEmpty then text else interior ++ " " ++ text
       if interior.isEmpty then
         return none
-      return some (l ++ interior ++ r)
+      return some (leftDelim ++ interior ++ rightDelim)
 
 private
 structure binder_build_state where
@@ -94,7 +95,7 @@ def broken_binder_doc (walk : Lean4Fmt.Emit.Walk) (binder : Lean.Syntax) : emit_
     the brackets); verbatim only when the shape offers no seam. -/
 def binder_doc (walk : Lean4Fmt.Emit.Walk) (b : Lean.Syntax) : emit_m Doc := do
   match binder_text? b (← read).spacing.preserveBinders with
-  | some t => pure (.text t)
+  | some trailing => pure (.text trailing)
   | none => broken_binder_doc walk b
 
 end Lean4Fmt.Emit

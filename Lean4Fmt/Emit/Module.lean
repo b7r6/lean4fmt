@@ -68,14 +68,14 @@ def header_doc? (h : Lean.Syntax) : Option Doc :=
   Id.run do
     if h.getKind != ``Lean.Parser.Module.header then
       return none
-    let a := h.getArgs
-    if a.size != 3 then
+    let args := h.getArgs
+    if args.size != 3 then
       return none
-    if !((a[0]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString.isEmpty then
+    if !((args[0]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString.isEmpty then
       return none
-    if !((a[1]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString.isEmpty then
+    if !((args[1]?.map Lean4Fmt.Emit.bare_src).getD "").trimAscii.toString.isEmpty then
       return none
-    let imps := (a[2]?.map (·.getArgs)).getD #[]
+    let imps := (args[2]?.map (·.getArgs)).getD #[]
     if imps.isEmpty then
       return none
     import_lines_doc? imps
@@ -181,19 +181,19 @@ private
 def module_trivia? (lead : String) (atFileStart : Bool) : Option Doc :=
   Id.run
     do
-      let ls := lead.splitOn "\n"
-      if ls.isEmpty then
+      let lines := lead.splitOn "\n"
+      if lines.isEmpty then
         return some .nil
       -- head segment: remainder of the previous line (must be ws) — except at
       -- file start, where the first segment IS the first line of the file
       let mut state : trivia_state := {}
       if !atFileStart then
-        if !(ls[0]!.toList.all (·.isWhitespace)) then
+        if !(lines[0]!.toList.all (·.isWhitespace)) then
           return none
         state := { state with idx := 1 }
-      let n := ls.length
-      while state.idx < n do
-        match advance_trivia_line? atFileStart ls state with
+      let lineCount := lines.length
+      while state.idx < lineCount do
+        match advance_trivia_line? atFileStart lines state with
         | some next => state := next
         | none => return none
       if state.depth != 0 then
@@ -215,10 +215,10 @@ def module_trivia? (lead : String) (atFileStart : Bool) : Option Doc :=
     line — a leading hardline/blank would open the file with a stray newline). -/
 private partial
 def drop_leading_sep : Doc → Doc
-  | .cat a b  => .cat (drop_leading_sep a) b
+  | .cat leftValue rightValue => .cat (drop_leading_sep leftValue) rightValue
   | .hardline => .nil
-  | .blank _  => .nil
-  | d         => d
+  | .blank _ => .nil
+  | document => document
 
 private
 def module_doc_is_multiline (style : Lean4Fmt.Style.Style) (body : Doc) : Bool :=

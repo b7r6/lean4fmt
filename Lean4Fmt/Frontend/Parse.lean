@@ -36,7 +36,7 @@ def parse_module? (env : Environment) (path contents : String) : IO (Option Lean
 /-- Import tokens of a module header (used to confirm imports stay at the top). -/
 def header_toks (stx : Lean.Syntax) : Array String :=
   match stx.getArgs[0]? with
-  | some h => Lean4Fmt.Syntax.leaf_toks h
-  | none   => #[]
+  | some headSyntax => Lean4Fmt.Syntax.leaf_toks headSyntax
+  | none            => #[]
 
 end Lean4Fmt.Frontend

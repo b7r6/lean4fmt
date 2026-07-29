@@ -139,21 +139,21 @@ def run_all
   while state.cursor < conflicted.size do
     let wave := conflicted.extract state.cursor (Nat.min (state.cursor + jobs) conflicted.size)
     state := { state with children := #[] }
-    for idx in wave do
+    for resultIndex in wave do
       state := { state with
-        children := state.children.push (← spawnRetry state.results[idx]!.path) }
-    for (idx, child) in wave.zip state.children do
+        children := state.children.push (← spawnRetry state.results[resultIndex]!.path) }
+    for (resultIndex, child) in wave.zip state.children do
       -- stdout is the gated output (bounded: one source file); stderr is a few
       -- diagnostic lines — read stdout first, the safe order for these sizes
       let out ← child.stdout.readToEnd
       let errOut ← child.stderr.readToEnd
       let exitCode ← child.wait
       if exitCode == 0 && !out.isEmpty then
-        let jobResult := state.results[idx]!
+        let jobResult := state.results[resultIndex]!
         let stillUnparsed := (errOut.splitOn "not formatted:").length > 1
         state := { state with
           results :=
-            state.results.set! idx
+            state.results.set! resultIndex
               { jobResult with
                 output := out
                 diagnostics := if stillUnparsed then jobResult.diagnostics else #[] } }

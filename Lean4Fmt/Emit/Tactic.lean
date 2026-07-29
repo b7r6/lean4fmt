@@ -32,13 +32,13 @@ open Lean Lean4Fmt.Doc
 private partial
 def head_ws_sensitive (limit : Nat) (s : Lean.Syntax) : Bool :=
   match s with
-  | .node _ k args =>
+  | .node _ kind args =>
     (((s.getPos?.map (·.byteIdx)).getD limit) < limit
-        && (k == ``Lean.Parser.Term.let || k == ``Lean.Parser.Term.letrec
-            || k == ``Lean.Parser.Term.do
-            || k == ``Lean.Parser.Term.byTactic
-            || k == `Lean.Parser.Term.byTactic'
-            || k == ``Lean.Parser.Term.structInst))
+        && (kind == ``Lean.Parser.Term.let || kind == ``Lean.Parser.Term.letrec
+            || kind == ``Lean.Parser.Term.do
+            || kind == ``Lean.Parser.Term.byTactic
+            || kind == `Lean.Parser.Term.byTactic'
+            || kind == ``Lean.Parser.Term.structInst))
         || args.any (head_ws_sensitive limit)
   | _ => false
 
@@ -56,8 +56,8 @@ def last_by_descendant? (s : Lean.Syntax) : Option Lean.Syntax :=
     some s
   else
     match (s.getArgs.filter
-        (fun c => !(Lean4Fmt.Emit.bare_src c).trimAscii.toString.isEmpty)).back? with
-    | some c => last_by_descendant? c
+        (fun child => !(Lean4Fmt.Emit.bare_src child).trimAscii.toString.isEmpty)).back? with
+    | some headChar => last_by_descendant? headChar
     | none => none
 
 /-- The items of a `tacticSeq` (unwrapping `tacticSeq1Indented`), grouped into
@@ -79,25 +79,25 @@ def seq_groups_core?
     do
       if seq.getKind != seqKind then
         return none
-      let s1 := (seq.getArgs[0]?).getD .missing
-      if s1.getKind != seq1Kind then
+      let sequence := (seq.getArgs[0]?).getD .missing
+      if sequence.getKind != seq1Kind then
         return none
-      let some inner := s1.getArgs[0]? | return none
+      let some inner := sequence.getArgs[0]? | return none
       let mut state : SeqGroupState := {}
-      for c in inner.getArgs do
-        if (Lean4Fmt.Emit.bare_src c).trimAscii.toString.isEmpty then continue -- newline slot
-        if c.isAtom then
-          if (Lean4Fmt.Emit.bare_src c).trimAscii.toString == ";" then
+      for child in inner.getArgs do
+        if (Lean4Fmt.Emit.bare_src child).trimAscii.toString.isEmpty then continue -- newline slot
+        if child.isAtom then
+          if (Lean4Fmt.Emit.bare_src child).trimAscii.toString == ";" then
             if state.current.isEmpty then return none
             state := { state with joinNext := true }
             continue
           else return none
         if state.joinNext then
-          state := { state with current := state.current.push c, joinNext := false }
+          state := { state with current := state.current.push child, joinNext := false }
         else
           let groups :=
             if state.current.isEmpty then state.groups else state.groups.push state.current
-          state := { state with groups, current := #[c] }
+          state := { state with groups, current := #[child] }
       if state.joinNext then return none          -- dangling `;`
       let groups :=
         if state.current.isEmpty then state.groups else state.groups.push state.current
@@ -121,21 +121,22 @@ def group_text? (g : Array Lean.Syntax) : Option String :=
   Id.run do
     let mut txt := ""
     for idx in [0:g.size] do
-      let it := g[idx]!
-      if Lean4Fmt.Syntax.interior_has_line_comment it then
+      let item := g[idx]!
+      if Lean4Fmt.Syntax.interior_has_line_comment item then
         return none
-      let t := (Lean4Fmt.Emit.token_join? it).getD ((Lean4Fmt.Emit.bare_src it).trimAscii.toString)
-      if t.isEmpty || t.any (· == '\n') then
+      let text :=
+        (Lean4Fmt.Emit.token_join? item).getD ((Lean4Fmt.Emit.bare_src item).trimAscii.toString)
+      if text.isEmpty || text.any (· == '\n') then
         return none
       if idx + 1 < g.size then
-        let tr := (Lean4Fmt.Syntax.trailing? it).getD ""
-        if !tr.trimAscii.toString.isEmpty || tr.any (· == '\n') then
+        let trailing := (Lean4Fmt.Syntax.trailing? item).getD ""
+        if !trailing.trimAscii.toString.isEmpty || trailing.any (· == '\n') then
           return none
       if idx > 0 then
-        let ld := (Lean4Fmt.Syntax.leading? it).getD ""
-        if !ld.trimAscii.toString.isEmpty || ld.any (· == '\n') then
+        let leading := (Lean4Fmt.Syntax.leading? item).getD ""
+        if !leading.trimAscii.toString.isEmpty || leading.any (· == '\n') then
           return none
-      txt := if txt.isEmpty then t else txt ++ "; " ++ t
+      txt := if txt.isEmpty then text else txt ++ "; " ++ text
     if txt.isEmpty then
       return none
     return some txt
@@ -163,9 +164,9 @@ def seq_groups_doc?
     : Lean4Fmt.Emit.emit_m (Option Doc) := do
   let mut body : Doc := .nil
   for h : idx in [0:groups.size] do
-    let g := groups[idx]
-    let first := g[0]!
-    let glast := g[g.size - 1]!
+    let group := groups[idx]
+    let first := group[0]!
+    let glast := group[group.size - 1]!
     let trailT := ((Lean4Fmt.Syntax.trailing? glast).getD "").trimAscii.toString
     let last := idx + 1 == groups.size
     if !last && trailT.any (· == '\n') then
@@ -178,9 +179,9 @@ def seq_groups_doc?
     -- (dropped; the style re-adds its own) — see seqLinesDoc?
     let sep ← if idx == 0 && lead.toList.all (·.isWhitespace) then pure Doc.hardline
       else match Lean4Fmt.Emit.leading_sep? lead with
-        | some s => pure s
+        | some textValue => pure textValue
         | none => return none
-    let some gDoc ← group_doc? walk g | return none
+    let some gDoc ← group_doc? walk group | return none
     body := body ++ sep ++ gDoc ++ trailDoc
   return some body
 
@@ -222,19 +223,19 @@ def list_items? (slice : Array Lean.Syntax) : Option (Array Doc) :=
       -- an authored TRAILING comma (`[a, b,]`) has no slot in the rebuilt list
       -- (commas go BETWEEN items) — bail rather than drop the token (gate-caught)
       let mut lastComma := false
-      for c in slice do
-        if c.isAtom then
-          if (Lean4Fmt.Emit.bare_src c).trimAscii.toString == "," then lastComma := true
+      for child in slice do
+        if child.isAtom then
+          if (Lean4Fmt.Emit.bare_src child).trimAscii.toString == "," then lastComma := true
           continue
-        let subs := if c.getKind == Lean.nullKind then c.getArgs else #[c]
-        for d in subs do
-          if d.isAtom then
-            if (Lean4Fmt.Emit.bare_src d).trimAscii.toString == "," then lastComma := true
+        let subs := if child.getKind == Lean.nullKind then child.getArgs else #[child]
+        for descendant in subs do
+          if descendant.isAtom then
+            if (Lean4Fmt.Emit.bare_src descendant).trimAscii.toString == "," then lastComma := true
             continue
-          let t := Lean4Fmt.Emit.canon_tok d
-          if t.isEmpty || t.any (· == '\n') then
+          let text := Lean4Fmt.Emit.canon_tok descendant
+          if text.isEmpty || text.any (· == '\n') then
             return none
-          items := items.push (.text t)
+          items := items.push (.text text)
           lastComma := false
       if items.isEmpty || lastComma then
         return none
@@ -265,13 +266,13 @@ structure LineWordsState where
 private partial
 def line_words? (stx : Lean.Syntax) (fill : Bool := false) : Option (Array Doc) :=
   Id.run do
-    let a := stx.getArgs
+    let args := stx.getArgs
     let mut state : LineWordsState := {}
-    while state.idx < a.size do
-      let c := a[state.idx]!
-      if c.isAtom && (Lean4Fmt.Emit.bare_src c).trimAscii.toString == "[" then
-        let some closeIdx := closing_bracket? a (state.idx + 1) | return none
-        let some items := list_items? (a.extract (state.idx + 1) closeIdx) | return none
+    while state.idx < args.size do
+      let child := args[state.idx]!
+      if child.isAtom && (Lean4Fmt.Emit.bare_src child).trimAscii.toString == "[" then
+        let some closeIdx := closing_bracket? args (state.idx + 1) | return none
+        let some items := list_items? (args.extract (state.idx + 1) closeIdx) | return none
         let docs :=
           state.docs.push
             (if fill then
@@ -280,23 +281,25 @@ def line_words? (stx : Lean.Syntax) (fill : Bool := false) : Option (Array Doc) 
               Lean4Fmt.Doc.comma_list "[" "]" items)
         state := { docs, idx := closeIdx + 1 }
         continue
-      let t := (Lean4Fmt.Emit.bare_src c).trimAscii.toString
-      if t.isEmpty then
+      let text := (Lean4Fmt.Emit.bare_src child).trimAscii.toString
+      if text.isEmpty then
         state := { state with idx := state.idx + 1 }
         continue
-      if c.getKind == ``Lean.Parser.Tactic.location then
-        let location := Lean4Fmt.Emit.canon_tok c
+      if child.getKind == ``Lean.Parser.Tactic.location then
+        let location := Lean4Fmt.Emit.canon_tok child
         if location.isEmpty || location.any (· == '\n') then
           return none
         state := { state with docs := state.docs.push (.text location), idx := state.idx + 1 }
         continue
       let hasBracket :=
-        c.getArgs.any fun x => x.isAtom && (Lean4Fmt.Emit.bare_src x).trimAscii.toString == "["
-      if !t.any (· == '\n') && !hasBracket then
+        child.getArgs.any fun descendant =>
+          descendant.isAtom && (Lean4Fmt.Emit.bare_src descendant).trimAscii.toString == "["
+      if !text.any (· == '\n') && !hasBracket then
         state :=
-          { state with docs := state.docs.push (.text ((Lean4Fmt.Emit.token_join? c).getD t)) }
+          { state with
+            docs := state.docs.push (.text ((Lean4Fmt.Emit.token_join? child).getD text)) }
       else
-        match line_words? c fill with
+        match line_words? child fill with
         | some words => state := { state with docs := state.docs ++ words }
         | none => return none
       state := { state with idx := state.idx + 1 }
@@ -309,8 +312,8 @@ def line_words? (stx : Lean.Syntax) (fill : Bool := false) : Option (Array Doc) 
 private partial
 def prune_using? (s : Lean.Syntax) : Option (Lean.Syntax × Lean.Syntax) :=
   match s with
-  | .node info k args => visitNode info k args
-  | _                 => none
+  | .node info kind args => visitNode info kind args
+  | _ => none
 
   where
     visitNode (info : Lean.SourceInfo) (kind : Lean.SyntaxNodeKind) (args : Array Lean.Syntax) :
@@ -334,9 +337,9 @@ def prune_using? (s : Lean.Syntax) : Option (Lean.Syntax × Lean.Syntax) :=
 private
 def join_words (ws : Array Doc) : Doc :=
   ws.foldl
-    (fun d w => match d with
-      | .nil => w
-      | _    => d ++ .text " " ++ w)
+    (fun document word => match document with
+      | .nil => word
+      | _    => document ++ .text " " ++ word)
     .nil
 
 /-- A head-block tactic (`next h => …`, `case foo => …`, `all_goals …`,
@@ -350,29 +353,29 @@ def head_block_doc?
     (stx : Lean.Syntax)
     (conv : Bool := false)
     : Lean4Fmt.Emit.emit_m (Option Doc) := do
-  let a := stx.getArgs
-  if a.size < 2 then
+  let args := stx.getArgs
+  if args.size < 2 then
     return none
   let mut head := ""
-  for h : idx in [0:a.size - 1] do
-    let c := a[idx]!
+  for h : idx in [0:args.size - 1] do
+    let child := args[idx]!
     -- first child's leading = the FORM's own leading — the enclosing seam
     -- owns it (see exampleDoc?); interior comments still bail
     let ownLead :=
       if idx == 0 then
-        Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? c).getD "")
+        Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? child).getD "")
       else
         0
-    if Lean4Fmt.Syntax.count_subtree_line_comments c > ownLead then
+    if Lean4Fmt.Syntax.count_subtree_line_comments child > ownLead then
       return none
-    let t := Lean4Fmt.Emit.canon_tok c
-    if t.any (· == '\n') then
+    let text := Lean4Fmt.Emit.canon_tok child
+    if text.any (· == '\n') then
       return none
-    if !t.isEmpty then head := if head.isEmpty then t else head ++ " " ++ t
+    if !text.isEmpty then head := if head.isEmpty then text else head ++ " " ++ text
   if head.isEmpty then
     return none
-  let some bD ← arm_seq_doc? walk a[a.size - 1]! conv | return none
-  return some (.text head ++ bD)
+  let some branchDoc ← arm_seq_doc? walk args[args.size - 1]! conv | return none
+  return some (.text head ++ branchDoc)
 
 private
 inductive Dispatch where

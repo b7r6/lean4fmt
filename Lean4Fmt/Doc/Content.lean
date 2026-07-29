@@ -18,7 +18,7 @@ import Lean4Fmt.Doc.Core
 namespace Lean4Fmt.Doc
 
 /-- Non-whitespace characters of a char list, in order. -/
-def non_ws_l (cs : List Char) : List Char := cs.filter (fun c => !c.isWhitespace)
+def non_ws_l (cs : List Char) : List Char := cs.filter (fun char => !char.isWhitespace)
 
 /-- Non-whitespace characters of a string, in order. -/
 def non_ws (s : String) : List Char := non_ws_l s.toList
@@ -36,29 +36,29 @@ mutual
     when the grid's content provably equals it. -/
   def content : Doc → List Char
     | .nil | .line | .softline | .hardline | .blank _ | .pad _ => []
-    | .text s => non_ws s
-    | .textRaw s => non_ws s
-    | .verbatim s _ => non_ws s
-    | .cat a b => content a ++ content b
-    | .group d | .nest _ d | .align d | .flatten d => content d
+    | .text textValue => non_ws textValue
+    | .textRaw textValue => non_ws textValue
+    | .verbatim textValue _ => non_ws textValue
+    | .cat leftValue rightValue => content leftValue ++ content rightValue
+    | .group document | .nest _ document | .align document | .flatten document => content document
     | .alignTable spec rows => contentRows (non_ws spec.sep) rows
-    | .align_or _ _ fb => content fb
+    | .align_or _ _ flatBody => content flatBody
     | .fillSep items => contentList items
 
   def contentList : List Doc → List Char
-    | []      => []
-    | d :: ds => content d ++ contentList ds
+    | [] => []
+    | document :: documents => content document ++ contentList documents
 
   /-- One table row: cells' content joined by the separator's content (a row of
     `n` cells carries `n - 1` separators — mirroring `renderRowStr`). -/
   def contentRow (sep : List Char) : List Doc → List Char
-    | []      => []
-    | [d]     => content d
-    | d :: ds => content d ++ sep ++ contentRow sep ds
+    | [] => []
+    | [document] => content document
+    | document :: documents => content document ++ sep ++ contentRow sep documents
 
   def contentRows (sep : List Char) : List (List Doc) → List Char
-    | []      => []
-    | r :: rs => contentRow sep r ++ contentRows sep rs
+    | []          => []
+    | row :: rows => contentRow sep row ++ contentRows sep rows
 
 end
 

@@ -68,7 +68,7 @@ def add_lake_paths_impl (files : List String) : IO Unit := do
         { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd := root }
       if r.exitCode == 0 then
         let entries := ((r.stdout.splitOn "\n").headD "").splitOn ":"
-          |>.filter (fun s => !s.isEmpty) |>.map System.FilePath.mk
+          |>.filter (fun entry => !entry.isEmpty) |>.map System.FilePath.mk
         if !entries.isEmpty then
           Lean.searchPathRef.modify (· ++ entries)
           Lean4Fmt.Log.log .debug s!"lake env: {root} → {entries.length} search paths"
@@ -97,14 +97,14 @@ def run_jobs_impl (cfg : JobConfig) : IO (Array Driver.result) := do
   let base := (Style.by_name? cfg.preset).getD Style.straylight
   let style :=
     match cfg.width with
-    | some w => { base with layout := { base.layout with lineWidth := w } }
-    | none   => base
+    | some width => { base with layout := { base.layout with lineWidth := width } }
+    | none       => base
   let expanded ← Driver.expand (cfg.files.toArray.map System.FilePath.mk)
   let retryCfg ← do
     if cfg.retry then
       let exe ← IO.appPath
       pure (some (exe.toString,
-        (match cfg.width with | some w => #["--width", toString w] | none => #[])
+        (match cfg.width with | some widthBinding => #["--width", toString widthBinding] | none => #[])
           ++ #["--style", cfg.preset, "--log-level", cfg.logLevel]
           ++ (if cfg.elabFallback then #[] else #["--elab", "off"])
           -- the augmented search path is in-process; the child re-discovers
@@ -170,19 +170,20 @@ def run_stats_impl
   let base := (Style.by_name? preset).getD Style.straylight
   let style :=
     match width with
-    | some w => { base with layout := { base.layout with lineWidth := w } }
-    | none   => base
+    | some width => { base with layout := { base.layout with lineWidth := width } }
+    | none       => base
   let expanded ← Driver.expand (files.toArray.map System.FilePath.mk)
   let env ← Frontend.batch_env expanded
   let exe ← IO.appPath
   let mut rows : Array (Nat × Nat × Nat × Nat × String) := #[]
-  for p in expanded do
-    let contents ← IO.FS.readFile p
-    let style ← Driver.style_for style p
-    match ← Frontend.stats_for env p.toString contents style elabFallback with
-    | some (a, v, t, pol) => rows := rows.push (a, v, t, pol, p.toString)
+  for path in expanded do
+    let contents ← IO.FS.readFile path
+    let style ← Driver.style_for style path
+    match ← Frontend.stats_for env path.toString contents style elabFallback with
+    | some (leftValue, value, trailing, pol) =>
+      rows := rows.push (leftValue, value, trailing, pol, path.toString)
     | none =>
-      rows := rows.push (← fallback_stats_row exe retry width preset p contents.utf8ByteSize)
+      rows := rows.push (← fallback_stats_row exe retry width preset path contents.utf8ByteSize)
   return rows
 
 @[implemented_by run_stats_impl]
@@ -222,12 +223,12 @@ def decl_name_of? (defn : Lean.Syntax) : Option String := do
     be blocked, not applied (the break the floor caught on core/build). -/
 partial
 def struct_field_names : Lean.Syntax → List String
-  | .node _ k args =>
+  | .node _ kind args =>
     let here : List String :=
-      if k == ``Lean.Parser.Command.structSimpleBinder then
-        match (Lean4Fmt.Emit.leaf_tokens (.node .none k args)).find? (·.isIdent) with
-        | some id => [Rename.last_comp (Lean4Fmt.Emit.bare_src id)]
-        | none    => []
+      if kind == ``Lean.Parser.Command.structSimpleBinder then
+        match (Lean4Fmt.Emit.leaf_tokens (.node .none kind args)).find? (·.isIdent) with
+        | some identifier => [Rename.last_comp (Lean4Fmt.Emit.bare_src identifier)]
+        | none            => []
       else
         []
     here ++ args.toList.flatMap struct_field_names
@@ -239,13 +240,15 @@ def struct_field_names : Lean.Syntax → List String
 def decls_of (stx : Lean.Syntax) : List (String × Lean4Fmt.Rename.axis) :=
   let cmds := ((stx.getArgs[1]?).map (·.getArgs)).getD #[]
   cmds.toList.flatMap
-    (fun c =>
-      if c.getKind == ``Lean.Parser.Command.declaration then
-        match c.getArgs.findSome?
-            (fun defn => (axis_of_kind defn.getKind).map (fun ax => (defn, ax))) with
-        | some (defn, ax) =>
-          let head := ((decl_name_of? defn).map (fun nm => (nm, ax))).toList
-          let fields := if ax == .typ then (struct_field_names defn).map (·, .term) else []
+    (fun command =>
+      if command.getKind == ``Lean.Parser.Command.declaration then
+        match command.getArgs.findSome?
+            (fun defn => (axis_of_kind defn.getKind).map
+              (fun renameAxis => (defn, renameAxis))) with
+        | some (defn, axioms) =>
+          let head :=
+            ((decl_name_of? defn).map (fun name => (name, axioms))).toList
+          let fields := if axioms == .typ then (struct_field_names defn).map (·, .term) else []
           head ++ fields
         | none => []
       else [])
@@ -268,41 +271,45 @@ def decl_full_of? (defn : Lean.Syntax) : Option String := do
 def decls_of_full (stx : Lean.Syntax) : List (String × Lean4Fmt.Rename.axis) :=
   let cmds := ((stx.getArgs[1]?).map (·.getArgs)).getD #[]
   let join :=
-    fun (ns : List String) (nm : String) => String.intercalate "." ((ns.filter (· != "")) ++ [nm])
+    fun (namespaces : List String) (name : String) =>
+      String.intercalate "." ((namespaces.filter (· != "")) ++ [name])
   let step :=
-    fun (state : List String × List (String × Lean4Fmt.Rename.axis)) (c : Lean.Syntax) =>
-      let (ns, out) := state
-      let k := c.getKind
-      if k == ``Lean.Parser.Command.namespace then
+    fun (state : List String × List (String × Lean4Fmt.Rename.axis)) (command : Lean.Syntax) =>
+      let (namespaces, out) := state
+      let kind := command.getKind
+      if kind == ``Lean.Parser.Command.namespace then
         (
-          ns
+          namespaces
               ++ [
-                ((c.getArgs[1]?).map (fun s => (Lean4Fmt.Emit.bare_src s).trimAscii.toString)).getD
+                ((command.getArgs[1]?).map
+                  (fun namespaceNode => (Lean4Fmt.Emit.bare_src namespaceNode).trimAscii.toString)).getD
                   ""
               ],
           out
         )
-      else if k == ``Lean.Parser.Command.section then
-        (ns ++ [""], out)
-      else if k == ``Lean.Parser.Command.end then
-        (ns.dropLast, out)
-      else if k == ``Lean.Parser.Command.declaration then
-        match c.getArgs.findSome? (fun defn => (axis_of_kind defn.getKind).map (fun ax => (defn, ax))) with
-        | some (defn, ax) =>
+      else if kind == ``Lean.Parser.Command.section then
+        (namespaces ++ [""], out)
+      else if kind == ``Lean.Parser.Command.end then
+        (namespaces.dropLast, out)
+      else if kind == ``Lean.Parser.Command.declaration then
+        match command.getArgs.findSome?
+            (fun defn => (axis_of_kind defn.getKind).map
+              (fun renameAxis => (defn, renameAxis))) with
+        | some (defn, axioms) =>
           match decl_full_of? defn with
           | some declName =>
-            let full := join ns declName
+            let full := join namespaces declName
             let fields :=
-              if ax == .typ then
+              if axioms == .typ then
                 (struct_field_names defn).map
-                  (fun f => (full ++ "." ++ f, Lean4Fmt.Rename.axis.term))
+                  (fun field => (full ++ "." ++ field, Lean4Fmt.Rename.axis.term))
               else
                 []
-            (ns, out ++ [(full, ax)] ++ fields)
-          | none => (ns, out)
-        | none => (ns, out)
+            (namespaces, out ++ [(full, axioms)] ++ fields)
+          | none => (namespaces, out)
+        | none => (namespaces, out)
       else
-        (ns, out)
+        (namespaces, out)
   (cmds.foldl step ([], [])).2
 
 def axis_tag : Lean4Fmt.Rename.axis → String
@@ -335,26 +342,26 @@ def run_rename_decls_impl
   let env ← Frontend.batch_env paths
   let out ← IO.getStdout
   let err ← IO.getStderr
-  for p in paths do
-    let contents ← IO.FS.readFile p
+  for path in paths do
+    let contents ← IO.FS.readFile path
     if resolve then
       -- RESOLVED occurrences `lastComp<TAB>fullName<TAB>D|U` (the hybrid's input),
       -- plus every locally-DEFINED const as `F` def-only (fields/constructors/decls
       -- — the collision+taken guards' input) — BOTH from one elaboration.
-      let (occ, locals) ← Frontend.Session.resolve_idents env p.toString contents
-      for (_, _, nm, isDef) in occ do
-        let full := nm.toString
-        let d := if isDef then "D" else "U"
-        out.putStrLn s!"{Rename.last_comp full}\t{full}\t{d}"
-      for nm in locals do
-        let full := nm.toString
+      let (occ, locals) ← Frontend.Session.resolve_idents env path.toString contents
+      for (_, _, name, isDef) in occ do
+        let full := name.toString
+        let disposition := if isDef then "D" else "U"
+        out.putStrLn s!"{Rename.last_comp full}\t{full}\t{disposition}"
+      for name in locals do
+        let full := name.toString
         out.putStrLn s!"{Rename.last_comp full}\t{full}\tF"
     else
-      match ← Frontend.parse_full? env p.toString contents elabFallback with
+      match ← Frontend.parse_full? env path.toString contents elabFallback with
       | some stx =>
-        for (nm, ax) in decls_of stx do
-          out.putStrLn s!"{nm}\t{axis_tag ax}"
-      | none => err.putStrLn s!"rename-decls: SKIP (no parse) {p}"
+        for (name, isAxiom) in decls_of stx do
+          out.putStrLn s!"{name}\t{axis_tag isAxiom}"
+      | none => err.putStrLn s!"rename-decls: SKIP (no parse) {path}"
 
 @[implemented_by run_rename_decls_impl]
 opaque run_rename_decls (files : List String) (resolve : Bool) (farmDir : Option String) (elabFallback : Bool) : IO Unit
@@ -440,12 +447,12 @@ def run_resolve_dump_impl (files : List String) : IO Unit := do
   Frontend.apply_farm (← Frontend.make_olean_farm files)
   let env ← Frontend.batch_env paths
   let out ← IO.getStdout
-  for p in paths do
-    let contents ← IO.FS.readFile p
-    let (occ, _) ← Frontend.Session.resolve_idents env p.toString contents
-    for (s, e, nm, isDef) in occ do
+  for path in paths do
+    let contents ← IO.FS.readFile path
+    let (occ, _) ← Frontend.Session.resolve_idents env path.toString contents
+    for (startOffset, endOffset, name, isDef) in occ do
       let tag := if isDef then "DEF" else "use"
-      out.putStrLn s!"{s}-{e}\t{nm}\t{tag}"
+      out.putStrLn s!"{startOffset}-{endOffset}\t{name}\t{tag}"
 
 @[implemented_by run_resolve_dump_impl]
 opaque run_resolve_dump (files : List String) : IO Unit
@@ -663,7 +670,7 @@ def run_rename_apply_impl
   let exe := (← IO.appPath).toString
   let paths := files.toArray.map System.FilePath.mk
   let naming := ((Lean4Fmt.Style.by_name? preset).getD Lean4Fmt.Style.straylight).naming
-  let modules := files.filterMap (fun f => (System.FilePath.mk f).fileStem)
+  let modules := files.filterMap (fun file => (System.FilePath.mk file).fileStem)
   let jobs := (((← IO.getEnv "LEAN4FMT_JOBS").bind (·.toNat?)).getD 8).max 1
   -- resolution: build the olean farm ONCE (over the whole set incl. protected
   -- files, so they resolve), hand each worker its path via --farm
@@ -673,8 +680,8 @@ def run_rename_apply_impl
         ++ (if resolve then
           #["--resolve", "--lake", "off"]
               ++ (match farm with
-              | some f => #["--farm", f]
-              | none   => #[])
+              | some filePath => #["--farm", filePath]
+              | none          => #[])
         else
           #[])
   let context : RenameWorkerContext := { err, exe, paths, jobs, resolve, extra, protect }

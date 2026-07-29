@@ -19,10 +19,10 @@ def discover (start : System.FilePath) : IO (Option System.FilePath) := do
   if ← cand.pathExists then
     return some cand
   match start.parent with
-  | some p =>
-    if p == start then
+  | some pathValue =>
+    if pathValue == start then
       return none
-    else discover p
+    else discover pathValue
   | none => return none
 
 end Lean4Fmt.Config

@@ -19,8 +19,8 @@ def sep_by (sep : Doc) (ds : Array Doc) : Doc :=
   Id.run do
     let mut output := Doc.nil
     let mut first := true
-    for d in ds do
-      output := if first then d else output ++ sep ++ d
+    for document in ds do
+      output := if first then document else output ++ sep ++ document
       first := false
     return output
 

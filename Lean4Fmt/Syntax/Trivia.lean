@@ -33,8 +33,8 @@ def trailing? (stx : Lean.Syntax) : Option String :=
 partial
 def last_token_trailing? (stx : Lean.Syntax) : Option String :=
   match trailing? stx with
-  | some t => some t
-  | none   => stx.getArgs.reverse.findSome? last_token_trailing?
+  | some trailing => some trailing
+  | none          => stx.getArgs.reverse.findSome? last_token_trailing?
 
 /-- Does a trivia string contain a line comment `-- …`? (block comments `/- -/`
     are safe; only line comments eat the rest of the line — §0.4). -/
@@ -46,8 +46,9 @@ partial
 def subtree_has_line_comment (stx : Lean.Syntax) : Bool :=
   let inTrivia (info : SourceInfo) : Bool :=
     match info with
-    | .original l _ t _ =>
-      has_line_comment (Substring.Raw.toString l) || has_line_comment (Substring.Raw.toString t)
+    | .original leading _ trailing _ =>
+      has_line_comment (Substring.Raw.toString leading)
+          || has_line_comment (Substring.Raw.toString trailing)
     | _ => false
   match stx with
   | .atom info _      => inTrivia info
@@ -68,15 +69,16 @@ partial
 def count_subtree_line_comments (stx : Lean.Syntax) : Nat :=
   let inInfo (info : SourceInfo) : Nat :=
     match info with
-    | .original l _ t _ =>
-      count_line_comments (Substring.Raw.toString l)
-          + count_line_comments (Substring.Raw.toString t)
+    | .original leading _ trailing _ =>
+      count_line_comments (Substring.Raw.toString leading)
+          + count_line_comments (Substring.Raw.toString trailing)
     | _ => 0
   match stx with
-  | .atom info _      => inInfo info
+  | .atom info _ => inInfo info
   | .ident info _ _ _ => inInfo info
-  | .node info _ args => inInfo info + args.foldl (fun n c => n + count_subtree_line_comments c) 0
-  | .missing          => 0
+  | .node info _ args =>
+    inInfo info + args.foldl (fun count child => count + count_subtree_line_comments child) 0
+  | .missing => 0
 
 /-- Line comment in the trivia this form OWNS: anywhere in the subtree except the
     tail token's trailing — that zone belongs to the enclosing seam (whoever
@@ -104,7 +106,7 @@ def interior_has_line_comment (stx : Lean.Syntax) : Bool :=
     (§0.3 — reprint can be `none` for some nodes after `updateLeading`). -/
 def verbatim_src? (stx : Lean.Syntax) : Option String :=
   match stx.reprint with
-  | some s => some s
-  | none   => (stx.getSubstring? true false).map (·.toString)
+  | some textValue => some textValue
+  | none           => (stx.getSubstring? true false).map (·.toString)
 
 end Lean4Fmt.Syntax

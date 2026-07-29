@@ -172,17 +172,17 @@ theorem flatten_map_drop_blank
       simp [inductionHypothesis, non_ws_l_nil_of_spaces line line_is_blank]
     · rw [List.dropWhile_cons_of_neg (by simp [line_is_blank])]
 
-/-- T4 (writer hygiene / content): `wr`'s extension over the old output is
+/-- T4 (writer hygiene / content): `writeResult`'s extension over the old output is
     exactly `nonWs s` — the pending newlines and indent it flushes contribute
-    nothing. In particular `wr` never writes the indent except immediately
+    nothing. In particular `writeResult` never writes the indent except immediately
     followed by its content. -/
 @[simp]
 theorem wr_out
         (st : rst)
         (indent : Nat)
         (s : String)
-        : non_ws (wr st indent s).out = non_ws st.out ++ non_ws s := by
-  unfold wr
+        : non_ws (writeResult st indent s).out = non_ws st.out ++ non_ws s := by
+  unfold writeResult
   by_cases has_pending_lines : st.pend > 0 <;> simp [has_pending_lines]
 
 /-- Dedenting drops only spaces — the content of a continuation line survives
@@ -255,12 +255,18 @@ theorem emit_table_content
         (strRows : List (List String))
         (st : rst)
         : non_ws (emit_table maxPend indent sep widths strRows st).out
-            = non_ws st.out ++ ((strRows.map fun r => non_ws (render_row_str sep widths r)).flatten) := by
+            = non_ws st.out
+                ++ ((strRows.map fun row => non_ws (render_row_str sep widths row)).flatten) := by
   suffices table_content : ∀ (first : Bool) (st : rst),
-      non_ws ((strRows.foldl (fun (p : rst × Bool) r =>
-        let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
-        (wr st indent (render_row_str sep widths r), false)) (st, first)).1).out
-      = non_ws st.out ++ ((strRows.map fun r => non_ws (render_row_str sep widths r)).flatten) by
+      non_ws ((strRows.foldl (fun (progress : rst × Bool) row =>
+        let state :=
+          if progress.2 then
+            progress.1
+          else
+            { progress.1 with pend := Nat.min (progress.1.pend + 1) maxPend }
+        (writeResult state indent (render_row_str sep widths row), false)) (st, first)).1).out
+      = non_ws st.out
+          ++ ((strRows.map fun row => non_ws (render_row_str sep widths row)).flatten) by
     exact table_content true st
   induction strRows with
   | nil => intro first state; simp
@@ -277,55 +283,55 @@ mutual
     and can do NOTHING else — for every doc, opaque payloads included. -/
 theorem go_content (width maxPend : Nat) (d : Doc) (indent : Nat) (flat : Bool)
     (st : rst) :
-    non_ws (go width maxPend d indent flat st).out = non_ws st.out ++ content d := by
+    non_ws (renderLoop width maxPend d indent flat st).out = non_ws st.out ++ content d := by
   match d with
-  | .nil => simp [go, content]
-  | .text s => simp [go, content, wr_out]
-  | .textRaw s =>
-    simp only [go, content]
+  | .nil => simp [renderLoop, content]
+  | .text textValue => simp [renderLoop, content, wr_out]
+  | .textRaw textValue =>
+    simp only [renderLoop, content]
     repeat' split
     all_goals simp
-  | .verbatim s b =>
-    simp only [go, content]
-    exact wr_block_out st indent b s
-  | .cat a b =>
-    simp only [go, content]
-    rw [go_content width maxPend b indent flat _,
-        go_content width maxPend a indent flat st, List.append_assoc]
+  | .verbatim textValue rightValue =>
+    simp only [renderLoop, content]
+    exact wr_block_out st indent rightValue textValue
+  | .cat leftValue rightValue =>
+    simp only [renderLoop, content]
+    rw [go_content width maxPend rightValue indent flat _,
+        go_content width maxPend leftValue indent flat st, List.append_assoc]
   | .line =>
-    simp only [go, content]
+    simp only [renderLoop, content]
     by_cases is_flat_mode : flat <;> simp [is_flat_mode, wr_out]
   | .softline =>
-    simp only [go, content]
+    simp only [renderLoop, content]
     by_cases is_flat_mode : flat <;> simp [is_flat_mode]
-  | .hardline => simp [go, content]
-  | .blank _ => simp [go, content]
-  | .group d' =>
-    simp only [go, content]
-    exact go_content width maxPend d' indent _ st
-  | .flatten d' =>
-    simp only [go, content]
-    exact go_content width maxPend d' indent true st
-  | .nest n d' =>
-    simp only [go, content]
-    exact go_content width maxPend d' _ flat st
-  | .align d' =>
-    simp only [go, content]
-    exact go_content width maxPend d' st.col flat st
+  | .hardline => simp [renderLoop, content]
+  | .blank _ => simp [renderLoop, content]
+  | .group document =>
+    simp only [renderLoop, content]
+    exact go_content width maxPend document indent _ st
+  | .flatten document =>
+    simp only [renderLoop, content]
+    exact go_content width maxPend document indent true st
+  | .nest count document =>
+    simp only [renderLoop, content]
+    exact go_content width maxPend document _ flat st
+  | .align document =>
+    simp only [renderLoop, content]
+    exact go_content width maxPend document st.col flat st
   | .fillSep items =>
-    simp only [go, content]
+    simp only [renderLoop, content]
     exact goFill_content width maxPend items indent flat true st
   | .alignTable spec rows =>
-    simp only [go, content]
+    simp only [renderLoop, content]
     rw [emit_table_content]
     congr 1
     exact goCellsRows_content width maxPend rows indent spec.sep _
-  | .align_or spec rows fb =>
-    simp only [go, content]
+  | .align_or spec rows flatBody =>
+    simp only [renderLoop, content]
     repeat' split
     all_goals first
-      | exact go_content width maxPend fb indent true st
-      | exact go_content width maxPend fb indent flat st
+      | exact go_content width maxPend flatBody indent true st
+      | exact go_content width maxPend flatBody indent flat st
       | (rename_i hgrid
          rw [emit_table_content]
          congr 1
@@ -339,12 +345,12 @@ theorem goFill_content (width maxPend : Nat) (items : List Doc) (indent : Nat)
     = non_ws st.out ++ contentList items := by
   match items with
   | [] => simp [goFill, contentList]
-  | i :: is =>
-    have hcell : non_ws (go width maxPend i indent true {}).out = content i := by
-      have := go_content width maxPend i indent true {}
+  | item :: items =>
+    have hcell : non_ws (renderLoop width maxPend item indent true {}).out = content item := by
+      have := go_content width maxPend item indent true {}
       simpa [non_ws] using this
     simp only [goFill, contentList]
-    rw [goFill_content width maxPend is indent flat false _]
+    rw [goFill_content width maxPend items indent flat false _]
     by_cases is_first_item : first
     · simp [is_first_item, wr_out, hcell, List.append_assoc]
     · simp only [is_first_item]
@@ -359,15 +365,15 @@ theorem goCells_content (width maxPend : Nat) (cs : List Doc) (indent : Nat)
     = contentRow (non_ws sep) cs := by
   match cs with
   | [] => simp [goCells, render_row_str, contentRow]
-  | [c] =>
+  | [headChar] =>
     simp only [goCells, render_row_str, contentRow]
-    have := go_content width maxPend c indent true {}
+    have := go_content width maxPend headChar indent true {}
     simpa [non_ws] using this
-  | c :: c' :: cs' =>
-    have hcell : non_ws (go width maxPend c indent true {}).out = content c := by
-      have := go_content width maxPend c indent true {}
+  | headCharBinding :: headChar :: tailChars =>
+    have hcell : non_ws (renderLoop width maxPend headCharBinding indent true {}).out = content headCharBinding := by
+      have := go_content width maxPend headCharBinding indent true {}
       simpa [non_ws] using this
-    have hrec := goCells_content width maxPend (c' :: cs') indent sep (widths.drop 1)
+    have hrec := goCells_content width maxPend (headChar :: tailChars) indent sep (widths.drop 1)
     simp only [goCells] at hrec ⊢
     simp only [render_row_str]
     simp only [non_ws_append, non_ws_spaces, List.append_nil]
@@ -376,14 +382,15 @@ theorem goCells_content (width maxPend : Nat) (cs : List Doc) (indent : Nat)
 
 theorem goCellsRows_content (width maxPend : Nat) (rows : List (List Doc)) (indent : Nat)
     (sep : String) (widths : List Nat) :
-    ((goCellsRows width maxPend rows indent).map fun r => non_ws (render_row_str sep widths r)).flatten
+    ((goCellsRows width maxPend rows indent).map
+      fun row => non_ws (render_row_str sep widths row)).flatten
     = contentRows (non_ws sep) rows := by
   match rows with
   | [] => simp [goCellsRows, contentRows]
-  | r :: rs =>
+  | row :: rows =>
     simp only [goCellsRows, List.map_cons, List.flatten_cons, contentRows]
-    rw [goCellsRows_content width maxPend rs indent sep widths,
-        goCells_content width maxPend r indent sep widths]
+    rw [goCellsRows_content width maxPend rows indent sep widths,
+        goCells_content width maxPend row indent sep widths]
 
 end
 
@@ -395,7 +402,7 @@ theorem render_content
         : non_ws (render style d) = content d := by
   have h := go_content style.layout.lineWidth (style.blankLines.maxConsecutive + 1) d 0 false {}
   simp only [render]
-  by_cases output_ends_with_newline : (go style.layout.lineWidth (style.blankLines.maxConsecutive + 1)
+  by_cases output_ends_with_newline : (renderLoop style.layout.lineWidth (style.blankLines.maxConsecutive + 1)
       d 0 false {}).out.endsWith "\n"
   · simp only [output_ends_with_newline, if_true]
     simpa [non_ws] using h
@@ -414,19 +421,20 @@ mutual
   def flatRender : Doc → String
     | .nil | .softline | .hardline | .blank _ => ""
     | .alignTable _ _ => ""
-    | .text s => s
-    | .textRaw s => s
-    | .verbatim s _ => String.ofList (trim_end_ws s.toList)
-    | .cat a b => flatRender a ++ flatRender b
+    | .text textValue => textValue
+    | .textRaw textValue => textValue
+    | .verbatim textValue _ => String.ofList (trim_end_ws textValue.toList)
+    | .cat leftValue rightValue => flatRender leftValue ++ flatRender rightValue
     | .line => " "
-    | .group d | .nest _ d | .align d | .flatten d => flatRender d
-    | .align_or _ _ fb => flatRender fb
+    | .group document | .nest _ document | .align document | .flatten document =>
+      flatRender document
+    | .align_or _ _ flatBody => flatRender flatBody
     | .fillSep [] => ""
-    | .fillSep (i :: is) => flatRender i ++ flatRenderSep is
+    | .fillSep (item :: items) => flatRender item ++ flatRenderSep items
 
   def flatRenderSep : List Doc → String
-    | []      => ""
-    | i :: is => " " ++ flatRender i ++ flatRenderSep is
+    | []            => ""
+    | item :: items => " " ++ flatRender item ++ flatRenderSep items
 
 end
 
@@ -440,25 +448,25 @@ mutual
           : (flatRender d).length = n := by
     match d with
     | .nil => simp_all [flat_width, flatRender]
-    | .text s => simp_all [flat_width, flatRender]
-    | .textRaw s =>
+    | .text textValue => simp_all [flat_width, flatRender]
+    | .textRaw textValue =>
       simp only [flat_width] at hw
       split at hw
       · exact absurd hw (by simp)
       · simp_all [flatRender]
-    | .verbatim s _ =>
+    | .verbatim textValue _ =>
       simp only [flat_width] at hw
       split at hw
       · exact absurd hw (by simp)
       · simp only [Option.some.injEq] at hw
         simp [flatRender, ← hw]
-    | .cat a b =>
+    | .cat leftValue rightValue =>
       simp only [flat_width] at hw
       split at hw
       · next leftWidth rightWidth leftWidthEq rightWidthEq =>
           simp only [Option.some.injEq] at hw
-          simp [flatRender, String.length_append, flatRender_length a leftWidth leftWidthEq,
-            flatRender_length b rightWidth rightWidthEq, hw]
+          simp [flatRender, String.length_append, flatRender_length leftValue leftWidth leftWidthEq,
+            flatRender_length rightValue rightWidth rightWidthEq, hw]
       · exact absurd hw (by simp)
     | .line =>
       simp only [flat_width, Option.some.injEq] at hw
@@ -467,21 +475,24 @@ mutual
     | .hardline => simp_all [flat_width]
     | .blank _ => simp_all [flat_width]
     | .alignTable _ _ => simp_all [flat_width]
-    | .group d' => simp only [flat_width] at hw; simpa [flatRender] using flatRender_length d' n hw
-    | .nest _ d' => simp only [flat_width] at hw; simpa [flatRender] using flatRender_length d' n hw
-    | .align d' => simp only [flat_width] at hw; simpa [flatRender] using flatRender_length d' n hw
-    | .flatten d' =>
-      simp only [flat_width] at hw; simpa [flatRender] using flatRender_length d' n hw
-    | .align_or _ _ fb =>
-      simp only [flat_width] at hw; simpa [flatRender] using flatRender_length fb n hw
+    | .group document =>
+      simp only [flat_width] at hw; simpa [flatRender] using flatRender_length document n hw
+    | .nest _ document =>
+      simp only [flat_width] at hw; simpa [flatRender] using flatRender_length document n hw
+    | .align document =>
+      simp only [flat_width] at hw; simpa [flatRender] using flatRender_length document n hw
+    | .flatten document =>
+      simp only [flat_width] at hw; simpa [flatRender] using flatRender_length document n hw
+    | .align_or _ _ flatBody =>
+      simp only [flat_width] at hw; simpa [flatRender] using flatRender_length flatBody n hw
     | .fillSep [] => simp_all [flat_width, flatRender]
-    | .fillSep (i :: is) =>
+    | .fillSep (item :: items) =>
       simp only [flat_width] at hw
       split at hw
       · next itemWidth restWidth itemWidthEq restWidthEq =>
           simp only [Option.some.injEq] at hw
-          simp [flatRender, String.length_append, flatRender_length i itemWidth itemWidthEq,
-            flatRenderSep_length is restWidth restWidthEq, hw]
+          simp [flatRender, String.length_append, flatRender_length item itemWidth itemWidthEq,
+            flatRenderSep_length items restWidth restWidthEq, hw]
       · exact absurd hw (by simp)
 
   theorem flatRenderSep_length
@@ -491,14 +502,14 @@ mutual
           : (flatRenderSep is).length = n := by
     match is with
     | [] => simp_all [flatWidthSep, flatRenderSep]
-    | i :: is' =>
+    | item :: items =>
       simp only [flatWidthSep] at hw
       split at hw
       · next itemWidth restWidth itemWidthEq restWidthEq =>
           simp only [Option.some.injEq] at hw
           subst hw
-          simp [flatRenderSep, String.length_append, flatRender_length i itemWidth itemWidthEq,
-            flatRenderSep_length is' restWidth restWidthEq]
+          simp [flatRenderSep, String.length_append, flatRender_length item itemWidth itemWidthEq,
+            flatRenderSep_length items restWidth restWidthEq]
       · exact absurd hw (by simp)
 
 end
@@ -568,7 +579,7 @@ theorem go_flat_verbatim
         (st : rst)
         (hw : flat_width (.verbatim raw base) = some n)
         (hp : st.pend = 0)
-        : go width maxPend (.verbatim raw base) indent true st
+        : renderLoop width maxPend (.verbatim raw base) indent true st
             = { out := st.out ++ flatRender (.verbatim raw base), col := st.col + n, pend := 0 } := by
   simp only [flat_width] at hw
   split at hw
@@ -578,7 +589,7 @@ theorem go_flat_verbatim
       have no_newline_mem : '\n' ∉ trim_end_ws raw.toList :=
         fun newline_mem =>
           no_newline (List.any_eq_true.mpr ⟨'\n', mem_trim_end_ws newline_mem, by simp⟩)
-      simp only [go, wr_block, split_lines_no_nl _ no_newline_mem]
+      simp only [renderLoop, wr_block, split_lines_no_nl _ no_newline_mem]
       cases trimmed : trim_end_ws raw.toList with
       | nil =>
         rw [trimmed] at hw
@@ -590,7 +601,7 @@ theorem go_flat_verbatim
           rwa [trimmed] at this
         rw [trimmed] at hw
         obtain ⟨out, column, pending⟩ := st; subst hp
-        simp_all [List.dropWhile_cons, wr_lines, wr, flatRender, trimmed]
+        simp_all [List.dropWhile_cons, wr_lines, writeResult, flatRender, trimmed]
         omega
 
 mutual
@@ -606,57 +617,57 @@ mutual
           (st : rst)
           (hw : flat_width d = some n)
           (hp : st.pend = 0)
-          : go width maxPend d indent true st
+          : renderLoop width maxPend d indent true st
               = { out := st.out ++ flatRender d, col := st.col + n, pend := 0 } := by
     match d with
     | .nil =>
-      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, flatRender, ← hw]
-    | .text s =>
-      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, wr, flatRender, ← hw]
-    | .textRaw s =>
+      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [renderLoop, flatRender, ← hw]
+    | .text textValue =>
+      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [renderLoop, writeResult, flatRender, ← hw]
+    | .textRaw textValue =>
       simp only [flat_width] at hw; split at hw
       · exact absurd hw (by simp)
       · next hnl =>
-          simp only [Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, hnl, flatRender, ← hw]
+          simp only [Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [renderLoop, hnl, flatRender, ← hw]
     | .verbatim raw base => exact go_flat_verbatim width maxPend raw base indent n st hw hp
-    | .cat a b =>
+    | .cat leftValue rightValue =>
       simp only [flat_width] at hw; split at hw
       · next leftWidth rightWidth leftWidthEq rightWidthEq =>
-          simp only [Option.some.injEq] at hw; simp only [go]
-          rw [go_flat width maxPend a indent leftWidth st leftWidthEq hp,
-            go_flat width maxPend b indent rightWidth _ rightWidthEq rfl]
+          simp only [Option.some.injEq] at hw; simp only [renderLoop]
+          rw [go_flat width maxPend leftValue indent leftWidth st leftWidthEq hp,
+            go_flat width maxPend rightValue indent rightWidth _ rightWidthEq rfl]
           simp [flatRender, String.append_assoc, ← hw, Nat.add_assoc]
       · exact absurd hw (by simp)
     | .line =>
-      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, wr, flatRender, ← hw]
+      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [renderLoop, writeResult, flatRender, ← hw]
     | .softline =>
-      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, flatRender, ← hw]
+      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [renderLoop, flatRender, ← hw]
     | .hardline => simp [flat_width] at hw
     | .blank _ => simp [flat_width] at hw
     | .alignTable _ _ => simp [flat_width] at hw
-    | .group d' =>
-      simp only [flat_width] at hw; simp only [go, Bool.true_or]; simpa [flatRender] using go_flat width maxPend d' indent n st hw hp
-    | .nest m d' =>
-      simp only [flat_width] at hw; simp only [go]; simpa [flatRender] using go_flat width maxPend d' _ n st hw hp
-    | .align d' =>
-      simp only [flat_width] at hw; simp only [go]; simpa [flatRender] using go_flat width maxPend d' st.col n st hw hp
-    | .flatten d' =>
-      simp only [flat_width] at hw; simp only [go]; simpa [flatRender] using go_flat width maxPend d' indent n st hw hp
-    | .align_or _ _ fb =>
-      simp only [flat_width] at hw; simp only [go, if_true]; simpa [flatRender] using go_flat width maxPend fb indent n st hw hp
+    | .group document =>
+      simp only [flat_width] at hw; simp only [renderLoop, Bool.true_or]; simpa [flatRender] using go_flat width maxPend document indent n st hw hp
+    | .nest candidate document =>
+      simp only [flat_width] at hw; simp only [renderLoop]; simpa [flatRender] using go_flat width maxPend document _ n st hw hp
+    | .align document =>
+      simp only [flat_width] at hw; simp only [renderLoop]; simpa [flatRender] using go_flat width maxPend document st.col n st hw hp
+    | .flatten document =>
+      simp only [flat_width] at hw; simp only [renderLoop]; simpa [flatRender] using go_flat width maxPend document indent n st hw hp
+    | .align_or _ _ flatBody =>
+      simp only [flat_width] at hw; simp only [renderLoop, if_true]; simpa [flatRender] using go_flat width maxPend flatBody indent n st hw hp
     | .fillSep [] =>
-      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [go, goFill, flatRender, ← hw]
-    | .fillSep (i :: is) =>
+      simp only [flat_width, Option.some.injEq] at hw; obtain ⟨output, column, pending⟩ := st; subst hp; simp [renderLoop, goFill, flatRender, ← hw]
+    | .fillSep (item :: items) =>
       simp only [flat_width] at hw; split at hw
       · next itemWidth restWidth itemWidthEq restWidthEq =>
           simp only [Option.some.injEq] at hw; subst hw
           obtain ⟨output, column, pending⟩ := st; subst hp
-          simp only [go, goFill]
-          rw [go_flat width maxPend i indent itemWidth {} itemWidthEq rfl]
-          have renderedLength : (flatRender i).length = itemWidth :=
-            flatRender_length i itemWidth itemWidthEq
-          simp only [wr, gt_iff_lt, Nat.lt_irrefl, if_false, reduceIte, if_true]
-          rw [goFill_flat width maxPend is indent restWidth _ restWidthEq rfl]
+          simp only [renderLoop, goFill]
+          rw [go_flat width maxPend item indent itemWidth {} itemWidthEq rfl]
+          have renderedLength : (flatRender item).length = itemWidth :=
+            flatRender_length item itemWidth itemWidthEq
+          simp only [writeResult, gt_iff_lt, Nat.lt_irrefl, if_false, reduceIte, if_true]
+          rw [goFill_flat width maxPend items indent restWidth _ restWidthEq rfl]
           simp [flatRender, String.append_assoc, renderedLength, rst.mk.injEq]
           omega
       · exact absurd hw (by simp)
@@ -678,7 +689,7 @@ mutual
       obtain ⟨output, column, pending⟩ := st
       subst hp
       simp [goFill, flatRenderSep, ← hw]
-    | i :: is' =>
+    | item :: items =>
       simp only [flatWidthSep] at hw
       split at hw
       · next itemWidth restWidth itemWidthEq restWidthEq =>
@@ -687,10 +698,11 @@ mutual
           obtain ⟨output, column, pending⟩ := st
           subst hp
           simp only [goFill, Bool.not_true, Bool.false_and, Bool.false_eq_true, if_false, reduceIte]
-          rw [go_flat width maxPend i indent itemWidth {} itemWidthEq rfl]
-          have hlen : (flatRender i).length = itemWidth := flatRender_length i itemWidth itemWidthEq
-          simp only [wr, gt_iff_lt, Nat.lt_irrefl, if_false, reduceIte]
-          rw [goFill_flat width maxPend is' indent restWidth _ restWidthEq rfl]
+          rw [go_flat width maxPend item indent itemWidth {} itemWidthEq rfl]
+          have hlen : (flatRender item).length = itemWidth :=
+            flatRender_length item itemWidth itemWidthEq
+          simp only [writeResult, gt_iff_lt, Nat.lt_irrefl, if_false, reduceIte]
+          rw [goFill_flat width maxPend items indent restWidth _ restWidthEq rfl]
           simp [flatRenderSep, String.append_assoc, String.length_append, hlen, rst.mk.injEq]
           omega
       · exact absurd hw (by simp)
@@ -703,21 +715,21 @@ mutual
   /-- Well-formed docs: `.text` payloads are newline-free (the Doc contract —
     multi-line content must ride `textRaw`/`verbatim`). -/
   def WF : Doc → Prop
-    | .text s => '\n' ∉ s.toList
-    | .cat a b => WF a ∧ WF b
-    | .group d | .nest _ d | .align d | .flatten d => WF d
+    | .text textValue => '\n' ∉ textValue.toList
+    | .cat leftValue rightValue => WF leftValue ∧ WF rightValue
+    | .group document | .nest _ document | .align document | .flatten document => WF document
     | .alignTable _ rows => WFRows rows
-    | .align_or _ rows fb => WFRows rows ∧ WF fb
+    | .align_or _ rows flatBody => WFRows rows ∧ WF flatBody
     | .fillSep items => WFList items
     | _ => True
 
   def WFList : List Doc → Prop
-    | []      => True
-    | d :: ds => WF d ∧ WFList ds
+    | [] => True
+    | document :: documents => WF document ∧ WFList documents
 
   def WFRows : List (List Doc) → Prop
-    | []      => True
-    | r :: rs => WFList r ∧ WFRows rs
+    | []          => True
+    | row :: rows => WFList row ∧ WFRows rows
 end
 
 mutual
@@ -732,8 +744,8 @@ mutual
     match d with
     | .nil | .softline => simp [flatRender]
     | .hardline | .blank _ | .alignTable _ _ => simp [flat_width] at hw
-    | .text s => exact wf
-    | .textRaw s =>
+    | .text textValue => exact wf
+    | .textRaw textValue =>
       simp only [flat_width] at hw
       split at hw
       · exact absurd hw (by simp)
@@ -741,7 +753,7 @@ mutual
           simp only [flatRender]
           intro newlineMem
           exact hnl (List.any_eq_true.mpr ⟨'\n', newlineMem, by simp⟩)
-    | .verbatim s _ =>
+    | .verbatim textValue _ =>
       simp only [flat_width] at hw
       split at hw
       · exact absurd hw (by simp)
@@ -749,32 +761,33 @@ mutual
           simp only [flatRender, String.toList_ofList]
           intro newlineMem
           exact hnl (List.any_eq_true.mpr ⟨'\n', mem_trim_end_ws newlineMem, by simp⟩)
-    | .cat a b =>
+    | .cat leftValue rightValue =>
       simp only [flat_width] at hw
       split at hw
       · next leftWidth rightWidth leftWidthEq rightWidthEq =>
-          have ⟨wa, wb⟩ : WF a ∧ WF b := wf
+          have ⟨wa, wb⟩ : WF leftValue ∧ WF rightValue := wf
           simp only [flatRender, String.toList_append, List.mem_append]
           rintro (left_newline_mem | right_newline_mem)
-          · exact flatRender_noNl a leftWidth wa leftWidthEq left_newline_mem
-          · exact flatRender_noNl b rightWidth wb rightWidthEq right_newline_mem
+          · exact flatRender_noNl leftValue leftWidth wa leftWidthEq left_newline_mem
+          · exact flatRender_noNl rightValue rightWidth wb rightWidthEq right_newline_mem
       · exact absurd hw (by simp)
     | .line => simp only [flatRender]; decide
-    | .group d' => exact flatRender_noNl d' n wf (by simpa [flat_width] using hw)
-    | .nest _ d' => exact flatRender_noNl d' n wf (by simpa [flat_width] using hw)
-    | .align d' => exact flatRender_noNl d' n wf (by simpa [flat_width] using hw)
-    | .flatten d' => exact flatRender_noNl d' n wf (by simpa [flat_width] using hw)
-    | .align_or _ _ fb => exact flatRender_noNl fb n wf.2 (by simpa [flat_width] using hw)
+    | .group document => exact flatRender_noNl document n wf (by simpa [flat_width] using hw)
+    | .nest _ document => exact flatRender_noNl document n wf (by simpa [flat_width] using hw)
+    | .align document => exact flatRender_noNl document n wf (by simpa [flat_width] using hw)
+    | .flatten document => exact flatRender_noNl document n wf (by simpa [flat_width] using hw)
+    | .align_or _ _ flatBody =>
+      exact flatRender_noNl flatBody n wf.2 (by simpa [flat_width] using hw)
     | .fillSep [] => simp [flatRender]
-    | .fillSep (i :: is) =>
+    | .fillSep (item :: items) =>
       simp only [flat_width] at hw
       split at hw
       · next itemWidth restWidth itemWidthEq restWidthEq =>
-          have ⟨wi, wis⟩ : WF i ∧ WFList is := wf
+          have ⟨wi, wis⟩ : WF item ∧ WFList items := wf
           simp only [flatRender, String.toList_append, List.mem_append]
           rintro (item_newline_mem | rest_newline_mem)
-          · exact flatRender_noNl i itemWidth wi itemWidthEq item_newline_mem
-          · exact flatRenderSep_noNl is restWidth wis restWidthEq rest_newline_mem
+          · exact flatRender_noNl item itemWidth wi itemWidthEq item_newline_mem
+          · exact flatRenderSep_noNl items restWidth wis restWidthEq rest_newline_mem
       · exact absurd hw (by simp)
 
   theorem flatRenderSep_noNl
@@ -785,16 +798,16 @@ mutual
           : '\n' ∉ (flatRenderSep is).toList := by
     match is with
     | [] => simp [flatRenderSep]
-    | i :: is' =>
+    | item :: items =>
       simp only [flatWidthSep] at hw
       split at hw
       · next itemWidth restWidth itemWidthEq restWidthEq =>
-          have ⟨wi, wis⟩ : WF i ∧ WFList is' := wf
+          have ⟨wi, wis⟩ : WF item ∧ WFList items := wf
           simp only [flatRenderSep, String.toList_append, List.mem_append]
           rintro ((separator_newline_mem | item_newline_mem) | rest_newline_mem)
           · revert separator_newline_mem; decide
-          · exact flatRender_noNl i itemWidth wi itemWidthEq item_newline_mem
-          · exact flatRenderSep_noNl is' restWidth wis restWidthEq rest_newline_mem
+          · exact flatRender_noNl item itemWidth wi itemWidthEq item_newline_mem
+          · exact flatRenderSep_noNl items restWidth wis restWidthEq rest_newline_mem
       · exact absurd hw (by simp)
 
 end
@@ -812,7 +825,8 @@ theorem go_flat_exact
         (hp : st.pend = 0)
         (wf : WF d)
         : ∃ s : String,
-            go width maxPend d indent true st = { out := st.out ++ s, col := st.col + n, pend := 0 }
+            renderLoop width maxPend d indent true st
+                = { out := st.out ++ s, col := st.col + n, pend := 0 }
                 ∧ s.length = n
                 ∧ '\n' ∉ s.toList :=
   ⟨

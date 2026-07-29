@@ -29,41 +29,42 @@ mutual
   /-- Flat width of a doc, or `none` if it cannot be flattened. -/
   def flat_width : Doc → Option Nat
     | .nil => some 0
-    | .text s => some s.length
-    | .cat a b =>
-      match flat_width a, flat_width b with
-      | some x, some y => some (x + y)
-      | _, _           => none
+    | .text textValue => some textValue.length
+    | .cat leftValue rightValue =>
+      match flat_width leftValue, flat_width rightValue with
+      | some xValue, some yValue => some (xValue + yValue)
+      | _, _ => none
     | .line => some 1
     | .softline => some 0
     | .hardline => none
-    | .group d => flat_width d
-    | .nest _ d => flat_width d
-    | .align d => flat_width d
-    | .flatten d => flat_width d
-    | .textRaw s => if s.toList.any (· == '\n') then none else some s.length
+    | .group document => flat_width document
+    | .nest _ document => flat_width document
+    | .align document => flat_width document
+    | .flatten document => flat_width document
+    | .textRaw textValue => if textValue.toList.any (· == '\n') then none else some textValue.length
     -- must be EXACT for what wrBlock emits on a single line (Proofs T2): the
     -- line is trailing-trimmed, leading whitespace KEPT
-    | .verbatim s _ => if s.toList.any (· == '\n') then none else some (trim_end_ws s.toList).length
-    | .blank _      => none
+    | .verbatim textValue _ =>
+      if textValue.toList.any (· == '\n') then none else some (trim_end_ws textValue.toList).length
+    | .blank _ => none
     -- pad renders NOTHING in flat mode — 0 keeps T2 (flat exactness); group
     -- fits count the phantom width separately via `padWidth`
     | .pad _ => some 0
     | .alignTable _ _ => none
-    | .align_or _ _ fb => flat_width fb
+    | .align_or _ _ flatBody => flat_width flatBody
     | .fillSep [] => some 0
-    | .fillSep (i :: is) =>
-      match flat_width i, flatWidthSep is with
-      | some w, some ws => some (w + ws)
-      | _, _            => none
+    | .fillSep (indent :: indents) =>
+      match flat_width indent, flatWidthSep indents with
+      | some width, some widths => some (width + widths)
+      | _, _ => none
 
   /-- Sum of flat widths of the tail items, each preceded by one space. -/
   def flatWidthSep : List Doc → Option Nat
     | [] => some 0
-    | i :: is =>
-      match flat_width i, flatWidthSep is with
-      | some w, some ws => some (1 + w + ws)
-      | _, _            => none
+    | indent :: indents =>
+      match flat_width indent, flatWidthSep indents with
+      | some width, some widths => some (1 + width + widths)
+      | _, _ => none
 
 end
 
@@ -73,22 +74,22 @@ end
     a caller glue a self-anchoring doc mid-line by its opener (the vertical
     structInst hangs its `{` on the `:=` line, house shape). -/
 def left_edge_text? : Doc → Option String
-  | .cat a b =>
-    match a with
-    | .nil => left_edge_text? b
-    | _    => left_edge_text? a
-  | .nest _ d => left_edge_text? d
-  | .flatten d => left_edge_text? d
-  | .text s => some s
+  | .cat leftValue rightValue =>
+    match leftValue with
+    | .nil => left_edge_text? rightValue
+    | _    => left_edge_text? leftValue
+  | .nest _ document => left_edge_text? document
+  | .flatten document => left_edge_text? document
+  | .text textValue => some textValue
   | _ => none
 
 /-- Total phantom `pad` width in a doc — a group fit adds this ON TOP of
     `flatWidth` (which stays render-exact, reporting pad as 0): the reserve
     for un-breakable text the caller appends after the group. -/
 def pad_width : Doc → Nat
-  | .pad n => n
-  | .cat a b => pad_width a + pad_width b
-  | .group d | .nest _ d | .align d | .flatten d => pad_width d
+  | .pad count => count
+  | .cat leftValue rightValue => pad_width leftValue + pad_width rightValue
+  | .group document | .nest _ document | .align document | .flatten document => pad_width document
   | _ => 0
 
 mutual
@@ -98,12 +99,13 @@ mutual
     natural top-level position — so a subtree containing one must NOT be laid out
     actively (it stays on the safe whole-span path). Hardlines are fine. -/
   def hasMultilineVerbatim : Doc → Bool
-    | .verbatim s _ => s.any (· == '\n')
-    | .textRaw s => s.any (· == '\n')
-    | .cat a b => hasMultilineVerbatim a || hasMultilineVerbatim b
-    | .group d | .nest _ d | .align d | .flatten d => hasMultilineVerbatim d
+    | .verbatim textValue _ => textValue.any (· == '\n')
+    | .textRaw textValue => textValue.any (· == '\n')
+    | .cat leftValue rightValue => hasMultilineVerbatim leftValue || hasMultilineVerbatim rightValue
+    | .group document | .nest _ document | .align document | .flatten document =>
+      hasMultilineVerbatim document
     | .alignTable _ rows => hasMLRows rows
-    | .align_or _ _ fb => hasMultilineVerbatim fb
+    | .align_or _ _ flatBody => hasMultilineVerbatim flatBody
     | .fillSep items => hasMLList items
     | _ => false
 
@@ -114,29 +116,30 @@ mutual
     about exactly the re-anchoring class — counting textRaw kept every member
     with a MULTI-LINE DOCSTRING (and its whole mutual) verbatim. -/
   def hasMultilineReanchor : Doc → Bool
-    | .verbatim s _ => s.any (· == '\n')
-    | .cat a b => hasMultilineReanchor a || hasMultilineReanchor b
-    | .group d | .nest _ d | .align d | .flatten d => hasMultilineReanchor d
+    | .verbatim textValue _ => textValue.any (· == '\n')
+    | .cat leftValue rightValue => hasMultilineReanchor leftValue || hasMultilineReanchor rightValue
+    | .group document | .nest _ document | .align document | .flatten document =>
+      hasMultilineReanchor document
     | .alignTable _ rows => hasMRRows rows
-    | .align_or _ _ fb => hasMultilineReanchor fb
+    | .align_or _ _ flatBody => hasMultilineReanchor flatBody
     | .fillSep items => hasMRList items
     | _ => false
 
   def hasMRList : List Doc → Bool
-    | []      => false
-    | d :: ds => hasMultilineReanchor d || hasMRList ds
+    | [] => false
+    | document :: documents => hasMultilineReanchor document || hasMRList documents
 
   def hasMRRows : List (List Doc) → Bool
-    | []      => false
-    | r :: rs => hasMRList r || hasMRRows rs
+    | []          => false
+    | row :: rows => hasMRList row || hasMRRows rows
 
   def hasMLList : List Doc → Bool
-    | []      => false
-    | d :: ds => hasMultilineVerbatim d || hasMLList ds
+    | [] => false
+    | document :: documents => hasMultilineVerbatim document || hasMLList documents
 
   def hasMLRows : List (List Doc) → Bool
-    | []      => false
-    | r :: rs => hasMLList r || hasMLRows rs
+    | []          => false
+    | row :: rows => hasMLList row || hasMLRows rows
 
 end
 
@@ -149,19 +152,22 @@ end
 partial
 def midline_reanchor_aux : Doc → Bool → Bool × Bool
   | .nil, atLS => (false, atLS)
-  | .verbatim s _, atLS =>
-    if s.any (· == '\n') then (!atLS, false) else (false, if s.isEmpty then atLS else false)
-  | .text s, atLS => (false, if s.isEmpty then atLS else false)
-  | .textRaw s, _ => (false, s.endsWith "\n")
+  | .verbatim textValue _, atLS =>
+    if textValue.any (· == '\n') then
+      (!atLS, false)
+    else
+      (false, if textValue.isEmpty then atLS else false)
+  | .text textValue, atLS => (false, if textValue.isEmpty then atLS else false)
+  | .textRaw textValue, _ => (false, textValue.endsWith "\n")
   | .line, _ | .softline, _ | .hardline, _ | .blank _, _ => (false, true)
   | .pad _, atLS => (false, atLS)
-  | .cat a b, atLS =>
-    let (fa, la) := midline_reanchor_aux a atLS
-    let (fb, lb) := midline_reanchor_aux b la
-    (fa || fb, lb)
-  | .group d, atLS | .nest _ d, atLS | .align d, atLS | .flatten d, atLS =>
-    midline_reanchor_aux d atLS
-  | .align_or _ _ fb, atLS => midline_reanchor_aux fb atLS
+  | .cat leftValue rightValue, atLS =>
+    let (firstA, lastA) := midline_reanchor_aux leftValue atLS
+    let (flatBody, lastB) := midline_reanchor_aux rightValue lastA
+    (firstA || flatBody, lastB)
+  | .group document, atLS | .nest _ document, atLS | .align document, atLS | .flatten document, atLS =>
+    midline_reanchor_aux document atLS
+  | .align_or _ _ flatBody, atLS => midline_reanchor_aux flatBody atLS
   | .fillSep items, _ => (items.any hasMultilineVerbatim, false)
   | .alignTable _ rows, _ => (rows.any (·.any hasMultilineVerbatim), false)
 
@@ -173,32 +179,32 @@ mutual
 
   /-- Coverage accounting (DESIGN_V2 §15): (active, verbatim, trivia) bytes. -/
   def stats : Doc → (Nat × Nat × Nat)
-    | .text s => (s.utf8ByteSize, 0, 0)
-    | .verbatim s _ => (0, s.utf8ByteSize, 0)
-    | .textRaw s => (0, 0, s.utf8ByteSize)
-    | .cat a b =>
-      let (a1, v1, t1) := stats a
-      let (a2, v2, t2) := stats b
-      (a1 + a2, v1 + v2, t1 + t2)
-    | .group d | .nest _ d | .align d | .flatten d => stats d
+    | .text textValue => (textValue.utf8ByteSize, 0, 0)
+    | .verbatim textValue _ => (0, textValue.utf8ByteSize, 0)
+    | .textRaw textValue => (0, 0, textValue.utf8ByteSize)
+    | .cat leftValue rightValue =>
+      let (leftAlign, leftVerbatim, leftText) := stats leftValue
+      let (rightAlign, rightVerbatim, rightText) := stats rightValue
+      (leftAlign + rightAlign, leftVerbatim + rightVerbatim, leftText + rightText)
+    | .group document | .nest _ document | .align document | .flatten document => stats document
     | .alignTable _ rows => statsRows rows
-    | .align_or _ _ fb => stats fb
+    | .align_or _ _ flatBody => stats flatBody
     | .fillSep items => statsList items
     | _ => (0, 0, 0)
 
   def statsList : List Doc → (Nat × Nat × Nat)
     | [] => (0, 0, 0)
-    | d :: ds =>
-      let (a1, v1, t1) := stats d
-      let (a2, v2, t2) := statsList ds
-      (a1 + a2, v1 + v2, t1 + t2)
+    | document :: documents =>
+      let (leftAlign, leftVerbatim, leftText) := stats document
+      let (rightAlign, rightVerbatim, rightText) := statsList documents
+      (leftAlign + rightAlign, leftVerbatim + rightVerbatim, leftText + rightText)
 
   def statsRows : List (List Doc) → (Nat × Nat × Nat)
     | [] => (0, 0, 0)
-    | r :: rs =>
-      let (a1, v1, t1) := statsList r
-      let (a2, v2, t2) := statsRows rs
-      (a1 + a2, v1 + v2, t1 + t2)
+    | row :: rows =>
+      let (leftAlign, leftVerbatim, leftText) := statsList row
+      let (rightAlign, rightVerbatim, rightText) := statsRows rows
+      (leftAlign + rightAlign, leftVerbatim + rightVerbatim, leftText + rightText)
 
 end
 
@@ -207,31 +213,31 @@ end
     it contributes its full flat width. -/
 def first_line_width : Doc → Nat × Bool
   | .nil => (0, false)
-  | .text s => (s.length, false)
-  | .textRaw s =>
-    let ls := s.splitOn "\n";
-    ((ls.headD "").length, ls.length > 1)
-  | .verbatim s _ =>
-    let ls := s.splitOn "\n";
-    ((ls.headD "").length, ls.length > 1)
+  | .text textValue => (textValue.length, false)
+  | .textRaw textValue =>
+    let lines := textValue.splitOn "\n";
+    ((lines.headD "").length, lines.length > 1)
+  | .verbatim textValue _ =>
+    let lines := textValue.splitOn "\n";
+    ((lines.headD "").length, lines.length > 1)
   | .line | .softline | .hardline | .blank _ => (0, true)
   | .pad _ => (0, false)
-  | .cat a b =>
-    let (wa, ba) := first_line_width a
-    if ba then
-      (wa, true)
+  | .cat leftValue rightValue =>
+    let (leftWidth, leftBreak) := first_line_width leftValue
+    if leftBreak then
+      (leftWidth, true)
     else
-      let (wb, bb) := first_line_width b;
-      (wa + wb, bb)
-  | .group d | .nest _ d | .align d => first_line_width d
-  | .flatten d =>
-    match flat_width d with
-    | some w => (w, false)
-    | none   => first_line_width d
+      let (rightWidth, rightBreak) := first_line_width rightValue;
+      (leftWidth + rightWidth, rightBreak)
+  | .group document | .nest _ document | .align document => first_line_width document
+  | .flatten document =>
+    match flat_width document with
+    | some width => (width, false)
+    | none       => first_line_width document
   | .alignTable _ _ => (0, true)
-  | .align_or _ _ fb => first_line_width fb
+  | .align_or _ _ flatBody => first_line_width flatBody
   | .fillSep [] => (0, false)
-  | .fillSep (i :: is) => ((flat_width i).getD 0, !is.isEmpty)
+  | .fillSep (indent :: indents) => ((flat_width indent).getD 0, !indents.isEmpty)
 
 def spaces (n : Nat) : String := String.ofList (List.replicate n ' ')
 def newlines (n : Nat) : String := String.ofList (List.replicate n '\n')
@@ -243,24 +249,25 @@ structure rst where
   deriving Inhabited
 
 /-- Emit single-line visible text at break-indent `indent`, flushing pending
-    newlines (with indentation) first. `wr` never writes the indent without
+    newlines (with indentation) first. `writeResult` never writes the indent without
     content after it (the hygiene law in Proofs). -/
-def wr (st : rst) (indent : Nat) (s : String) : rst :=
-  let st :=
+def writeResult (st : rst) (indent : Nat) (s : String) : rst :=
+  let state :=
     if st.pend > 0 then
       { out := st.out ++ newlines st.pend ++ spaces indent, col := indent, pend := 0 }
     else
       st
-  { st with out := st.out ++ s, col := st.col + s.length }
+  { state with out := state.out ++ s, col := state.col + s.length }
 
 /-- Split a char list on '\n' (never returns `[]`; `[]` input → one empty line
     — the char-list twin of `splitOn "\n"`, owned so Proofs can induct). -/
 def split_lines : List Char → List (List Char)
   | [] => [[]]
-  | c :: cs =>
-    match split_lines cs with
-    | [] => [[c]] -- unreachable (never nil)
-    | l :: ls => if c = '\n' then [] :: l :: ls else (c :: l) :: ls
+  | headChar :: tailChars =>
+    match split_lines tailChars with
+    | [] => [[headChar]] -- unreachable (never nil)
+    | leading :: lsValue =>
+      if headChar = '\n' then [] :: leading :: lsValue else (headChar :: leading) :: lsValue
 
 /-- A line of nothing but spaces (the blank-line notion of `wrBlock`; NOT full
     whitespace — a tab-bearing line may be string-literal interior). -/
@@ -279,11 +286,11 @@ def wr_line (st : rst) (indent base : Nat) (l : List Char) : rst :=
   if (dedent base l).isEmpty then
     { st with pend := st.pend + 1 }
   else
-    wr { st with pend := st.pend + 1 } indent (String.ofList (dedent base l))
+    writeResult { st with pend := st.pend + 1 } indent (String.ofList (dedent base l))
 
 def wr_lines (indent base : Nat) : List (List Char) → rst → rst
-  | [], st      => st
-  | l :: ls, st => wr_lines indent base ls (wr_line st indent base l)
+  | [], state                 => state
+  | leading :: lsValue, state => wr_lines indent base lsValue (wr_line state indent base leading)
 
 private
 structure string_mask_context where
@@ -436,14 +443,14 @@ def in_string_line_mask (chars : List Char) : List Bool :=
     dedent) — re-indenting it would rewrite the token's bytes (gate-caught on
     aleph FindBytesGate: a string-gap continuation, tokens class). -/
 def wr_lines_m (indent base : Nat) : List (List Char) → List Bool → rst → rst
-  | [], _, st => st
-  | l :: ls, m, st =>
-    let st :=
-      if m.headD false then
-        wr { st with pend := st.pend + 1 } 0 (String.ofList l)
+  | [], _, state => state
+  | leading :: lsValue, candidate, state =>
+    let state :=
+      if candidate.headD false then
+        writeResult { state with pend := state.pend + 1 } 0 (String.ofList leading)
       else
-        wr_line st indent base l
-    wr_lines_m indent base ls (m.drop 1) st
+        wr_line state indent base leading
+    wr_lines_m indent base lsValue (candidate.drop 1) state
 
 /-- Emit a possibly-multi-line block (verbatim/comment), re-anchored to `indent`:
     dedent every continuation by the block's OWN base column `base`, re-indent to
@@ -451,21 +458,23 @@ def wr_lines_m (indent base : Nat) : List (List Char) → List Bool → rst → 
     their absolute column byte-exact (`wrLinesM`). Trailing whitespace is trimmed
     (so trailing blank lines cannot exist); leading blank lines are dropped. -/
 def wr_block (st : rst) (indent : Nat) (base : Nat) (raw : String) : rst :=
-  let cs := trim_end_ws raw.toList
-  let ls := split_lines cs
-  let k := (ls.takeWhile is_blank_line).length
-  match ls.drop k, (in_string_line_mask cs).drop k with
-  | [], _        => st
-  | l :: rest, m => wr_lines_m indent base rest (m.drop 1) (wr st indent (String.ofList l))
+  let chars := trim_end_ws raw.toList
+  let lines := split_lines chars
+  let leadingCount := (lines.takeWhile is_blank_line).length
+  match lines.drop leadingCount, (in_string_line_mask chars).drop leadingCount with
+  | [], _ => st
+  | leading :: rest, candidate =>
+    wr_lines_m indent base rest (candidate.drop 1) (writeResult st indent (String.ofList leading))
 
 /-- Pad-and-join one table row from rendered cell strings: every cell but the
     last is padded to its column width and followed by `sep`. Recursive (not a
     loop) so the Proofs module can reason by induction. -/
 def render_row_str (sep : String) : List Nat → List String → String
   | _, [] => ""
-  | _, [c] => c
-  | widths, c :: cs =>
-    c ++ spaces ((widths.headD 0) - c.length) ++ sep ++ render_row_str sep (widths.drop 1) cs
+  | _, [headChar] => headChar
+  | widths, headChar :: tailChars =>
+    headChar ++ spaces ((widths.headD 0) - headChar.length) ++ sep
+        ++ render_row_str sep (widths.drop 1) tailChars
 
 /-- Emit padded table rows: the first row at the current position, each
     subsequent row on its own line at `indent`. Named so the Proofs module can
@@ -478,16 +487,20 @@ def emit_table
     (st : rst)
     : rst :=
   (strRows.foldl
-    (fun (p : rst × Bool) r =>
-      let st := if p.2 then p.1 else { p.1 with pend := Nat.min (p.1.pend + 1) maxPend }
-      (wr st indent (render_row_str sep widths r), false))
+    (fun (progress : rst × Bool) row =>
+      let state :=
+        if progress.2 then
+          progress.1
+        else
+          { progress.1 with pend := Nat.min (progress.1.pend + 1) maxPend }
+      (writeResult state indent (render_row_str sep widths row), false))
     (st, true)).1
 
 private
 def go_basic? (maxPend indent : Nat) (doc : Doc) (flat : Bool) (state : rst) : Option rst :=
   match doc with
   | .nil => some state
-  | .text text => some (wr state indent text)
+  | .text text => some (writeResult state indent text)
   | .textRaw text =>
     let state :=
       if state.pend > 0 then
@@ -501,7 +514,10 @@ def go_basic? (maxPend indent : Nat) (doc : Doc) (flat : Bool) (state : rst) : O
   | .verbatim text base => some (wr_block state indent base text)
   | .line =>
     some
-      (if flat then wr state indent " " else { state with pend := Nat.min (state.pend + 1) maxPend })
+      (if flat then
+        writeResult state indent " "
+      else
+        { state with pend := Nat.min (state.pend + 1) maxPend })
   | .softline =>
     some (if flat then state else { state with pend := Nat.min (state.pend + 1) maxPend })
   | .hardline => some { state with pend := Nat.min (state.pend + 1) maxPend }
@@ -514,9 +530,9 @@ mutual
 /-- The rendering step, named and total so the Proofs module can state laws
     about it. `width`/`maxPend` are style constants; `indent` is the
     compositional break indent; `flat` forces flat mode. -/
-def go (width maxPend : Nat) : Doc → Nat → Bool → rst → rst
+def renderLoop (width maxPend : Nat) : Doc → Nat → Bool → rst → rst
   | .cat left right, indent, flat, state =>
-    go width maxPend right indent flat (go width maxPend left indent flat state)
+    renderLoop width maxPend right indent flat (renderLoop width maxPend left indent flat state)
   | .group doc, indent, flat, state =>
     -- flat context is sticky (the `flatten` contract); otherwise fit at the
     -- EFFECTIVE column (pending newlines land at `indent`)
@@ -525,17 +541,17 @@ def go (width maxPend : Nat) : Doc → Nat → Bool → rst → rst
       || (match flat_width doc with
           | some flatWidth => decide (effCol + flatWidth + pad_width doc ≤ width)
           | none => false)
-    go width maxPend doc indent canFlat state
-  | .flatten doc, indent, _, state => go width maxPend doc indent true state
+    renderLoop width maxPend doc indent canFlat state
+  | .flatten doc, indent, _, state => renderLoop width maxPend doc indent true state
   | .nest amount doc, indent, flat, state =>
-    go width maxPend doc (Int.toNat ((indent : Int) + amount)) flat state
+    renderLoop width maxPend doc (Int.toNat ((indent : Int) + amount)) flat state
   | .align doc, indent, flat, state =>
     -- anchor at the EFFECTIVE column: with newlines pending the next content
     -- lands at `indent`, and the stale `st.col` is the PREVIOUS line's end
     -- (the group fit-check learned this first; align re-learned it via the
     -- bullet outer-align, which anchored member bullets at the prior line's
     -- end column — gate-caught on mathlib PiSystem, tokens)
-    go width maxPend doc (if state.pend > 0 then indent else state.col) flat state
+    renderLoop width maxPend doc (if state.pend > 0 then indent else state.col) flat state
   | .fillSep items, indent, flat, state =>
     -- pack items with single spaces, wrapping at the width; in FLAT mode
     -- everything stays on one line (the flatten contract — flatWidth is exact
@@ -581,57 +597,68 @@ def go_align_or
   | .align_or spec rows fallback =>
     -- in FLAT context the grid is out of the question (the flatten contract:
     -- flatWidth (alignOr) speaks about the fallback) — render the fallback flat
-    if flat then go width maxPend fallback indent true state else
+    if flat then renderLoop width maxPend fallback indent true state else
     -- flat fallback when it fits; the grid when the delta guardrail holds AND
     -- every padded row fits; the ordinary fallback otherwise
     let effCol := if state.pend > 0 then indent else state.col
     let flatFits : Bool := match flat_width fallback with
-      | some w => decide (effCol + w ≤ width)
+      | some widthBinding => decide (effCol + widthBinding ≤ width)
       | none => false
-    if flatFits then go width maxPend fallback indent flat state else
+    if flatFits then renderLoop width maxPend fallback indent flat state else
     let strRows := goCellsRows width maxPend rows indent
-    let ncol := strRows.foldl (fun m r => Nat.max m r.length) 0
-    let maxOf (j : Nat) : Nat := strRows.foldl (fun m r => Nat.max m ((r[j]?.getD "").length)) 0
-    let minOf (j : Nat) : Nat :=
-      strRows.foldl (fun m r => if j < r.length then Nat.min m ((r[j]?.getD "").length) else m) 1000000
-    let deltaOk := (List.range ncol).all fun j =>
-      j + 1 == ncol || decide (maxOf j - minOf j ≤ spec.maxDelta)
+    let ncol := strRows.foldl (fun maximum row => Nat.max maximum row.length) 0
+    let maxOf (columnIndex : Nat) : Nat :=
+      strRows.foldl
+        (fun maximum row => Nat.max maximum ((row[columnIndex]?.getD "").length))
+        0
+    let minOf (columnIndex : Nat) : Nat :=
+      strRows.foldl
+        (fun minimum row =>
+          if columnIndex < row.length then
+            Nat.min minimum ((row[columnIndex]?.getD "").length)
+          else
+            minimum)
+        1000000
+    let deltaOk := (List.range ncol).all fun columnIndex =>
+      columnIndex + 1 == ncol
+          || decide (maxOf columnIndex - minOf columnIndex ≤ spec.maxDelta)
     let widths := (List.range ncol).map maxOf
-    let rowsFit := strRows.all fun r =>
-      decide (indent + (render_row_str spec.sep widths r).length ≤ width)
+    let rowsFit := strRows.all fun row =>
+      decide (indent + (render_row_str spec.sep widths row).length ≤ width)
     -- coherence BY CONSTRUCTION: the grid is taken only when its content
     -- provably equals the fallback's — an incoherent emitter degrades to the
     -- fallback instead of corrupting (and render_content holds unconditionally)
-    let gridContent := (strRows.map fun r => non_ws (render_row_str spec.sep widths r)).flatten
+    let gridContent :=
+      (strRows.map fun row => non_ws (render_row_str spec.sep widths row)).flatten
     if deltaOk && rowsFit && decide (rows.length ≥ 2)
         && decide (gridContent = content fallback) then
       emit_table maxPend indent spec.sep widths strRows state
-    else go width maxPend fallback indent flat state
+    else renderLoop width maxPend fallback indent flat state
   | _ => state
 
 /-- Fill packing: each item rendered flat; wrap (in non-flat mode) when the
     next item would cross the width. -/
 def goFill (width maxPend : Nat) : List Doc → Nat → Bool → Bool → rst → rst
-  | [], _, _, _, st => st
-  | i :: is, indent, flat, first, st =>
-    let t := (go width maxPend i indent true {}).out
-    let st :=
-      if first then wr st indent t
+  | [], _, _, _, state => state
+  | indentBinding :: indents, indent, flat, first, state =>
+    let text := (renderLoop width maxPend indentBinding indent true {}).out
+    let state :=
+      if first then writeResult state indent text
       else
-        let effCol := if st.pend > 0 then indent else st.col
-        if !flat && decide (effCol + 1 + t.length > width) then
-          wr { st with pend := Nat.min (st.pend + 1) maxPend } indent t
-        else wr st indent (" " ++ t)
-    goFill width maxPend is indent flat false st
+        let effCol := if state.pend > 0 then indent else state.col
+        if !flat && decide (effCol + 1 + text.length > width) then
+          writeResult { state with pend := Nat.min (state.pend + 1) maxPend } indent text
+        else writeResult state indent (" " ++ text)
+    goFill width maxPend indents indent flat false state
 
 /-- Render every cell of every row flat, to strings. -/
 def goCellsRows (width maxPend : Nat) : List (List Doc) → Nat → List (List String)
   | [], _ => []
-  | r :: rs, indent => goCells width maxPend r indent :: goCellsRows width maxPend rs indent
+  | row :: rows, indent => goCells width maxPend row indent :: goCellsRows width maxPend rows indent
 
 def goCells (width maxPend : Nat) : List Doc → Nat → List String
   | [], _ => []
-  | c :: cs, indent => (go width maxPend c indent true {}).out :: goCells width maxPend cs indent
+  | headChar :: tailChars, indent => (renderLoop width maxPend headChar indent true {}).out :: goCells width maxPend tailChars indent
 
 end
 
@@ -1187,10 +1214,11 @@ def canon_verbatim_ws (text : String) : String :=
 
 /-- Render a `Doc` to a string under `style`. -/
 def render (style : Style) (doc : Doc) : String :=
-  let st := go style.layout.lineWidth (style.blankLines.maxConsecutive + 1) doc 0 false {}
+  let state :=
+    renderLoop style.layout.lineWidth (style.blankLines.maxConsecutive + 1) doc 0 false {}
   -- trailing whitespace is trivia everywhere outside string literals — the
   -- string-aware strip is what makes verbatim blocks canonical at line ends
-  let out := strip_trailing_ws st.out
+  let out := strip_trailing_ws state.out
   if out.endsWith "\n" then out else out ++ "\n"
 
 end Lean4Fmt.Doc

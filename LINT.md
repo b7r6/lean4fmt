@@ -24,6 +24,37 @@ make lint-lean DIR=src/apps/freeside
   is three characters. Ordinary expression references are never reported.
 - `symbol-name` — a non-field binding uses a configured placeholder name
   (`acc,tmp,foo,bar,baz` by default) instead of its semantic role.
+- `symbol-declaration` — when `lint.requireSemanticDeclarationNames` is enabled,
+  source-level declarations and constructors must use semantic names under the
+  configured symbol floor. `lint.declarationAllowN` (legacy alias:
+  `lint.declarationAllow.N`) admits either a broad leaf or an owner-qualified
+  external/spec name whose leaf has length `N`. A nested exact-length bucket
+  replaces its inherited bucket; an empty bucket explicitly clears it.
+- `symbol-recursive-helper` — when
+  `lint.requireSemanticRecursiveHelperNames` is enabled, names introduced by
+  local recursive helper declarations must meet the semantic symbol floor.
+  `lint.recursiveHelperAllowN` (legacy alias:
+  `lint.recursiveHelperAllow.N`) provides role-local exact-length exceptions.
+  A nested bucket replaces its inherited bucket, and an empty bucket clears it.
+- `symbol-lambda` — when `lint.requireSemanticLambdaNames` is enabled, lambda
+  binders must meet the semantic symbol floor. `lint.lambdaAllowN` (legacy
+  alias: `lint.lambdaAllow.N`) provides role-local exact-length exceptions.
+  Nested buckets replace inherited buckets at the same length; an empty bucket
+  clears that length.
+- `symbol-let` — reserved clearance for the semantic let-name gate. Its
+  configuration surface is available now: `lint.requireSemanticLetNames`
+  enables the policy axis, while `lint.letAllowN` (legacy alias:
+  `lint.letAllow.N`) supplies tree-local exact-length exceptions. Nested buckets
+  replace inherited buckets at the same length; an empty bucket clears that
+  length. The diagnostic rule lands separately.
+- `symbol-field` — when `lint.requireSemanticFieldNames` is enabled, structure
+  and class fields must use semantic names under the configured symbol floor.
+  `lint.fieldAllowN` (legacy alias: `lint.fieldAllow.N`) admits either a broad
+  leaf (`st`) or an owner-qualified external/spec term (`State.a`) whose LEAF
+  has length `N`. Prefer qualified
+  entries: they do not exempt an unrelated field with the same leaf. A nested
+  bucket replaces the inherited bucket at that length, and an empty bucket
+  explicitly clears it.
 - `symbol-instance` — when `lint.requireTraditionalInstances` is enabled, each
   named typeclass-instance binder uses one Greek or Hebrew base letter followed
   only by optional Unicode modifier/subscript characters. Anonymous instance
@@ -31,6 +62,11 @@ make lint-lean DIR=src/apps/freeside
 - `symbol-loop-index` — when `lint.requirePositionalLoopNames` is enabled,
   positional bracket-range loops use `idx`, `jdx`, and `kdx` by positional
   nesting depth. Collection loops keep semantic element names and are excluded.
+- `symbol-loop-collection` — when
+  `lint.requireSemanticCollectionLoopNames` is enabled, non-range collection
+  loops reject the positional `idx`/`jdx`/`kdx` vocabulary. Their binders name
+  the element being traversed (`event`, `driver`, `task`) and receive the same
+  semantic floor/placeholder checks through this dedicated rule.
 - `symbol-pattern-binder` — when `lint.requireSemanticPatternBinders` is
   enabled, pattern and match-arm binders must meet the configured symbol floor.
   Constructor names, wildcards, `rfl`, and clear-pattern sentinels are excluded.
@@ -72,17 +108,33 @@ def lint.requireStanzaComments := true
 def lint.requireTraditionalInstances := true
 def lint.requirePositionalLoopNames := true
 def lint.requireSemanticPatternBinders := true
+def lint.requireSemanticCollectionLoopNames := true
+def lint.requireSemanticFieldNames := true
+def lint.requireSemanticDeclarationNames := true
+def lint.requireSemanticRecursiveHelperNames := true
+def lint.requireSemanticLambdaNames := true
+def lint.requireSemanticLetNames := true
 def lint.symbolAllow.1 := ""
 def lint.symbolAllow.2 := "fd,ud"
 def lint.symbolDeny := "acc,tmp,foo,bar,baz"
-def lint.fieldAllow.2 := "st"
+def lint.declarationAllow2 := ""
+def lint.recursiveHelperAllow2 := ""
+def lint.lambdaAllow2 := ""
+def lint.letAllow2 := ""
+def lint.fieldAllow2 := "st"
 ```
 
 Each value is a comma-separated list. Configuration fails loudly if a spelling
 does not have exactly the bucket's character count. This keeps `fd` and `ud` as
 systems terms of art without granting a blanket exemption to `p`, `w`, or `n`.
 Field buckets are role-local: `slot.st` is admitted while a standalone `st`
-binding remains a finding.
+binding remains a finding. Declaration buckets are likewise role-local and
+should prefer owner qualification when a short external or specification name
+must be preserved. Recursive-helper buckets are binder-local and therefore use
+bare spellings whose scope is bounded by the surrounding policy tree. Lambda
+buckets have the same tree-local discipline and do not exempt let binders,
+declaration parameters, or tactic binders. Let buckets are likewise role-local:
+they do not alter lambda, parameter, or tactic policy.
 Set the floor to zero to disable the rule; non-house presets do so by default.
 
 ### Tree-local policy

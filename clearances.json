@@ -10,10 +10,17 @@
     "house/stanza-comment": 0,
     "house/state-bundle": 0,
     "parse": 0,
+    "symbol-field": 0,
+    "symbol-declaration": 0,
     "symbol-instance": 0,
+    "symbol-loop-collection": 0,
     "symbol-loop-index": 0,
-    "symbol-length": 7537,
+    "symbol-lambda": 0,
+    "symbol-let": 0,
+    "symbol-pattern-binder": 0,
+    "symbol-length": 4016,
     "symbol-name": 0,
+    "symbol-recursive-helper": 0,
     "trivia/trailing-whitespace": 0
   }
 }

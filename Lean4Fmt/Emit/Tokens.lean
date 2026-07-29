@@ -34,8 +34,8 @@ def leaf_tokens (stx : Lean.Syntax) (found : Array Lean.Syntax := #[]) : Array L
 partial
 def has_choice (stx : Lean.Syntax) : Bool :=
   match stx with
-  | .node _ k args => k == Lean.choiceKind || args.any has_choice
-  | _              => false
+  | .node _ kind args => kind == Lean.choiceKind || args.any has_choice
+  | _                 => false
 
 /-- v2 pair rule: `some true` = one space, `some false` = glued, `none` =
     source-derived (v1). Whitespace-SENSITIVE tokens (`[` for getElem, postfix
@@ -46,7 +46,8 @@ def has_choice (stx : Lean.Syntax) : Bool :=
 private
 def gap_rule (prev next : String) : Option Bool :=
   let identLike (t : String) :=
-    t.toList.all fun c => c.isAlphanum || c == '_' || c == '\'' || c == '.' || c.toNat > 127
+    t.toList.all fun char =>
+      char.isAlphanum || char == '_' || char == '\'' || char == '.' || char.toNat > 127
   if prev == "(" || prev == "⟨" || prev == "‹" || prev == "⦃" || prev == "¬" then
     some false
   else if next == ")" || next == "⟩" || next == "›" || next == "⦄" || next == "," || next == ";" then
@@ -126,14 +127,14 @@ def token_join_impl? (stx : Lean.Syntax) (flatten : Bool) : Option String :=
         return none
       if Lean4Fmt.Syntax.has_template_opener (bare_src stx) then
         return none
-      let ls := leaf_tokens stx
-      if ls.isEmpty then
+      let leaves := leaf_tokens stx
+      if leaves.isEmpty then
         return none
       let mut state : token_join_state := {}
       -- trivia carried by SKIPPED empty leaves (e.g. the synthetic `[anonymous]`
       -- idents of a cdot expansion, whose trailing holds the real inter-token
       -- space) — folded into the next real gap, else `(· + ·)` would relex-glue
-      for leaf in ls do
+      for leaf in leaves do
         let some nextState := advance_token_join? flatten state leaf | return none
         state := nextState
       if state.output.isEmpty then
@@ -176,7 +177,7 @@ def token_join_flat? (stx : Lean.Syntax) : Option String :=
     not an origin carrier. -/
 def canon_tok (stx : Lean.Syntax) : String :=
   match token_join? stx with
-  | some t => t
+  | some trailing => trailing
   | none =>
     -- piecewise ws-canon: quotation terms/commands byte-exact (pin),
     -- templates via canonVerbatimWs' own template mode, the rest collapses.
