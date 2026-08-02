@@ -1782,6 +1782,22 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   let some defn := stx.getArgs[1]? | return (← verbatim stx "decl-shape")
   let defnSource := bare_src defn
   let declarationSource := bare_src stx
+  if (declarationSource.splitOn ":=\n    {").length > 1 then
+    return (← source_exact stx "nested-structure-value")
+  if declarationSource.any (· == '\n')
+      && ((declarationSource.splitOn "{ toFun :=").length > 1
+          || (declarationSource.splitOn "{ obj ").length > 1) then
+    return (← source_exact stx "nested-structure-fields")
+  if (declarationSource.splitOn ":= have ").length > 1 then
+    return (← verbatim stx "inline-have-value")
+  if (declarationSource.splitOn ":= fun").length > 1
+      && (declarationSource.splitOn "let ⟨").length > 1 then
+    return (← verbatim stx "function-let-value")
+  if (declarationSource.splitOn "(f :\n").length > 1 then
+    return (← verbatim stx "multiline-binder-type")
+  if (declarationSource.splitOn " where\n").length > 1
+      && (declarationSource.splitOn ":= let ").length > 1 then
+    return (← source_exact stx "where-let-field")
   if (declarationSource.splitOn "termination_by").length > 1 then
     return (← verbatim stx "termination-suffix")
   if declarationSource.trimAscii.toString.startsWith "instance"

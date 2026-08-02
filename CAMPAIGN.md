@@ -263,8 +263,14 @@ Current frozen-frontier result:
 zero rejects, 55.9% attempted and shipped code-active, and 90.8% portable
 ceiling. Layout-sensitive `ℓ^p` notation, type-level `letI`, zero-column
 structure literals, semantic whitespace in token payloads, termination
-suffixes, and constructor-valued instances now have explicit owners. The
-frozen frontier is closed; the fresh 8,245-file confirmation remains.
+suffixes, and constructor-valued instances now have explicit owners.
+
+The fresh `.lean4fmt/mathlib-full-zero-confirmation` discovery pass completed
+all 8,245 files with zero missing stats: 67.2% attempted, 66.4% shipped, 89.3%
+portable ceiling, and 47 rejects (16 reparse, 24 fixed-point, 6 token, 1 tree).
+The first nine-file slice of that new frontier is already green under the next
+owner laws: nested structure fields, inline `have` values, multiline binder
+types, function/`let` values, and layout-sensitive `where` fields.
 Gate 4 remains
 open until the exact frontier and a fresh 8,245-file mathlib-style run both have
 zero rejects.
