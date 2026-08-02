@@ -1782,6 +1782,21 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   let some defn := stx.getArgs[1]? | return (← verbatim stx "decl-shape")
   let defnSource := bare_src defn
   let declarationSource := bare_src stx
+  if (declarationSource.splitOn "termination_by").length > 1 then
+    return (← verbatim stx "termination-suffix")
+  if declarationSource.trimAscii.toString.startsWith "instance"
+      && (declarationSource.splitOn ":= fun").length > 1 then
+    return (← verbatim stx "instance-function-suffix")
+  if declarationSource.trimAscii.toString.startsWith "instance"
+      && ((declarationSource.splitOn "⟨by\n").length > 1
+          || (declarationSource.splitOn "⟨\n").length > 1) then
+    return (← verbatim stx "instance-constructor-layout")
+  if (declarationSource.splitOn "#adaptation_note").length > 1
+      || (declarationSource.splitOn "m!\"").length > 1
+      || (declarationSource.splitOn "$(").length > 1 then
+    return (← source_exact stx "semantic-token-whitespace")
+  if (declarationSource.splitOn "ℓ^").length > 1 then
+    return (← verbatim stx "lp-notation")
   if (defnSource.splitOn " => by\n").length > 1
       && (defnSource.splitOn "\n  |").length > 1 then
     return (← verbatim stx "equation-tactic-body")
@@ -1800,10 +1815,14 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   -- command/tactic boundary that canonical indentation would change.
   if (defnSource.splitOn "\nexact ").length > 1 then
     return (← verbatim stx "zero-column-tactic")
+  if (defnSource.splitOn "\n{").length > 1 then
+    return (← verbatim stx "zero-column-structure")
   -- A `haveI` in the declared type opens a layout-sensitive dependent tail;
   -- flattening the signature can end that scope before the following type.
   if (defnSource.splitOn "\n").any
-      (fun line => line.trimAscii.toString.startsWith "haveI :") then
+      (fun line =>
+        let trimmed := line.trimAscii.toString
+        trimmed.startsWith "haveI :" || trimmed.startsWith "letI :=") then
     return (← verbatim stx "type-haveI")
   -- Preserve deliberately padded parenthetical terms as one declaration.
   -- Unknown custom syntax can retain the padding on pass one, then become an

@@ -139,6 +139,13 @@ def verbatim (stx : Lean.Syntax) (why : String := "") : emit_m Doc := do
     log_opt_out stx why
   verbatim_quiet stx
 
+/-- Source-exact reproduction for a layout-sensitive owner that already sits at
+    its final column. Unlike `verbatim`, this does not canonicalize or reanchor
+    token payloads whose internal whitespace is semantic. -/
+def source_exact (stx : Lean.Syntax) (why : String) : emit_m Doc := do
+  log_opt_out stx why
+  pure (.textRaw (bare_src stx))
+
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
 def passthrough (stx : Lean.Syntax) : emit_m Doc := do
   emit_diag

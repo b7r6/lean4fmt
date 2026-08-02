@@ -948,6 +948,8 @@ def emit_simple (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
 
 private
 def emit_in (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← Lean4Fmt.Emit.source_exact stx "command-in-layout")
   -- `open X in\n<command>` — prefix command token-for-token, the trailed
   -- command walked (usually a declaration; Decl does the real work)
   let args := stx.getArgs
