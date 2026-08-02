@@ -82,9 +82,9 @@ def append_token_after_previous?
       return none
     let separator :=
       match gap_rule (bare_src previous) token with
-      | some true  => " "
+      | some true => " "
       | some false => ""
-      | none       => if gap.isEmpty then "" else " "
+      | none => if gap.isEmpty then "" else " "
     return some
       {
         output := state.output ++ separator ++ token

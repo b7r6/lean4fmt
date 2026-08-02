@@ -82,6 +82,9 @@ for w, b in why_bytes.most_common(15):
 if clearances_path is not None:
     clearances = json.loads(clearances_path.read_text())
     failures = []
+    maximum_no_stats = int(clearances.get("maximum_no_stats", 0))
+    if nerr > maximum_no_stats:
+        failures.append(f"no-stats {nerr} > {maximum_no_stats}")
     minimum_coverage = float(clearances.get("minimum_shipped_of_portable", 0))
     coverage = 100 * shp_a / portable if portable else 0
     if coverage < minimum_coverage:

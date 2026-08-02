@@ -1,5 +1,6 @@
 {
   "minimum_shipped_of_portable": 95.5,
+  "maximum_no_stats": 0,
   "maximum_gate_rejects": 0,
   "maximum_kind_bytes": {
     "Lean.Parser.Command.declaration": 3521,

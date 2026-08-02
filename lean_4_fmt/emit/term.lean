@@ -41,7 +41,11 @@ def comma_group
   let mut documents : Array Doc := #[]
   for child in children do
     if child.isAtom then continue
-    documents := documents.push (← walk child)
+    let document ← walk child
+    if Lean4Fmt.Doc.hasMultilineVerbatim document
+        || Lean4Fmt.Doc.has_midline_reanchor document then
+      return none
+    documents := documents.push document
   -- literal pools (§5 fill): many short flat items — byte tables, opcode
   -- lists — pack and wrap at the width instead of exploding one per line
   if documents.size ≥ 8
@@ -1052,6 +1056,12 @@ def application_doc
   let function := args[0]!
   let arguments := (args[1]?.map (·.getArgs)).getD #[]
   let indent := (← read).layout.indent
+  -- A zero-width application seam may be custom postfix notation (`L⟦n⟧`),
+  -- where inserting the ordinary application space changes the macro parse.
+  -- Only own seams the source already classified as whitespace-separated.
+  for argument in arguments do
+    if ((Lean4Fmt.Syntax.leading? argument).getD "").isEmpty then
+      return (← verbatim stx "application-adjacency")
   let functionDoc ← walk function
   if Lean4Fmt.Syntax.interior_has_line_comment stx then
     return (← commented_application_doc walk stx function functionDoc arguments indent)

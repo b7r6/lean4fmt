@@ -424,6 +424,8 @@ def dispatch_binding
       && kind != `Lean.Parser.Tactic.tacticLetI__
       && kind != ``Lean.Parser.Tactic.replace then
     return .unhandled
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← fallback stx)
   let args := stx.getArgs
   if args.size != 3 && args.size != 2 then
     return (← fallback stx)
@@ -432,7 +434,9 @@ def dispatch_binding
   if config.any (· == '\n') then
     return (← fallback stx)
   let declDoc ← walk args[args.size - 1]!
-  if !(declDoc matches .verbatim _ _) then
+  if !(declDoc matches .verbatim _ _)
+      && !Lean4Fmt.Doc.hasMultilineVerbatim declDoc
+      && !Lean4Fmt.Doc.has_midline_reanchor declDoc then
     return .handled
       (.text (keyword ++ " ") ++ (if config.isEmpty then Doc.nil else .text (config ++ " "))
           ++ declDoc)

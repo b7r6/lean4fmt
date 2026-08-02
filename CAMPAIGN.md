@@ -240,3 +240,26 @@ Home gate 234/234 · slice 0/100 · comment-diff on every formatter-applied
 diff · core fuzz 0/120 · new column hazards → `WsSensitivity.lean` · new
 kinds → the `Syntax/Kinds.lean` registry · toolchain pinned per round via
 the census cache · never batch processHeader across files.
+
+## Gate 4 full-tree ledger (2026-08-02)
+
+The standing instrument now accepts `all` and resumable `@file-list` runs,
+uses content-addressed formatter builds, records atomically completed files,
+and rejects missing stats. `mathlib-full-gate` pins the full-tree clearance.
+R12 also corrected the instrument itself: both passes now run `--style mathlib`.
+
+The first 8,245-file census parsed every file with zero missing stats and found
+241 safety-gate rejects under the old style invocation. Replaying that exact
+frontier with the mathlib style and the binder default-order fix reduced it to
+192. The current monotone clearances reduce the same frozen frontier to 125:
+multiline container children cannot be relocated, adjacency-sensitive
+applications stay opaque, and tactic bindings preserve interior comments and
+multiline reanchors. The conservative application boundary costs about nine
+attempted-coverage points on this adversarial slice; recovering that coverage
+is a named optimization target, never a reason to weaken the safety gate.
+
+Current frozen-frontier result:
+`.lean4fmt/mathlib-rejects-binding-anchor` — 192 parsed, zero missing stats,
+125 rejects, 72.3% attempted code-active, 90.9% portable ceiling. Gate 4 remains
+open until the exact frontier and a fresh 8,245-file mathlib-style run both have
+zero rejects.

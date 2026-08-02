@@ -56,6 +56,7 @@ private
 structure binder_build_state where
   head    : String := ""
   valid   : Bool := true
+  sawType : Bool := false
   typeDoc : Doc := .nil
 
 private
@@ -73,17 +74,22 @@ def broken_binder_doc (walk : Lean4Fmt.Emit.Walk) (binder : Lean.Syntax) : emit_
         let text := (bare_src child).trimAscii.toString
         if text.isEmpty then continue
         if !text.any (· == '\n') then
-          state := { state with
-            head := if state.head.isEmpty then text else state.head ++ " " ++ text }
+          if state.sawType then
+            -- A default value follows the type (`(x : T := v)`). Moving that
+            -- suffix into the accumulated head would reorder it before `T`.
+            state := { state with valid := false }
+          else
+            state := { state with
+              head := if state.head.isEmpty then text else state.head ++ " " ++ text }
         else
           let childArguments := child.getArgs
-          if childArguments.size == 2
+          if !state.sawType && childArguments.size == 2
               && (bare_src childArguments[0]!).trimAscii.toString == ":" then
             let typeDoc ← walk childArguments[1]!
             if Lean4Fmt.Doc.hasMultilineVerbatim typeDoc then
               state := { state with valid := false }
             else
-              state := { state with typeDoc := .text " : " ++ typeDoc }
+              state := { state with sawType := true, typeDoc := .text " : " ++ typeDoc }
           else
             state := { state with valid := false }
       if state.valid && !state.head.isEmpty then
