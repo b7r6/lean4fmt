@@ -404,6 +404,9 @@ def dispatch_exact
   let args := stx.getArgs
   if args.size != 2 then
     return (← fallback stx)
+  let source := Lean4Fmt.Emit.bare_src stx
+  if source.any (· == '\n') && (source.splitOn "⟨").length > 1 then
+    return (← fallback stx)
   let keyword := (Lean4Fmt.Emit.bare_src args[0]!).trimAscii.toString
   let termDoc ← walk args[1]!
   let layout : Doc := .text keyword ++ .group (.nest 2 (.line ++ termDoc))
@@ -454,6 +457,8 @@ def dispatch_simp
       && kind != `Lean.Parser.Tactic.tacticRwa__
       && kind != `Mathlib.Tactic.tacticSimp_rw___ then
     return .unhandled
+  if ((Lean4Fmt.Emit.bare_src stx).splitOn ").").length > 1 then
+    return (← fallback stx)
   if Lean4Fmt.Syntax.interior_has_line_comment stx then
     return (← fallback stx)
   if ((Lean4Fmt.Emit.bare_src stx).splitOn "]").getLast!.any (· == '\n') then

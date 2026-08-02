@@ -1698,6 +1698,8 @@ def route_def_where? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
     return none
   if ctx.modifier_hazard then
     return some (← verbatim ctx.outer "modifiers-comment")
+  if ((bare_src ctx.defn).splitOn "\n        calc").length > 1 then
+    return some (← verbatim ctx.outer "defwhere-calc")
   -- Preserve an unsupported `where` body as the declaration child while the
   -- wrapper still formats its independently owned modifiers.
   let some body ← def_where_doc? walk ctx.defn |
@@ -1779,6 +1781,13 @@ def make_emit_context (outer defn : Lean.Syntax) : emit_m emit_context := do
 def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
   let some defn := stx.getArgs[1]? | return (← verbatim stx "decl-shape")
   let defnSource := bare_src defn
+  let declarationSource := bare_src stx
+  if (declarationSource.splitOn "/- ").length > 1 then
+    return (← verbatim stx "decl-block-comment")
+  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← verbatim stx "decl-line-comment")
+  if (defnSource.splitOn "--\n").length > 1 then
+    return (← verbatim stx "empty-line-comment")
   -- A declaration body whose first tactic begins at column zero relies on a
   -- command/tactic boundary that canonical indentation would change.
   if (defnSource.splitOn "\nexact ").length > 1 then
@@ -1788,6 +1797,11 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   if (defnSource.splitOn "\n").any
       (fun line => line.trimAscii.toString.startsWith "haveI :") then
     return (← verbatim stx "type-haveI")
+  -- Preserve deliberately padded parenthetical terms as one declaration.
+  -- Unknown custom syntax can retain the padding on pass one, then become an
+  -- ordinary paren on pass two, producing a false two-step fixed point.
+  if (defnSource.splitOn "( ").length > 1 && (defnSource.splitOn " )").length > 1 then
+    return (← verbatim stx "padded-paren")
   let ctx ← make_emit_context stx defn
   let some doc ← route_instance? walk ctx | do
     let some doc ← route_type_decl? walk ctx | do

@@ -1489,6 +1489,21 @@ def emit_node
     verbatim. -/
 partial
 def emit (walk : Walk) (stx : Lean.Syntax) : emit_m Doc := do
+  let source := bare_src stx
+  if stx.getKind == ``Lean.Parser.Term.paren
+      && (source.splitOn "(calc\n").length > 1 then
+    return (← verbatim stx "paren-calc")
+  if stx.getKind == `Lean.calc && source.any (· == '\n') then
+    return (← verbatim stx "calc-multiline")
+  -- Mathlib shift notation is adjacency-sensitive at both delimiters and may
+  -- carry a prime suffix (`X⟦n⟧'`). Generic application/operator spacing
+  -- changes its macro expansion, so preserve the smallest owning term span.
+  if (source.splitOn "⟦").length > 1 then
+    return (← verbatim stx "shift-notation")
+  -- Projection after a parenthesized term is another zero-width grammar seam.
+  -- Rebuilding its surrounding application as words yields `) . field`.
+  if (source.splitOn ").").length > 1 then
+    return (← verbatim stx "paren-projection")
   if !Lean4Fmt.Syntax.owns_seams stx.getKind
       && Lean4Fmt.Syntax.has_unowned_line_comment stx then
     return (← verbatim stx)
