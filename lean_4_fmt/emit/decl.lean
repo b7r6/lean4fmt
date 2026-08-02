@@ -497,11 +497,9 @@ def sig_doc
   -- line while its binders fit the keyword line, else the per-line stack
   -- (Solve.sigOneLineFits). A multi-line binder never rides one line. Other
   -- modes pass through unchanged, so onePerLine/oneLine/fill are byte-identical.
-  let mode ←
-    if (← read).breaking.binders == .adaptive then do
-      adaptive_binder_mode binders typeInfo prefixWidth reserve
-    else
-      pure (← read).breaking.binders
+  let mode ← if (← read).breaking.binders == .adaptive then
+    do adaptive_binder_mode binders typeInfo prefixWidth reserve
+  else pure (← read).breaking.binders
   match mode with
   | .onePerLine | .adaptive => sig_doc_one_per_line walk nameCol binders typeInfo
   | .fill => sig_doc_fill walk reserve binders typeInfo
@@ -668,9 +666,10 @@ def simple_value_body
     return .body valueDoc false
   if Lean4Fmt.Doc.flat_width valueDoc |>.isSome then
     return .body valueDoc false
-  match valueDoc with
-  | .verbatim _ _ => return .span (← verbatim ctx.declVal "val-multiline")
-  | _ => finish_value_doc ctx valueDoc
+  -- The declaration owns the line-start seam after `:=`: an opaque multiline
+  -- value composes safely there. Reject only the actual hazard, a child that
+  -- re-anchors after non-whitespace on an assembled line.
+  finish_value_doc ctx valueDoc
 
 private
 def value_span (declVal : Lean.Syntax) (reason : String) : emit_m val_form :=
@@ -842,18 +841,16 @@ def equation_defn_doc
     (ctx : defn_layout_context)
     (arms : Doc)
     : emit_m Doc := do
-  let signature ←
-    if ctx.typeClean && ctx.prefixWidth + ctx.sigWidth + ctx.typeWidth ≤ ctx.lineWidth then
-      let typeInline : Doc :=
-        if ctx.exactSig?.isSome then
-          .nil
-        else
-          match ctx.typeInfo with
-          | some (term, _, _, false) => .text " : " ++ term
-          | _ => .nil
-      pure (ctx.inlineSig ++ typeInline)
-    else
-      signature_from_syntax walk ctx.signature? ctx.nameCol ctx.prefixWidth 0
+  let signature ← if ctx.typeClean && ctx.prefixWidth + ctx.sigWidth + ctx.typeWidth ≤ ctx.lineWidth then
+    let typeInline : Doc :=
+      if ctx.exactSig?.isSome then
+        .nil
+      else
+        match ctx.typeInfo with
+        | some (term, _, _, false) => .text " : " ++ term
+        | _ => .nil
+    pure (ctx.inlineSig ++ typeInline)
+  else signature_from_syntax walk ctx.signature? ctx.nameCol ctx.prefixWidth 0
   return .text ctx.keyword ++ .space ++ .text ctx.identifier ++ signature ++ .nest 2 arms
 
 private
@@ -992,10 +989,9 @@ def finish_defn_doc (walk : Lean4Fmt.Emit.Walk) (head : defn_head_context) : emi
     let binderDoc ← Lean4Fmt.Emit.binder_doc walk binder
     inlineBinders := inlineBinders ++ .space ++ binderDoc
     bindersWidth := bindersWidth + 1 + (Lean4Fmt.Doc.flat_width binderDoc).getD 0
-  let typeInfo ←
-    match head.signature? with
-    | some signature => type_info walk signature
-    | none => pure none
+  let typeInfo ← match head.signature? with
+  | some signature => type_info walk signature
+  | none => pure none
   let typeClean := typeInfo.all (fun info => !info.2.2.2)
   let typeWidth :=
     match typeInfo with
@@ -1062,8 +1058,9 @@ def defn_doc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.Syntax) 
     | some (Lean.Syntax.atom _ value) => value
     | _ => "def"
   let declId := (args[1]?.map bare_src).getD ""
-  let valueForm ←
-    match args[3]? with | some value => valForm walk value | none => pure (.body .nil false)
+  let valueForm ← match args[3]? with
+  | some value => valForm walk value
+  | none => pure (.body .nil false)
   let bodyOwn := (← read).breaking.bodyOwnLine
   let valueForm :=
     match args[3]? with
@@ -1656,13 +1653,19 @@ def route_type_decl? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
   if ctx.modifier_hazard then
     return some (← verbatim ctx.outer "modifiers-comment")
   let alignment := (← read).alignment
-  let body? ←
-    if kind == ``Lean.Parser.Command.inductive then
-      Command.inductive_doc? walk ctx.defn alignment.trailingComments alignment.maxDelta ctx.preserve
-    else
-      Command.structure_doc? walk ctx.defn alignment.trailingComments alignment.structFields
-        alignment.maxDelta ctx.preserve
-  let some body := body? | return some (← verbatim ctx.outer "structure-shape")
+  let body? ← if kind == ``Lean.Parser.Command.inductive then
+    Command.inductive_doc? walk ctx.defn alignment.trailingComments alignment.maxDelta ctx.preserve
+  else
+    Command.structure_doc?
+      walk
+      ctx.defn
+      alignment.trailingComments
+      alignment.structFields
+      alignment.maxDelta
+      ctx.preserve
+  -- Keep the wrapper active even when its body is not: modifiers own the seam
+  -- before the byte-exact declaration child, so this composition is lossless.
+  let some body := body? | return some (ctx.with_modifiers (← verbatim ctx.defn "structure-body"))
   return some (ctx.with_modifiers body)
 
 private
@@ -1677,7 +1680,8 @@ def route_example? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (Op
   if ctx.modifier_hazard then
     return some (← verbatim ctx.outer "modifiers-comment")
   let body? ← example_body? walk ctx.defn
-  let body? ← if body?.isSome then pure body? else example_span_doc? ctx.defn
+  let body? ← if body?.isSome then pure body?
+  else example_span_doc? ctx.defn
   let some body := body? | return some (← verbatim ctx.outer "example-shape")
   return some (ctx.with_modifiers body)
 
@@ -1687,8 +1691,10 @@ def route_def_where? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
     return none
   if ctx.modifier_hazard then
     return some (← verbatim ctx.outer "modifiers-comment")
+  -- Preserve an unsupported `where` body as the declaration child while the
+  -- wrapper still formats its independently owned modifiers.
   let some body ← def_where_doc? walk ctx.defn |
-    return some (← verbatim ctx.outer "defwhere-shape")
+    return some (ctx.with_modifiers (← verbatim ctx.defn "defwhere-body"))
   return some (ctx.with_modifiers body)
 
 private

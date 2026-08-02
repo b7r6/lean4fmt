@@ -102,7 +102,8 @@ def active_multiline_term_kinds : Array SyntaxNodeKind :=
     ``Lean.Parser.Term.haveI,
     ``Lean.Parser.Term.letrec,
     ``Lean.Parser.Term.match,
-    ``Lean.Parser.Term.show
+    ``Lean.Parser.Term.show,
+    `Mathlib.Meta.setBuilder
   ]
 
 /-- Every term kind the walker routes to `Term.emit` (binOps ride the

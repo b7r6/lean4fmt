@@ -117,8 +117,7 @@ def record_term_info
       | _, _ => state
   -- Add local binders to the collision set, but never to the rename set.
   term_info.lctx.decls.foldl
-    (fun state declaration =>
-      match declaration with
+    (fun state declaration => match declaration with
       | some local_decl =>
         if local_decl.userName.isInternal || local_decl.userName.hasMacroScopes then
           state

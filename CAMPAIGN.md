@@ -83,6 +83,7 @@ r2 91.7 · r3 92.1 · r4 92.4 · r7 92.8 · r8 93.4.
 | 2026-08-02 | **249 (10/dir)** | 83.6% | 83.6% | 88.1% of code | **94.9%** | 0 (fresh post-snake baseline on mathlib4 `308db4b`, Lean `v4.32.0-rc1`) |
 | 2026-08-02 | 249 (10/dir) | 83.6% | 83.6% | 88.1% of code | **94.9%** | 0 (comment-bearing `doLetElse` continuations: +721 active bytes; the continuation seam already owns their trivia) |
 | 2026-08-02 | 249 (10/dir) | 83.7% | 83.7% | 88.1% of code | **95.0%** | 0 (multiline `show` types compose with the structural term emitter: +1,129 active bytes; `show-type-shape` 1,480B → 0) |
+| 2026-08-02 | **249 (10/dir)** | **84.1%** | **84.1%** | 88.0% of code | **95.6% — GATE 3 CLOSED** | **0** (set-builder + anonymous bindings; direct `doIf` arrow values; owned declaration-value seams; active modifier wrappers around opaque structure/`where` children; executable per-kind clearances) |
 
 ### 2026-08-02 effort/coverage probe
 
@@ -95,11 +96,12 @@ home-tree wash; it also reduced nested `paren` and `fun` residue. Both rounds
 kept 249/249 parsed, zero gate rejects, formatter fixed point, comment multiset,
 and Lean recompilation on the affected mathlib files.
 
-The headline has crossed 95.0, but Gate 3 remains open: its independent queue
-condition still requires every portable kind to fall below 10KB. The current
-large pools are `declaration` 14.8KB, `letIdDecl` 14.4KB, `declValSimple`
-12.7KB, `doLetArrow` 12.6KB, and `tacticHave` 11.3KB. Queue bytes are therefore
-treated as dependency-weighted upper bounds, not additive coverage estimates.
+Gate 3 is now closed at its stricter executable fixed point: 95.5 minimum
+shipped-of-portable, zero rejects, and exact non-increase clearances for the
+five former blockers. Their measured residues are `declaration` 3,521B,
+`letIdDecl` 6,261B, `declValSimple` 1,310B, `doLetArrow` 5,640B, and
+`tacticHave` 4,313B. Queue bytes remain dependency-weighted upper bounds, not
+additive coverage estimates.
 
 ## GATE-3 RUN PAUSED at 94.93 (2026-07-23)
 

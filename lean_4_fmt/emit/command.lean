@@ -385,9 +385,8 @@ def inductive_layout? (defn : Lean.Syntax) : Option inductive_layout := do
   if constructors.isEmpty then none
   let derivingText := (args[6]?.map Lean4Fmt.Emit.canon_tok).getD ""
   if derivingText.any (· == '\n') then none
-  let derivingSep ←
-    if derivingText.isEmpty then some .nil
-    else leading_sep? ((Lean4Fmt.Syntax.leading? args[6]!).getD "")
+  let derivingSep ← if derivingText.isEmpty then some .nil
+  else leading_sep? ((Lean4Fmt.Syntax.leading? args[6]!).getD "")
   return { head, constructors, derivingText, derivingSep }
 
 private

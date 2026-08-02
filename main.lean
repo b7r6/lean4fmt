@@ -675,7 +675,8 @@ def run_rename_apply_impl
   let jobs := (((← IO.getEnv "LEAN4FMT_JOBS").bind (·.toNat?)).getD 8).max 1
   -- resolution: build the olean farm ONCE (over the whole set incl. protected
   -- files, so they resolve), hand each worker its path via --farm
-  let farm ← if resolve then Frontend.make_olean_farm (files ++ protect) else pure none
+  let farm ← if resolve then Frontend.make_olean_farm (files ++ protect)
+  else pure none
   let extra :=
     (if elabFallback then #[] else #["--elab", "off"])
         ++ (if resolve then

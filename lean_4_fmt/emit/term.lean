@@ -65,11 +65,8 @@ def comma_trivia? (comma? : Option Lean.Syntax) : Option (Doc × String) := do
   let some comma := comma? | return (.nil, "")
   let isWhitespace (text : String) : Bool := text.all (fun char => char == ' ' || char == '\t')
   let leading := (Lean4Fmt.Syntax.leading? comma).getD ""
-  let separator ←
-    if ((leading.splitOn "\n").drop 1).dropLast.all isWhitespace then
-      some .nil
-    else
-      Lean4Fmt.Emit.leading_sep? leading
+  let separator ← if ((leading.splitOn "\n").drop 1).dropLast.all isWhitespace then some .nil
+  else Lean4Fmt.Emit.leading_sep? leading
   return (separator, ((Lean4Fmt.Syntax.trailing? comma).getD "").trimAscii.toString)
 
 private
@@ -281,8 +278,8 @@ def struct_field_doc (walk : Walk) (field : Lean.Syntax) : emit_m Doc := do
   let lvalStx := fieldArgs[0]?.getD .missing
   let lvalT := bare_src lvalStx
   let lval ← if !lvalT.isEmpty && !lvalT.any (· == '\n') then
-      pure (Doc.text (Lean4Fmt.Emit.canon_tok lvalStx))
-    else verbatim lvalStx
+    pure (Doc.text (Lean4Fmt.Emit.canon_tok lvalStx))
+  else verbatim lvalStx
   let rest := (fieldArgs[1]?.getD Lean.Syntax.missing).getArgs
   let fd? := rest.find? (·.getKind == ``Lean.Parser.Term.structInstFieldDef)
   match fd? with
@@ -312,6 +309,25 @@ def collection_literal_doc
   match ← comma_group walk left "]" children with
   | some doc => return doc
   | none => return (← verbatim stx "trailing-comma")
+
+/-- Mathlib's `{ binder | predicate }` extended set-builder notation. -/
+private partial
+def set_builder_doc (walk : Walk) (stx : Lean.Syntax) (args : Array Lean.Syntax) : emit_m Doc := do
+  if args.size != 5 || Lean4Fmt.Syntax.interior_has_line_comment stx then
+    return (← verbatim stx "set-builder-shape")
+  let left := (bare_src args[0]!).trimAscii.toString
+  let some binder := Lean4Fmt.Emit.token_join_flat? args[1]!
+      | return (← verbatim stx "set-builder-binder")
+  let separator := (bare_src args[2]!).trimAscii.toString
+  let right := (bare_src args[4]!).trimAscii.toString
+  if left.isEmpty || binder.isEmpty || separator.isEmpty || right.isEmpty then
+    return (← verbatim stx "set-builder-tokens")
+  let predicateDoc ← walk args[3]!
+  if (predicateDoc matches .verbatim _ _)
+      || Lean4Fmt.Doc.has_midline_reanchor predicateDoc then
+    return (← verbatim stx "set-builder-predicate")
+  let head := left ++ binder ++ " " ++ separator
+  return .text head ++ .group (.nest 2 (.line ++ predicateDoc)) ++ .text right
 
 private partial
 def match_term_doc (walk : Walk) (stx : Lean.Syntax) (args : Array Lean.Syntax) : emit_m Doc := do
@@ -452,6 +468,15 @@ def let_decl_doc (walk : Walk) (stx : Lean.Syntax) (args : Array Lean.Syntax) : 
   | some inner => return (← walk inner)
   | none => return (← verbatim stx)
 
+/-- Bounded syntax-kind tree for actionable structural fallback diagnostics. -/
+private partial
+def syntax_kind_tree (syntaxNode : Lean.Syntax) (fuel : Nat := 4) : String :=
+  if fuel == 0 || syntaxNode.getArgs.isEmpty then
+    syntaxNode.getKind.toString
+  else
+    let children := syntaxNode.getArgs.toList.map (syntax_kind_tree · (fuel - 1))
+    s!"{syntaxNode.getKind}[{String.intercalate "," children}]"
+
 private partial
 def binding_head_doc? (walk : Walk) (args : Array Lean.Syntax) : emit_m (Option Doc) := do
   if args.size != 5 || (bare_src args[3]!).trimAscii.toString != ":=" then
@@ -462,7 +487,7 @@ def binding_head_doc? (walk : Walk) (args : Array Lean.Syntax) : emit_m (Option 
     return none
   let typeText := Lean4Fmt.Emit.canon_tok (args[2]?.getD .missing)
   if head.isEmpty && typeText.isEmpty then
-    return none
+    return some .nil
   if typeText.isEmpty then
     return some (.text head)
   if !typeText.any (· == '\n') then
@@ -482,17 +507,28 @@ def binding_head_doc? (walk : Walk) (args : Array Lean.Syntax) : emit_m (Option 
     return none
   let typeDoc ← walk typeNode
   if (match typeDoc with | .verbatim _ _ => true | _ => false)
-      || Lean4Fmt.Doc.hasMultilineVerbatim typeDoc then return none
+      || Lean4Fmt.Doc.hasMultilineVerbatim typeDoc then
+    emit_diag
+      { severity := .debug,
+        pos := (typeNode.getPos?.map (·.byteIdx)).getD 0,
+        rule := "binding-type",
+        message := s!"unhandled binding type: {syntax_kind_tree typeNode}" }
+    return none
   return some
     (.text (if head.isEmpty then ":" else head ++ " :") ++ .group (.nest 4 (.line ++ typeDoc)))
 
 private partial
-def multiline_binding_value_doc (stx : Lean.Syntax) (head valueDoc : Doc) : emit_m Doc := do
-  if let .verbatim _ _ := valueDoc then
-    return (← verbatim stx)
+def multiline_binding_value_doc
+    (stx : Lean.Syntax)
+    (head valueDoc : Doc)
+    (anonymous : Bool)
+    : emit_m Doc := do
   if Lean4Fmt.Doc.has_midline_reanchor valueDoc then
     return (← verbatim stx)
-  return head ++ .text " :=" ++ .nest 2 (.hardline ++ valueDoc)
+  -- A whole opaque multiline value is safe at this explicit line-start seam:
+  -- its stored base indent re-anchors under the binding's +2 nest. Reject only
+  -- opaque pieces embedded after active mid-line content (the check above).
+  return head ++ .text (if anonymous then ":=" else " :=") ++ .nest 2 (.hardline ++ valueDoc)
 
 private partial
 def binding_value_doc
@@ -500,24 +536,28 @@ def binding_value_doc
     (stx : Lean.Syntax)
     (head : Doc)
     (value : Lean.Syntax)
+    (anonymous : Bool)
     : emit_m Doc := do
   let valueDoc ← walk value
+  let inlineAssign := if anonymous then ":= " else " := "
+  let breakAssign := if anonymous then ":=" else " :="
   if value.getKind == ``Lean.Parser.Term.do || value.getKind == ``Lean.Parser.Term.byTactic then
-    return head ++ .text " := " ++ valueDoc
+    return head ++ .text inlineAssign ++ valueDoc
   if Lean4Fmt.Syntax.is_fun_block_value value
       && !(match valueDoc with | .verbatim _ _ => true | _ => false) then
-    return head ++ .text " := " ++ valueDoc
+    return head ++ .text inlineAssign ++ valueDoc
   if ((Lean4Fmt.Doc.left_edge_text? valueDoc).map (·.startsWith "{")).getD false
       && !Lean4Fmt.Doc.hasMultilineVerbatim valueDoc then
-    return head ++ .text " := " ++ valueDoc
+    return head ++ .text inlineAssign ++ valueDoc
   if Lean4Fmt.Doc.hasMultilineVerbatim valueDoc then
-    return (← multiline_binding_value_doc stx head valueDoc)
-  return head ++ .text " :=" ++ .group (.nest 2 (.line ++ valueDoc))
+    return (← multiline_binding_value_doc stx head valueDoc anonymous)
+  return head ++ .text breakAssign ++ .group (.nest 2 (.line ++ valueDoc))
 
 private partial
 def binding_doc (walk : Walk) (stx : Lean.Syntax) (args : Array Lean.Syntax) : emit_m Doc := do
   let some head ← binding_head_doc? walk args | return (← verbatim stx)
-  binding_value_doc walk stx head args[4]!
+  let anonymous := (args.extract 0 3).all (Lean4Fmt.Emit.canon_tok · |>.isEmpty)
+  binding_value_doc walk stx head args[4]! anonymous
 
 private partial
 def letrec_doc (walk : Walk) (stx : Lean.Syntax) (args : Array Lean.Syntax) : emit_m Doc := do
@@ -1376,6 +1416,8 @@ def emit_node_tail
     return (← binding_doc walk stx args)
   else if kind == ``Lean.Parser.Term.match then
     return (← match_term_doc walk stx args)
+  else if kind == `Mathlib.Meta.setBuilder then
+    return (← set_builder_doc walk stx args)
   else if kind == Lean4Fmt.Syntax.dite_kind then
     return (← dependent_ite_doc walk stx kind args)
   else if kind == ``Lean.Parser.Term.fun then

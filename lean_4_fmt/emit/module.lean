@@ -355,10 +355,9 @@ def initial_header_state
     (style : Lean4Fmt.Style.Style)
     (header : Lean.Syntax)
     : Lean4Fmt.Emit.emit_m module_state := do
-  let body ←
-    match header_doc? header with
-    | some document => pure document
-    | none => walk header
+  let body ← match header_doc? header with
+  | some document => pure document
+  | none => walk header
   return {
     output := module_file_head style ((Lean4Fmt.Syntax.leading? header).getD "") ++ body
     previous := some (header, body)

@@ -4,12 +4,14 @@ coverage (gate-rejected files ship identity — their code bytes are all
 passthrough), the measured ceiling (policy-content excluded), gate-reject
 classes, and the opt-out queue ranked by BYTES with bail reasons."""
 import bisect
+import json
 import re
 import sys
 from collections import Counter
 from pathlib import Path
 
 res = Path(sys.argv[1])
+clearances_path = Path(sys.argv[2]) if len(sys.argv) > 2 else None
 att_a = att_v = shp_a = shp_v = pol_t = 0
 nfiles = nrej = nerr = 0
 rejects = []
@@ -76,3 +78,24 @@ for k, b in kind_bytes.most_common(25):
 print(f"\nbail reasons by BYTES (top 15 of {len(why_bytes)}):")
 for w, b in why_bytes.most_common(15):
     print(f"  {b:8}  {w}")
+
+if clearances_path is not None:
+    clearances = json.loads(clearances_path.read_text())
+    failures = []
+    minimum_coverage = float(clearances.get("minimum_shipped_of_portable", 0))
+    coverage = 100 * shp_a / portable if portable else 0
+    if coverage < minimum_coverage:
+        failures.append(f"coverage {coverage:.3f} < {minimum_coverage:.3f}")
+    maximum_rejects = int(clearances.get("maximum_gate_rejects", 0))
+    if nrej > maximum_rejects:
+        failures.append(f"gate rejects {nrej} > {maximum_rejects}")
+    for kind, maximum in clearances.get("maximum_kind_bytes", {}).items():
+        actual = kind_bytes[kind]
+        if actual > int(maximum):
+            failures.append(f"{kind} {actual} > {maximum}")
+    print(f"\nclearances: {clearances_path}")
+    if failures:
+        for failure in failures:
+            print(f"  FAIL {failure}")
+        raise SystemExit(1)
+    print("  PASS")

@@ -610,7 +610,9 @@ theorem mem_trim_end_ws
         : proofCharacter ∈ proofChars := by
   unfold trim_end_ws at trimmedMembership
   rw [List.mem_reverse] at trimmedMembership
-  have := (List.dropWhile_sublist (l := proofChars.reverse) (p := Char.isWhitespace)).subset trimmedMembership
+  have :=
+    (List.dropWhile_sublist (l := proofChars.reverse) (p := Char.isWhitespace)).subset
+      trimmedMembership
   simpa [List.mem_reverse] using this
 
 theorem drop_while_head_not

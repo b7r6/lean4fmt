@@ -181,9 +181,10 @@ def seq_groups_doc?
     -- first group: comment-free blank runs after the block opener are LAYOUT
     -- (dropped; the style re-adds its own) — see seqLinesDoc?
     let sep ← if idx == 0 && lead.toList.all (·.isWhitespace) then pure Doc.hardline
-      else match Lean4Fmt.Emit.leading_sep? lead with
-        | some textValue => pure textValue
-        | none => return none
+    else
+      match Lean4Fmt.Emit.leading_sep? lead with
+      | some textValue => pure textValue
+      | none => return none
     let some gDoc ← group_doc? walk group | return none
     body := body ++ sep ++ gDoc ++ trailDoc
   return some body

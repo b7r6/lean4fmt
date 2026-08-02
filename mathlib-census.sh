@@ -7,7 +7,8 @@
 #   + the byte-weighted opt-out queue over a stratified mathlib sample.
 #   Read-only on mathlib.
 #
-#     src/lean4fmt/mathlib-census.sh [N-per-dir]     # default 2 (~55 files)
+#     src/lean4fmt/mathlib-census.sh [N-per-dir] [clearances]
+#                                                    # default 2 (~55 files)
 #
 #   Env: MATHLIB=checkout (default ~/src/vendor/mathlib4). The exe is built
 #   from THIS tree under MATHLIB'S pinned toolchain via elan (olean formats
@@ -27,6 +28,8 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ML="${MATHLIB:-$HOME/src/vendor/mathlib4}"
 PER="${1:-2}"
 [ -d "$ML/Mathlib" ] || { echo "no mathlib checkout at $ML (set MATHLIB=)" >&2; exit 2; }
+CLEARANCES=""
+if [ "$#" -ge 2 ]; then CLEARANCES="$(realpath "$2")"; fi
 
 TC="$(cat "$ML/lean-toolchain")"
 rev="$(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo dev)"
@@ -67,5 +70,11 @@ runone() {
 export -f runone
 printf '%s\n' "${files[@]}" | xargs -P 2 -I{} bash -c 'runone {}'
 
-python3 "$here/mathlib-census.py" "$RES"
+status=0
+if [ -n "$CLEARANCES" ]; then
+  python3 "$here/mathlib-census.py" "$RES" "$CLEARANCES" || status=$?
+else
+  python3 "$here/mathlib-census.py" "$RES" || status=$?
+fi
 echo "// census: raw results kept in $RES"
+exit "$status"

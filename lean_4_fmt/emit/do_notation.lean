@@ -26,6 +26,47 @@ namespace Lean4Fmt.Emit.DoNotation
 
 open Lean Lean4Fmt.Doc
 
+private partial
+def syntax_kind_tree (syntaxNode : Lean.Syntax) (fuel : Nat := 3) : String :=
+  let name := syntaxNode.getKind.toString
+  if fuel == 0 || syntaxNode.getArgs.isEmpty then
+    name
+  else
+    let children := syntaxNode.getArgs.toList.map (syntax_kind_tree · (fuel - 1))
+    name ++ "[" ++ String.intercalate ", " children ++ "]"
+
+private
+def id_decl_head? (document : Lean.Syntax) : Option String :=
+  Id.run do
+    let args := document.getArgs
+    if document.getKind == ``Lean.Parser.Term.doIdDecl then
+      if args.size != 4 then
+        return none
+    else if document.getKind == ``Lean.Parser.Term.doPatDecl then
+      if args.size != 5 then
+        return none
+      let elseTail := args[4]!.getArgs
+      let elsePipe :=
+        if elseTail.isEmpty then "" else (Lean4Fmt.Emit.bare_src elseTail[0]!).trimAscii.toString
+      if (elseTail[0]?.bind (·.getPos?)).isSome && !elsePipe.isEmpty then
+        return none
+    else
+      return none
+    let nameToken := Lean4Fmt.Emit.canon_tok args[0]!
+    let typeToken := Lean4Fmt.Emit.canon_tok args[1]!
+    return String.intercalate " " ([nameToken, typeToken].filter (fun text => !text.isEmpty))
+
+private
+def id_decl_value? (expression : Lean.Syntax) : Option Lean.Syntax :=
+  if expression.getKind == ``Lean.Parser.Term.doExpr then
+    expression.getArgs[0]?
+  else if expression.getKind == ``Lean.Parser.Term.doIf
+      || expression.getKind == ``Lean.Parser.Term.doMatch
+      || expression.getKind == ``Lean.Parser.Term.do then
+    some expression
+  else
+    none
+
 /-- `x (: τ)? ← v` — the monadic-bind decl inside doLetArrow / doReassignArrow.
     The arrow atom is reproduced from source (`←` or `<-` — the token gate cares);
     the value inside the `doExpr` is walked, flat on the arrow line when it fits,
@@ -41,28 +82,11 @@ def id_decl_doc?
   -- doIdDecl = [id, type?, "←", doExpr]; doPatDecl = [pat, type?, "←",
   -- doExpr, else?] — same arrow/expr slots; the pattern joins flat and the
   -- optional `| else` tail bails
-  let head ← do
-    if document.getKind == ``Lean.Parser.Term.doIdDecl then
-      if args.size != 4 then return none
-      let idT := Lean4Fmt.Emit.canon_tok args[0]!
-      let tyT := Lean4Fmt.Emit.canon_tok args[1]!
-      pure (String.intercalate " " ([idT, tyT].filter (fun text => !text.isEmpty)))
-    else if document.getKind == ``Lean.Parser.Term.doPatDecl then
-      if args.size != 5 then return none
-      if !((args[4]?.map (fun syntaxNode =>
-          (Lean4Fmt.Emit.bare_src syntaxNode).trimAscii.toString.isEmpty)).getD true) then
-        return none
-      let patT := Lean4Fmt.Emit.canon_tok args[0]!
-      let tyT := Lean4Fmt.Emit.canon_tok args[1]!
-      pure (String.intercalate " " ([patT, tyT].filter (fun text => !text.isEmpty)))
-    else return none
+  let some head := id_decl_head? document | return none
   let arrowT := (Lean4Fmt.Emit.bare_src args[2]!).trimAscii.toString
   if head.isEmpty || head.any (· == '\n') || arrowT.any (· == '\n') then
     return none
-  let expression := args[3]!
-  if expression.getKind != ``Lean.Parser.Term.doExpr then
-    return none
-  let some value := expression.getArgs[0]? | return none
+  let some value := id_decl_value? args[3]! | return none
   let vdoc ← walk value
   -- a bare whole-verbatim value gains nothing; otherwise the ASSEMBLED
   -- layout decides (hasMidlineReanchor — interior verbatims at hardline
@@ -70,6 +94,11 @@ def id_decl_doc?
   -- arrow (its members bring their own hardlines — `let x ← match e with`
   -- + arms below, the ApplyFun shape), anything else width-aware at +2
   if (match vdoc with | .verbatim _ _ => true | _ => false) then
+    Lean4Fmt.Emit.emit_diag
+      { severity := .debug,
+        pos      := (value.getPos?.map (·.byteIdx)).getD 0,
+        rule     := "do-let-value",
+        message  := s!"unhandled do-let value: {syntax_kind_tree value}" }
     return none
   -- ANY multi-line value glues (`x ← cachedBuild args do`, `x ← match e
   -- with` — the house shape hangs the value head on the arrow line; its own
@@ -85,6 +114,11 @@ def id_decl_doc?
     else
       .text head ++ .text (" " ++ arrowT) ++ .group (.nest 2 (.line ++ vdoc))
   if Lean4Fmt.Doc.has_midline_reanchor layout then
+    Lean4Fmt.Emit.emit_diag
+      { severity := .debug,
+        pos      := (value.getPos?.map (·.byteIdx)).getD 0,
+        rule     := "do-let-value",
+        message  := s!"midline do-let value: {syntax_kind_tree value}" }
     return none
   return some layout
 
@@ -138,9 +172,10 @@ def seq_lines_doc?
     -- re-add its own (bodyOwnLine/glueBodyBlank). Without this, one style's
     -- injected blank reads as content to the next (the wash-test leak).
     let sep ← if idx == 0 && lead.toList.all (·.isWhitespace) then pure Doc.hardline
-      else match Lean4Fmt.Emit.leading_sep? lead with
-        | some textValue => pure textValue
-        | none => return none
+    else
+      match Lean4Fmt.Emit.leading_sep? lead with
+      | some textValue => pure textValue
+      | none => return none
     let sDoc ← walk stmt
     body := body ++ sep ++ sDoc ++ trailDoc
   return some body
@@ -202,7 +237,8 @@ def emit_let (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emi
   -- or a doPatDecl (`pat ←`; its optional `| else` tail bails inside
   -- idDeclDoc?). Only INTERIOR comments force verbatim — the statement's
   -- outer leading/trailing are the do-loop's to place.
-  if Lean4Fmt.Syntax.interior_has_line_comment stx then
+  if stx.getKind == ``Lean.Parser.Term.doLet
+      && Lean4Fmt.Syntax.interior_has_line_comment stx then
     return (← Lean4Fmt.Emit.verbatim stx)
   if args.size != 4 then
     return (← Lean4Fmt.Emit.verbatim stx)
