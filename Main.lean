@@ -83,7 +83,7 @@ opaque add_lake_paths (files : List String) : IO Unit
 /-- Resolve style, expand inputs (files/dirs) to the file set, and run all jobs
     through the scheduler seam (`Driver.runAll`). Behind an opaque boundary so the
     non-`unsafe` `main` can invoke the unsafe frontend. -/
-structure JobConfig where
+structure job_config where
   files        : List String
   width        : Option Nat
   preset       : String
@@ -93,7 +93,7 @@ structure JobConfig where
   lakeEnv      : Bool
 
 unsafe
-def run_jobs_impl (cfg : JobConfig) : IO (Array Driver.result) := do
+def run_jobs_impl (cfg : job_config) : IO (Array Driver.result) := do
   let base := (Style.by_name? cfg.preset).getD Style.straylight
   let style :=
     match cfg.width with
@@ -114,7 +114,7 @@ def run_jobs_impl (cfg : JobConfig) : IO (Array Driver.result) := do
   Driver.run_all style expanded cfg.elabFallback retryCfg
 
 @[implemented_by run_jobs_impl]
-opaque run_jobs (cfg : JobConfig) : IO (Array Driver.result)
+opaque run_jobs (cfg : job_config) : IO (Array Driver.result)
 
 private unsafe
 def retry_stats
@@ -458,7 +458,7 @@ def run_resolve_dump_impl (files : List String) : IO Unit := do
 opaque run_resolve_dump (files : List String) : IO Unit
 
 private
-structure RenameWorkerContext where
+structure rename_worker_context where
   err     : IO.FS.Stream
   exe     : String
   paths   : Array System.FilePath
@@ -468,7 +468,7 @@ structure RenameWorkerContext where
   protect : List String
 
 private
-structure RenameDiscovery where
+structure rename_discovery where
   allDecls : List (String × Lean4Fmt.Rename.axis) := []
   occs     : List (String × String) := []
   defs     : List String := []
@@ -476,14 +476,14 @@ structure RenameDiscovery where
   idx      : Nat := 0
 
 private
-structure RenameRewriteStats where
+structure rename_rewrite_stats where
   renamed : Nat := 0
   skips   : Nat := 0
   idx     : Nat := 0
 
 private
 def spawnRenameCollect
-    (context : RenameWorkerContext)
+    (context : rename_worker_context)
     (path : System.FilePath)
     : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
   IO.Process.spawn
@@ -496,9 +496,9 @@ def spawnRenameCollect
 private
 def collectRenameLine
     (resolve : Bool)
-    (state : RenameDiscovery)
+    (state : rename_discovery)
     (line : String)
-    : RenameDiscovery :=
+    : rename_discovery :=
   if resolve then
     match line.splitOn "\t" with
     | [lastComponent, fullName, disposition] =>
@@ -521,17 +521,17 @@ def collectRenameLine
 private
 def collectRenameChild
     (resolve : Bool)
-    (initial : RenameDiscovery)
+    (initial : rename_discovery)
     (child : IO.Process.Child ⟨.null, .piped, .piped⟩)
-    : IO RenameDiscovery := do
+    : IO rename_discovery := do
   let output ← child.stdout.readToEnd
   let _ ← child.stderr.readToEnd
   let _ ← child.wait
   return output.splitOn "\n" |>.foldl (collectRenameLine resolve) initial
 
 private
-def collectRenameDeclarations (context : RenameWorkerContext) : IO RenameDiscovery := do
-  let mut state : RenameDiscovery := {}
+def collectRenameDeclarations (context : rename_worker_context) : IO rename_discovery := do
+  let mut state : rename_discovery := {}
   while state.idx < context.paths.size do
     let wave :=
       context.paths.extract state.idx (Nat.min (state.idx + context.jobs) context.paths.size)
@@ -544,7 +544,7 @@ def collectRenameDeclarations (context : RenameWorkerContext) : IO RenameDiscove
   return state
 
 private
-def collectProtectedNames (context : RenameWorkerContext) : IO (List String) := do
+def collectProtectedNames (context : rename_worker_context) : IO (List String) := do
   if !context.resolve then
     return []
   let mut protectedNames : List String := []
@@ -564,7 +564,7 @@ def collectProtectedNames (context : RenameWorkerContext) : IO (List String) := 
 
 private
 def spawnRenameRewrite
-    (context : RenameWorkerContext)
+    (context : rename_worker_context)
     (mapPath : String)
     (path : System.FilePath)
     : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
@@ -579,9 +579,9 @@ def spawnRenameRewrite
 private
 def collectRewriteLine
     (err : IO.FS.Stream)
-    (state : RenameRewriteStats)
+    (state : rename_rewrite_stats)
     (line : String)
-    : IO RenameRewriteStats := do
+    : IO rename_rewrite_stats := do
   if line.startsWith "rewrite: " then
     err.putStrLn s!"//   {line}"
     return { state with renamed := state.renamed + 1 }
@@ -593,9 +593,9 @@ def collectRewriteLine
 private
 def collectRewriteChild
     (err : IO.FS.Stream)
-    (initial : RenameRewriteStats)
+    (initial : rename_rewrite_stats)
     (child : IO.Process.Child ⟨.null, .piped, .piped⟩)
-    : IO RenameRewriteStats := do
+    : IO rename_rewrite_stats := do
   let _ ← child.stdout.readToEnd
   let errors ← child.stderr.readToEnd
   let _ ← child.wait
@@ -606,10 +606,10 @@ def collectRewriteChild
 
 private
 def rewriteRenameFiles
-    (context : RenameWorkerContext)
+    (context : rename_worker_context)
     (mapPath : String)
-    : IO RenameRewriteStats := do
-  let mut state : RenameRewriteStats := {}
+    : IO rename_rewrite_stats := do
+  let mut state : rename_rewrite_stats := {}
   while state.idx < context.paths.size do
     let wave :=
       context.paths.extract state.idx (Nat.min (state.idx + context.jobs) context.paths.size)
@@ -645,7 +645,7 @@ private
 def enforceRewriteConsistency
     (err : IO.FS.Stream)
     (resolve : Bool)
-    (stats : RenameRewriteStats)
+    (stats : rename_rewrite_stats)
     : IO Unit := do
   if resolve && stats.skips > 0 then
     err.putStrLn
@@ -662,6 +662,7 @@ unsafe
 def run_rename_apply_impl
     (files : List String)
     (preset : String)
+    (targetCase : Lean4Fmt.Casing.Case)
     (resolve : Bool)
     (elabFallback : Bool)
     (protect : List String)
@@ -684,14 +685,14 @@ def run_rename_apply_impl
               | none          => #[])
         else
           #[])
-  let context : RenameWorkerContext := { err, exe, paths, jobs, resolve, extra, protect }
+  let context : rename_worker_context := { err, exe, paths, jobs, resolve, extra, protect }
   let discovery ← collectRenameDeclarations context
   let protectedFulls ← collectProtectedNames context
   -- the plan: HYBRID under --resolve (resolution decides, token acts), else token
   let (renames, skipped) :=
     if resolve then
       Lean4Fmt.Rename.plan_hybrid
-        .snake
+        targetCase
         modules
         discovery.occs
         discovery.defs
@@ -700,7 +701,7 @@ def run_rename_apply_impl
     else
       let plan := Lean4Fmt.Rename.build_plan naming modules discovery.allDecls
       (plan.renames, plan.skipped)
-  let tag := if resolve then "resolve" else preset
+  let tag := if resolve then s!"resolve/{repr targetCase}" else preset
   reportRenamePlan err tag paths.size renames skipped
   if renames.isEmpty then
     return
@@ -715,7 +716,8 @@ def run_rename_apply_impl
   enforceRewriteConsistency err resolve rewriteStats
 
 @[implemented_by run_rename_apply_impl]
-opaque run_rename_apply (files : List String) (preset : String) (resolve : Bool) (elabFallback : Bool) (protect : List String) : IO Unit
+opaque run_rename_apply (files : List String) (preset : String) (targetCase : Lean4Fmt.Casing.Case) (resolve : Bool) (elabFallback : Bool) (protect : List String) :
+    IO Unit
 
 private
 def severity_name : Lean4Fmt.Rules.severity → String
@@ -795,14 +797,20 @@ private
 def run_special_mode (options : Cli.Options) : IO Bool :=
   match options.mode with
   | .renamePlan => run_rename_plan_mode options *> pure true
-  | .renameApply =>
+  | .renameApply => do
+    let some targetCase := Lean4Fmt.Casing.Case.of_string? options.renameCase
+        | do
+          (← IO.getStderr).putStrLn
+            s!"invalid --rename-case `{options.renameCase}`; expected snake|camel|upperCamel|preserve"
+          IO.Process.exit 2
     run_rename_apply
       options.files
       options.preset
+      targetCase
       options.resolve
       options.elabFallback
       options.protect
-        *> pure true
+    pure true
   | .renameDecls =>
     run_rename_decls options.files options.resolve options.farmDir options.elabFallback *> pure true
   | .renameRewrite =>

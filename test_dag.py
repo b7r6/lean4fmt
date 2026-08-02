@@ -13,6 +13,18 @@ class DagTests(unittest.TestCase):
         self.assertEqual(dag.convert("camel", "find_upstream_slot"), "findUpstreamSlot")
         self.assertEqual(dag.convert("upperCamel", "_root_"), "_Root")
         self.assertEqual(dag.convert("snake", "fooBar'"), "foo_bar'")
+        self.assertEqual(dag.convert("snake", "HTTPServer", "normalize"), "http_server")
+        self.assertEqual(dag.convert("camel", "HTTPServer", "normalize"), "httpServer")
+
+    def test_normalized_case_composition_laws(self):
+        samples = ["HTTPServer", "find_upstream_slot", "EVRing2Driver", "_APIKey'"]
+        for sample in samples:
+            snake = dag.convert("snake", sample, "normalize")
+            camel = dag.convert("camel", sample, "normalize")
+            self.assertEqual(dag.convert("snake", snake, "normalize"), snake)
+            self.assertEqual(dag.convert("camel", camel, "normalize"), camel)
+            self.assertEqual(dag.convert("snake", camel, "normalize"), snake)
+            self.assertEqual(dag.convert("camel", snake, "normalize"), camel)
 
     def test_acronym_policy_defaults_to_preserve(self):
         self.assertEqual(dag.convert("upperCamel", "CLI"), "CLI")
@@ -56,6 +68,15 @@ class DagTests(unittest.TestCase):
         result = dag.build_inventory([], "snake", set())
         self.assertFalse(result["valid"])
         self.assertIn("inventory scope contains no Lean source files", result["errors"])
+
+    def test_style_configs_are_not_modules(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "lakefile.lean").write_text("import Lake\n", encoding="utf-8")
+            (root / "fmt.lean").write_text('def preset := "straylight"\n', encoding="utf-8")
+            module = root / "Main.lean"
+            module.write_text("def main := 0\n", encoding="utf-8")
+            self.assertEqual(dag.expand_inputs([str(root)]), [module])
 
     def test_unowned_protected_file_is_observer(self):
         with tempfile.TemporaryDirectory() as temporary:

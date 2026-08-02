@@ -305,6 +305,13 @@ def plan_hybrid
 #guard (plan_hybrid .snake [] [("Resource", "A.Resource"), ("Resource", "A.Resource")] ["A.Resource"] ["A.Resource"] []).1
     == [("Resource", "resource")]
 
+-- The resolved planner is target-case symmetric; only the policy changes.
+#guard (plan_hybrid .camel [] [("resource_name", "A.resource_name")] ["A.resource_name"] ["A.resource_name"] []).1
+    == [("resource_name", "resourceName")]
+
+#guard (plan_hybrid .upperCamel [] [("resource_name", "A.resource_name")] ["A.resource_name"] ["A.resource_name"] []).1
+    == [("resource_name", "ResourceName")]
+
 #guard (plan_hybrid .snake [] [("isPure", "B.S.isPure"), ("isPure", "T.D.isPure")] ["B.S.isPure"] ["B.S.isPure"] []).1 == []
 
 #guard (plan_hybrid .snake [] [("map", "List.map")] [] [] []).1 == []

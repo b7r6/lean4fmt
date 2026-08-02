@@ -1043,7 +1043,7 @@ def binary_operator_token? (walk : Walk) (args : Array Lean.Syntax) : emit_m (Op
   return some (.text text)
 
 private
-structure BinaryChainState where
+structure binary_chain_state where
   tail             : Doc
   previousOperator : Doc
   cursor           : Lean.Syntax
@@ -1055,8 +1055,8 @@ def unroll_binary_chain?
     (kind : Lean.SyntaxNodeKind)
     (args : Array Lean.Syntax)
     (operator : Doc)
-    : emit_m (Option BinaryChainState) := do
-  let mut state : BinaryChainState :=
+    : emit_m (Option binary_chain_state) := do
+  let mut state : binary_chain_state :=
     { tail := .nil, previousOperator := operator
       cursor := args[args.size - 1]!, steps := 0 }
   while state.cursor.getKind == kind
@@ -1074,18 +1074,18 @@ def unroll_binary_chain?
   return some state
 
 private
-structure BinaryLayout where
+structure binary_layout where
   lhs      : Doc
   operator : Doc
-  chain    : BinaryChainState
+  chain    : binary_chain_state
   rhs      : Doc
 
 private
-def binary_head (layout : BinaryLayout) : Doc :=
+def binary_head (layout : binary_layout) : Doc :=
   layout.lhs ++ layout.chain.tail ++ .line ++ layout.chain.previousOperator
 
 private
-def glued_binary_layout? (layout : BinaryLayout) (lineWidth : Nat) : Option Doc :=
+def glued_binary_layout? (layout : binary_layout) (lineWidth : Nat) : Option Doc :=
   let cursor := layout.chain.cursor
   let rhsDoBy := contains_do_by cursor
   let headFits :=
@@ -1107,7 +1107,7 @@ def glued_binary_layout? (layout : BinaryLayout) (lineWidth : Nat) : Option Doc 
     none
 
 private
-def calc_binary_layout? (layout : BinaryLayout) (continuationIndent : Nat) : Option Doc :=
+def calc_binary_layout? (layout : binary_layout) (continuationIndent : Nat) : Option Doc :=
   let head := binary_head layout
   let rhsSafe :=
     !(match layout.rhs with | .verbatim _ _ => true | _ => false)
@@ -1118,7 +1118,7 @@ def calc_binary_layout? (layout : BinaryLayout) (continuationIndent : Nat) : Opt
     none
 
 private
-structure TrailingChainState where
+structure trailing_chain_state where
   tail   : Doc
   cursor : Lean.Syntax
   steps  : Nat
@@ -1129,9 +1129,10 @@ def trailing_binary_layout
     (stx : Lean.Syntax)
     (kind : Lean.SyntaxNodeKind)
     (args : Array Lean.Syntax)
-    (layout : BinaryLayout)
+    (layout : binary_layout)
     : emit_m Doc := do
-  let mut state : TrailingChainState := { tail := .nil, cursor := args[args.size - 1]!, steps := 0 }
+  let mut state : trailing_chain_state :=
+    { tail := .nil, cursor := args[args.size - 1]!, steps := 0 }
   while state.cursor.getKind == kind
       && state.cursor.getArgs.size == args.size && state.steps < 64 do
     let childArgs := state.cursor.getArgs
@@ -1152,7 +1153,7 @@ def trailing_binary_layout
   return .group result
 
 private partial
-def leading_binary_layout (stx : Lean.Syntax) (layout : BinaryLayout) : emit_m Doc := do
+def leading_binary_layout (stx : Lean.Syntax) (layout : binary_layout) : emit_m Doc := do
   let continuationIndent := (← read).layout.continuationIndent
   let result :=
     layout.lhs
@@ -1181,7 +1182,7 @@ def binary_operator_doc
   let some chain ← unroll_binary_chain? walk kind args operator
     | return (← verbatim stx "chain-op-shape")
   let rhs ← walk chain.cursor
-  let layout : BinaryLayout := { lhs, operator, chain, rhs }
+  let layout : binary_layout := { lhs, operator, chain, rhs }
   let config ← read
   if let some glued := glued_binary_layout? layout config.layout.lineWidth then
     return glued

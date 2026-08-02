@@ -65,7 +65,7 @@ def last_by_descendant? (source : Lean.Syntax) : Option Lean.Syntax :=
     line, `t1; t2; t3`); empty separator slots (newlines) split groups. `none`
     on a trailing `;` or a structural surprise. -/
 private
-structure SeqGroupState where
+structure seq_group_state where
   groups   : Array (Array Lean.Syntax) := #[]
   current  : Array Lean.Syntax := #[]
   joinNext : Bool := false
@@ -83,7 +83,7 @@ def seq_groups_core?
       if sequence.getKind != seq1Kind then
         return none
       let some inner := sequence.getArgs[0]? | return none
-      let mut state : SeqGroupState := {}
+      let mut state : seq_group_state := {}
       for child in inner.getArgs do
         if (Lean4Fmt.Emit.bare_src child).trimAscii.toString.isEmpty then continue -- newline slot
         if child.isAtom then
@@ -259,7 +259,7 @@ def closing_bracket? (args : Array Lean.Syntax) (start : Nat) : Option Nat :=
   loop start
 
 private
-structure LineWordsState where
+structure line_words_state where
   docs : Array Doc := #[]
   idx  : Nat := 0
 
@@ -267,7 +267,7 @@ private partial
 def line_words? (stx : Lean.Syntax) (fill : Bool := false) : Option (Array Doc) :=
   Id.run do
     let args := stx.getArgs
-    let mut state : LineWordsState := {}
+    let mut state : line_words_state := {}
     while state.idx < args.size do
       let child := args[state.idx]!
       if child.isAtom && (Lean4Fmt.Emit.bare_src child).trimAscii.toString == "[" then
@@ -484,7 +484,7 @@ def dispatch_unfold (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Dispatch := do
   return .handled (.text line)
 
 private
-structure ChainState where
+structure chain_state where
   elements : Array Lean.Syntax := #[]
   cursor   : Lean.Syntax
   head     : Doc := .nil
@@ -499,7 +499,7 @@ def dispatch_chain
     return .unhandled
   if Lean4Fmt.Syntax.interior_has_line_comment stx then
     return (← fallback stx)
-  let mut state : ChainState := { cursor := stx }
+  let mut state : chain_state := { cursor := stx }
   for _ in [0:64] do
     if state.cursor.getKind == `Lean.Parser.Tactic.«tactic_<;>_»
         && state.cursor.getArgs.size == 3 then
@@ -621,7 +621,7 @@ def rw_rule_doc?
   return some ((if arrow.isEmpty then Doc.nil else .text (arrow ++ " ")) ++ termDoc)
 
 private
-structure RwRules where
+structure rw_rules where
   docs      : Array Doc := #[]
   lastComma : Bool := false
 
@@ -630,7 +630,7 @@ def rw_rules?
     (walk : Lean4Fmt.Emit.Walk)
     (rules : Array Lean.Syntax)
     : Lean4Fmt.Emit.emit_m (Option (Array Doc)) := do
-  let mut state : RwRules := {}
+  let mut state : rw_rules := {}
   for rule in rules do
     if rule.isAtom then
       if (Lean4Fmt.Emit.bare_src rule).trimAscii.toString == "," then

@@ -13,8 +13,8 @@
     Scope: this file is the pure string kernel. The policy (which case per decl
     kind) is config (`Style.Casing`, the packaged straylight preset the default);
     the collection + consistent project-wide rewrite + build validation ride on
-    top. Known limit: an all-caps acronym run stays one word (`HTTPServer` →
-    `httpserver`), documented rather than mis-split.
+    top. Acronym boundaries use the conventional final-cap rule (`HTTPServer`
+    → `HTTP` + `Server`), giving stable canonical forms in either direction.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
@@ -44,24 +44,30 @@ def cap (source : String) : String :=
   | [] => ""
   | headChar :: tailChars => String.ofList (headChar.toUpper :: tailChars)
 
-/-- Split one `_`-free piece on lower/digit → Upper boundaries; each word
-    lowercased. An all-caps acronym run stays ONE word (the documented limit). -/
+/-- Split one `_`-free piece on lower/digit → Upper boundaries and immediately
+    before the final capital of an acronym followed by lowercase (`HTTPServer`
+    → `HTTP`, `Server`). Each word is lowercased. -/
 private
 def split_piece (source : String) : List String :=
-  let (current, words) :=
-    source.toList.foldl
-      (fun (state : List Char × List String) char =>
-        let (current, words) := state
-        let should_break :=
-          char.isUpper
-              && (current.getLast?.map (fun previous => previous.isLower || previous.isDigit)).getD
-                false
-        if should_break then
-          ([char], words ++ [String.ofList current])
-        else
-          (current ++ [char], words))
-      ([], [])
-  (words ++ (if current.isEmpty then [] else [String.ofList current])).map (·.map Char.toLower)
+  let rec visit
+      (previous : Option Char)
+      (current : List Char)
+      (words : List String)
+      : List Char → List String
+    | [] => words ++ (if current.isEmpty then [] else [String.ofList current])
+    | char :: rest =>
+      let breaksLowerRun :=
+        char.isUpper
+            && (previous.map (fun prior => prior.isLower || prior.isDigit)).getD false
+      let breaksAcronym :=
+        char.isUpper
+            && (previous.map (·.isUpper)).getD false
+            && (rest.head?.map (·.isLower)).getD false
+      if (breaksLowerRun || breaksAcronym) && !current.isEmpty then
+        visit (some char) [char] (words ++ [String.ofList current]) rest
+      else
+        visit (some char) (current ++ [char]) words rest
+  (visit none [] [] source.toList).map (·.map Char.toLower)
 
 /-- Split an identifier into lowercased words, honoring BOTH snake_case (split on
     `_`) and camel/UpperCamel (split on case boundaries). -/
@@ -120,7 +126,11 @@ def convert (target_case : Case) (source : String) : String :=
 
 #guard convert .upperCamel (convert .upperCamel "http_handler") == convert .upperCamel "http_handler"
 
--- the documented acronym limit (all-caps run collapses to one word)
-#guard convert .snake "HTTPServer" == "httpserver"
+-- acronym boundary and canonical composition laws
+#guard convert .snake "HTTPServer" == "http_server"
+#guard convert .camel "HTTPServer" == "httpServer"
+#guard convert .upperCamel "http_server" == "HttpServer"
+#guard convert .snake (convert .camel "HTTPServer") == convert .snake "HTTPServer"
+#guard convert .camel (convert .snake "HTTPServer") == convert .camel "HTTPServer"
 
 end Lean4Fmt.Casing

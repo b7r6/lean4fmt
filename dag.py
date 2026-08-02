@@ -25,21 +25,8 @@ VALID_COMPONENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_']*$")
 
 
 def split_words(value: str) -> list[str]:
-    """Match Lean4Fmt.Casing's documented word splitting."""
-    words: list[str] = []
-    for piece in value.split("_"):
-        if not piece:
-            continue
-        current = ""
-        for char in piece:
-            if char.isupper() and current and (current[-1].islower() or current[-1].isdigit()):
-                words.append(current.lower())
-                current = char
-            else:
-                current += char
-        if current:
-            words.append(current.lower())
-    return words
+    """Match Lean4Fmt.Casing's acronym-aware canonical word splitting."""
+    return [word.lower() for word, _ in split_words_preserving_acronyms(value)]
 
 
 def split_words_preserving_acronyms(value: str) -> list[tuple[str, bool]]:
@@ -406,8 +393,12 @@ def expand_inputs(inputs: list[str]) -> list[Path]:
                 if ".lake" not in candidate.parts
                 and "vendor" not in candidate.parts
                 and candidate.name != "lakefile.lean"
+                # `fmt.lean` is lean4fmt's declarative, parsed-only style file.
+                # It is valid Lean for editor highlighting, but it is not a
+                # Lake module and therefore has no module identity to migrate.
+                and candidate.name != "fmt.lean"
             )
-        elif path.suffix == ".lean" and path.name != "lakefile.lean":
+        elif path.suffix == ".lean" and path.name not in {"lakefile.lean", "fmt.lean"}:
             files.append(path)
     return files
 

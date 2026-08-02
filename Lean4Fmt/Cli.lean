@@ -9,6 +9,8 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/
 
+import Lean4Fmt.Casing
+
 namespace Lean4Fmt.Cli
 
 inductive mode
@@ -54,6 +56,10 @@ structure Options where
       the set is full names, the plan keys by identity, and each occurrence is
       rewritten iff it RESOLVES to a renamed decl. Needs elaboration + the farm. -/
   resolve : Bool := false
+  /-- Target case for resolver-backed declaration renames. Kept separate from
+      the style preset because a migration is a tree transaction, not a
+      formatting preference. The systems-tree recommendation is `snake`. -/
+  renameCase : String := "snake"
   /-- Prebuilt olean farm dir the orchestrator hands each `--resolve` worker
       (`--farm <path>`), so cross-package modules resolve without a per-worker
       rebuild. -/
@@ -83,6 +89,8 @@ def parse (args : List String) : Options :=
       | "--resolve-dump" :: rest => parseArgs { options with mode := .resolveDump } rest
       | "--map" :: file :: rest => parseArgs { options with mapFile := some file } rest
       | "--resolve" :: rest => parseArgs { options with resolve := true } rest
+      | "--rename-case" :: target :: rest =>
+        parseArgs { options with renameCase := target } rest
       | "--farm" :: dir :: rest => parseArgs { options with farmDir := some dir } rest
       | "--protect" :: file :: rest =>
         parseArgs { options with protect := options.protect ++ [file] } rest
@@ -101,7 +109,7 @@ def parse (args : List String) : Options :=
       | [] => options
 
 def usage : String :=
-  "Usage: lean4fmt [--check | --write | --stats | --lint] [--json] [--width N] [--style NAME] [--elab auto|off] [--lake auto|off] <file...>\n\n"
+  "Usage: lean4fmt [--check | --write | --stats | --lint] [--json] [--width N] [--style NAME] [--rename-case snake|camel|upperCamel|preserve] [--elab auto|off] [--lake auto|off] <file...>\n\n"
       ++ "Multiple files in one invocation are supported (each is parsed against its own\n"
       ++ "imports). If a file's syntax-extension initializers ever conflict in-process,\n"
       ++ "fall back to one file per process: find . -name '*.lean' | xargs -n1 lean4fmt"
