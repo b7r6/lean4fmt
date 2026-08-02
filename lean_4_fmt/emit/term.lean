@@ -98,7 +98,7 @@ def seam_comma_list?
     let (elementBinding, comma?) := pairs[idx]
     let last := idx + 1 == pairs.size
     let some sep := Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? elementBinding).getD "")
-      | return none
+        | return none
     let eDoc ← walk elementBinding
     -- the same-line comment can trail the ELEMENT (comma-leading style:
     -- `elementBinding  -- note` with `, e₂` on the next line) or the COMMA (`elementBinding, -- note`);
@@ -109,9 +109,9 @@ def seam_comma_list?
     -- element's comma, before the next element; pend collapse merges the
     -- separators). Plain whitespace comma-leading contributes nothing.
     let some (commaLeadSep, cTrail) := comma_trivia? comma? | return none
-    let trailT :=
-      String.intercalate " " (([eTrail, cTrail].filter (fun text => !text.isEmpty)))
-    if trailT.any (· == '\n') then return none
+    let trailT := String.intercalate " " (([eTrail, cTrail].filter (fun text => !text.isEmpty)))
+    if trailT.any (· == '\n') then
+      return none
     -- when the comma is the LAST element's trailing zone owner, drop through:
     let _ := ()
     let commaD : Doc := if last then .nil else .text ","
@@ -1198,14 +1198,28 @@ def binary_operator_doc
   leading_binary_layout stx layout
 
 private partial
-def show_type_doc? (typeSyntax : Lean.Syntax) (width : Nat) : Option Doc :=
+def show_type_doc?
+    (walk : Walk)
+    (typeSyntax : Lean.Syntax)
+    (width : Nat)
+    : emit_m (Option Doc) := do
   match Lean4Fmt.Emit.token_join_flat? typeSyntax with
   | some text =>
     if !text.isEmpty && !text.any (· == '\n') && text.length + 12 ≤ width then
-      some (.text text)
+      return some (.text text)
+  | none => pure ()
+  -- Long `show` types compose with the ordinary term emitter. Accept only a
+  -- fully structural document: an opaque or midline-reanchoring type has no
+  -- trustworthy seam before `from`/`by` and keeps the whole form verbatim.
+  let typeNode :=
+    if typeSyntax.getKind == Lean.nullKind && typeSyntax.getArgs.size == 1 then
+      typeSyntax.getArgs[0]!
     else
-      none
-  | none => none
+      typeSyntax
+  let typeDoc ← walk typeNode
+  if (typeDoc matches .verbatim _ _) || Lean4Fmt.Doc.has_midline_reanchor typeDoc then
+    return none
+  return some typeDoc
 
 private partial
 def show_by_doc
@@ -1265,7 +1279,7 @@ def show_doc
   let keyword := if keywordSource.isEmpty then "show" else keywordSource
   if !(((Lean4Fmt.Syntax.trailing? args[0]!).getD "").trimAscii.toString.isEmpty) then
     return (← verbatim stx "show-head-comment")
-  let some typeDoc := show_type_doc? typeSyntax (← read).layout.lineWidth
+  let some typeDoc ← show_type_doc? walk typeSyntax (← read).layout.lineWidth
       | return (← verbatim stx "show-type-shape")
   if rhs.getKind == `Lean.Parser.Term.byTactic'
       || rhs.getKind == ``Lean.Parser.Term.byTactic then

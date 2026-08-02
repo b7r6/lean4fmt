@@ -88,20 +88,23 @@ def seq_groups_core?
         if (Lean4Fmt.Emit.bare_src child).trimAscii.toString.isEmpty then continue -- newline slot
         if child.isAtom then
           if (Lean4Fmt.Emit.bare_src child).trimAscii.toString == ";" then
-            if state.current.isEmpty then return none
+            if state.current.isEmpty then
+              return none
             state := { state with joinNext := true }
             continue
-          else return none
+          else
+            return none
         if state.joinNext then
           state := { state with current := state.current.push child, joinNext := false }
         else
           let groups :=
             if state.current.isEmpty then state.groups else state.groups.push state.current
           state := { state with groups, current := #[child] }
-      if state.joinNext then return none          -- dangling `;`
-      let groups :=
-        if state.current.isEmpty then state.groups else state.groups.push state.current
-      if groups.isEmpty then return none
+      if state.joinNext then
+        return none -- dangling `;`
+      let groups := if state.current.isEmpty then state.groups else state.groups.push state.current
+      if groups.isEmpty then
+        return none
       return some groups
 
 private

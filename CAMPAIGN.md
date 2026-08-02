@@ -80,6 +80,26 @@ r2 91.7 · r3 92.1 · r4 92.4 · r7 92.8 · r8 93.4.
 | 2026-07-23 | 249 (10/dir) | 83.2% | 83.2% | 88.0% of code | **94.6%** | **0 — both hidden rejects cleared** (round 9: chainOwnLine for structInst field let-values, eqns-arm fallback rides the .eqns +2-hardline placement (mirror-drift-proof), calc chain tails at line-start seams) |
 | 2026-07-23 | 249 (10/dir) | 83.5% | 83.5% | 88.0% of code | **94.9%** (94.86) | 0 (round 10: Term.letI/haveI join the let/have chain arm — the local-instance ladders) |
 | 2026-07-23 | 249 (10/dir) | 83.5% | 83.5% | 88.0% of code | **94.9%** (94.93) | 0 (round 11: doLetElse port — the a[8] slot is the do-block CONTINUATION; width-derived one-liner) |
+| 2026-08-02 | **249 (10/dir)** | 83.6% | 83.6% | 88.1% of code | **94.9%** | 0 (fresh post-snake baseline on mathlib4 `308db4b`, Lean `v4.32.0-rc1`) |
+| 2026-08-02 | 249 (10/dir) | 83.6% | 83.6% | 88.1% of code | **94.9%** | 0 (comment-bearing `doLetElse` continuations: +721 active bytes; the continuation seam already owns their trivia) |
+| 2026-08-02 | 249 (10/dir) | 83.7% | 83.7% | 88.1% of code | **95.0%** | 0 (multiline `show` types compose with the structural term emitter: +1,129 active bytes; `show-type-shape` 1,480B → 0) |
+
+### 2026-08-02 effort/coverage probe
+
+Two narrow rounds measured the late-curve slope on the legible snake tree.
+The baseline carried 2,006,433 active bytes. The `doLetElse` round moved that
+to 2,007,154 (+721): its apparent 5.6KB queue prize was nested double-counting,
+and activating the outer continuation exposed 3.8KB of inner `doLetArrow`
+residue. The `show` round moved active bytes to 2,008,283 (+1,129) without a
+home-tree wash; it also reduced nested `paren` and `fun` residue. Both rounds
+kept 249/249 parsed, zero gate rejects, formatter fixed point, comment multiset,
+and Lean recompilation on the affected mathlib files.
+
+The headline has crossed 95.0, but Gate 3 remains open: its independent queue
+condition still requires every portable kind to fall below 10KB. The current
+large pools are `declaration` 14.8KB, `letIdDecl` 14.4KB, `declValSimple`
+12.7KB, `doLetArrow` 12.6KB, and `tacticHave` 11.3KB. Queue bytes are therefore
+treated as dependency-weighted upper bounds, not additive coverage estimates.
 
 ## GATE-3 RUN PAUSED at 94.93 (2026-07-23)
 

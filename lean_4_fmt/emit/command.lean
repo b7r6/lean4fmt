@@ -494,8 +494,10 @@ def field_doc?
     return none
   let sig := args[2]!.getArgs
   let some state := field_binders? sig state | return none
-  let prefixLength := 2 + state.modifiers.length + nameT.length
-    + (state.binders.foldl (fun total binder => total + 1 + binder.length) 0) + 3
+  let prefixLength :=
+    2 + state.modifiers.length + nameT.length
+        + (state.binders.foldl (fun total binder => total + 1 + binder.length) 0)
+        + 3
   let some (state, tyT) ←
     field_type? walk (((sig[1]?).map (·.getArgs)).getD #[]) prefixLength state | return none
   let defT := ((args[3]?.map bare_src).getD "").trimAscii.toString
@@ -700,20 +702,25 @@ def structure_doc?
   let hasDer := !derT.isEmpty
   let some derSep :=
     (if hasDer then leading_sep? ((Lean4Fmt.Syntax.leading? args[5]!).getD "") else some Doc.nil)
-    | return none
+      | return none
   let derD : Doc := if hasDer then derSep ++ .text derT else .nil
   -- the where-block: ["where", mk?, structFields] — absent for a fieldless
   -- structure; an explicit `mk ::` stays verbatim
   let wargs := (args[4]?.map (·.getArgs)).getD #[]
   if wargs.isEmpty then
     return some (.text head ++ .nest 2 derD)
-  if wargs.size != 3 then return none
-  if ((wargs[0]?.map bare_src).getD "").trimAscii.toString != "where" then return none
-  if !((wargs[1]?.map bare_src).getD "").trimAscii.toString.isEmpty then return none
-  if !((Lean4Fmt.Syntax.trailing? wargs[0]!).getD "").trimAscii.toString.isEmpty then return none
+  if wargs.size != 3 then
+    return none
+  if ((wargs[0]?.map bare_src).getD "").trimAscii.toString != "where" then
+    return none
+  if !((wargs[1]?.map bare_src).getD "").trimAscii.toString.isEmpty then
+    return none
+  if !((Lean4Fmt.Syntax.trailing? wargs[0]!).getD "").trimAscii.toString.isEmpty then
+    return none
   let head := head ++ " where"
   let fields := ((wargs[2]?.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
-  if fields.isEmpty then return none
+  if fields.isEmpty then
+    return none
   -- fields, one per line at +2: the loop OWNS the inter-field trivia (leading
   -- comment/blank lines placed structurally, same-line trailing comments
   -- re-appended; the LAST field's trailing belongs to the enclosing seam
@@ -972,7 +979,7 @@ def emit_mutual (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.
   let mut body : Doc := .nil
   for declaration in decls do
     let some sep := leading_sep? ((Lean4Fmt.Syntax.leading? declaration).getD "")
-      | return (← Lean4Fmt.Emit.verbatim stx)
+        | return (← Lean4Fmt.Emit.verbatim stx)
     let trailT := ((Lean4Fmt.Syntax.trailing? declaration).getD "").trimAscii.toString
     if trailT.any (· == '\n') then
       return (← Lean4Fmt.Emit.verbatim stx)

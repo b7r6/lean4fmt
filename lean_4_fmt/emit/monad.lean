@@ -66,7 +66,8 @@ def canon_ws_piecewise (stx : Lean.Syntax) (source : String) (skipBytes : Nat :=
       if Lean4Fmt.Syntax.has_quotation_command stx then
         return source
       let some ranges := Lean4Fmt.Syntax.quot_term_ranges? stx | return source
-      if ranges.isEmpty then return Lean4Fmt.Doc.canon_verbatim_ws source
+      if ranges.isEmpty then
+        return Lean4Fmt.Doc.canon_verbatim_ws source
       let some sub := stx.getSubstring? false false | return source
       let base := sub.startPos.byteIdx + skipBytes
       let bytes := source.toUTF8
@@ -76,14 +77,13 @@ def canon_ws_piecewise (stx : Lean.Syntax) (source : String) (skipBytes : Nat :=
       let piece? := fun (start stop : Nat) => String.fromUTF8? (bytes.extract start stop)
       let mut state : canonical_piece_state := {}
       for (quoteStart, quoteEnd) in ranges do
-        if quoteEnd ≤ base then continue               -- range before our suffix window
-        let startOffset := quoteStart - base              -- Nat sub clamps: partial overlap → 0
+        if quoteEnd ≤ base then continue -- range before our suffix window
+        let startOffset := quoteStart - base -- Nat sub clamps: partial overlap → 0
         let endOffset := quoteEnd - base
         if endOffset ≤ startOffset || startOffset < state.cursor || endOffset > send then
           return source
         match piece? state.cursor startOffset, piece? startOffset endOffset with
-        | some code, some quot =>
-          state := append_canonical_piece state code quot endOffset
+        | some code, some quot => state := append_canonical_piece state code quot endOffset
         | _, _ => return source
       match piece? state.cursor send with
       | some tail => return state.output ++ Lean4Fmt.Doc.canon_verbatim_ws tail
@@ -415,14 +415,16 @@ def arm_pieces?
     let plainSep := ((lead.splitOn "\n").drop 1).dropLast.isEmpty
     let trailT := ((Lean4Fmt.Syntax.trailing? alt).getD "").trimAscii.toString
     let last := idx + 1 == alts.size
-    if !last && trailT.any (· == '\n') then return none
+    if !last && trailT.any (· == '\n') then
+      return none
     let hasTrail := !last && !trailT.isEmpty
     let trailDoc : Doc := if hasTrail then .text (" " ++ trailT) else .nil
     let altArgs := alt.getArgs
     let patStx := altArgs[1]?.getD .missing
     state := { state with
       patternDoc := ← walk (altArgs[1]?.getD .missing)
-      patternBroken := false }
+      patternBroken := false
+    }
     -- ws-sensitivity (fixed-point class): a multi-line re-anchoring PATTERN
     -- glued after "| " re-indents by its placement column, which the previous
     -- pass just moved (gate-caught on mathlib Applicative + List/Basic,
@@ -450,7 +452,8 @@ def arm_pieces?
     let armDoc :=
       if preserveLB && !armSrc.isEmpty && !armSrc.any (· == '\n') then
         Doc.text armSrc
-      else .text "| " ++ state.patternDoc ++ .text (" " ++ arrowT) ++ bodyPart
+      else
+        .text "| " ++ state.patternDoc ++ .text (" " ++ arrowT) ++ bodyPart
     let row := arm_grid_row body bodyDoc state.patternDoc hasTrail state.patternBroken arrowT
     let piece : arm_piece :=
       { sep := sep, plain := plainSep, doc := armDoc ++ trailDoc, gridRow := row }

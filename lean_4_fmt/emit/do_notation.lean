@@ -69,19 +69,23 @@ def id_decl_doc?
   -- seams re-anchor deterministically): a do/by/match value GLUES to the
   -- arrow (its members bring their own hardlines — `let x ← match e with`
   -- + arms below, the ApplyFun shape), anything else width-aware at +2
-  if (match vdoc with | .verbatim _ _ => true | _ => false) then return none
+  if (match vdoc with | .verbatim _ _ => true | _ => false) then
+    return none
   -- ANY multi-line value glues (`x ← cachedBuild args do`, `x ← match e
   -- with` — the house shape hangs the value head on the arrow line; its own
   -- doc breaks below); a FLAT value keeps the width-aware group (inline
   -- when it fits, else own line at +2 — unchanged)
-  let glue := value.getKind == ``Lean.Parser.Term.do
-    || value.getKind == ``Lean.Parser.Term.byTactic
-    || value.getKind == ``Lean.Parser.Term.match
-    || (Lean4Fmt.Doc.flat_width vdoc).isNone
+  let glue :=
+    value.getKind == ``Lean.Parser.Term.do || value.getKind == ``Lean.Parser.Term.byTactic
+        || value.getKind == ``Lean.Parser.Term.match
+        || (Lean4Fmt.Doc.flat_width vdoc).isNone
   let layout : Doc :=
-    if glue then .text head ++ .text (" " ++ arrowT ++ " ") ++ vdoc
-    else .text head ++ .text (" " ++ arrowT) ++ .group (.nest 2 (.line ++ vdoc))
-  if Lean4Fmt.Doc.has_midline_reanchor layout then return none
+    if glue then
+      .text head ++ .text (" " ++ arrowT ++ " ") ++ vdoc
+    else
+      .text head ++ .text (" " ++ arrowT) ++ .group (.nest 2 (.line ++ vdoc))
+  if Lean4Fmt.Doc.has_midline_reanchor layout then
+    return none
   return some layout
 
 /-- The statements of a plain `doSeqIndent`, provided no item carries an explicit
@@ -272,25 +276,30 @@ def emit_let_else (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emi
   -- "|", doSeq, tail?]: head flat, the value width-aware (the idDeclDoc?
   -- treatment), the else arm on its own line at +4 (`    | throwError …`,
   -- the mathlib shape). Single-statement else only this round.
-  if Lean4Fmt.Syntax.interior_has_line_comment stx then
-    return (← Lean4Fmt.Emit.verbatim stx)
-  let some head := let_else_head? args | return (← Lean4Fmt.Emit.verbatim stx)
+  -- Do not reject comments in the scoped continuation wholesale: its statement
+  -- loop owns inter-statement trivia, while the value and else branch fall back
+  -- independently if their emitters cannot place an interior comment.
+  let some head := let_else_head? args | return (← Lean4Fmt.Emit.verbatim stx "do-let-else-head")
   let vdoc ← walk args[5]!
-  if is_verbatim_doc vdoc then return (← Lean4Fmt.Emit.verbatim stx)
-  let some strings := stmts? args[7]! | return (← Lean4Fmt.Emit.verbatim stx)
-  if strings.size != 1 then return (← Lean4Fmt.Emit.verbatim stx)
+  if is_verbatim_doc vdoc then
+    return (← Lean4Fmt.Emit.verbatim stx "do-let-else-value")
+  let some strings := stmts? args[7]!
+      | return (← Lean4Fmt.Emit.verbatim stx "do-let-else-branch-shape")
+  if strings.size != 1 then
+    return (← Lean4Fmt.Emit.verbatim stx "do-let-else-branch-count")
   let eDoc ← walk strings[0]!
-  if is_verbatim_doc eDoc then return (← Lean4Fmt.Emit.verbatim stx)
+  if is_verbatim_doc eDoc then
+    return (← Lean4Fmt.Emit.verbatim stx "do-let-else-branch")
   -- a[8] carries the CONTINUATION of the do block (the let-else scopes the
   -- rest): emit it through the statement loop at the let's own column
   let some contD ← let_else_continuation? walk args[8]!
-    | return (← Lean4Fmt.Emit.verbatim stx)
+    | return (← Lean4Fmt.Emit.verbatim stx "do-let-else-continuation")
   -- width decides flat vs broken (the house one-liner
   -- `let some b := b? | return fallback` stays flat when it fits)
   let width := (← read).layout.lineWidth
   let layout := let_else_layout head vdoc eDoc contD width
   if Lean4Fmt.Doc.has_midline_reanchor layout then
-    return (← Lean4Fmt.Emit.verbatim stx)
+    return (← Lean4Fmt.Emit.verbatim stx "do-let-else-reanchor")
   return layout
 
 private

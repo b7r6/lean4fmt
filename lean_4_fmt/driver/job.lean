@@ -90,6 +90,51 @@ structure retry_state where
   cursor   : Nat := 0
   children : Array (IO.Process.Child ⟨.null, .piped, .piped⟩) := #[]
 
+/-- Retry parse-conflicted jobs as bounded waves of isolated processes. -/
+private unsafe
+def run_retries
+    (initialResults : Array result)
+    (exe : String)
+    (extraArgs : Array String)
+    : IO (Array result) := do
+  let conflicted :=
+    (Array.range initialResults.size).filter (fun idx => initialResults[idx]!.retryable)
+  if conflicted.isEmpty then
+    return initialResults
+  let jobs := (((← IO.getEnv "LEAN4FMT_JOBS").bind (·.toNat?)).getD 8).max 1
+  let spawnRetry (path : System.FilePath) : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
+    IO.Process.spawn
+      { cmd    := exe,
+        args   := #["--no-retry"] ++ extraArgs ++ #[path.toString],
+        stdin  := .null,
+        stdout := .piped,
+        stderr := .piped }
+  let mut state : retry_state := { results := initialResults }
+  while state.cursor < conflicted.size do
+    let wave := conflicted.extract state.cursor (Nat.min (state.cursor + jobs) conflicted.size)
+    state := { state with children := #[] }
+    for resultIndex in wave do
+      state :=
+        { state with
+          children := state.children.push (← spawnRetry state.results[resultIndex]!.path) }
+    for (resultIndex, child) in wave.zip state.children do
+      let out ← child.stdout.readToEnd
+      let errOut ← child.stderr.readToEnd
+      let exitCode ← child.wait
+      if exitCode == 0 && !out.isEmpty then
+        let jobResult := state.results[resultIndex]!
+        let stillUnparsed := (errOut.splitOn "not formatted:").length > 1
+        state :=
+          { state with
+            results := state.results.set!
+              resultIndex
+              { jobResult with
+                output := out
+                diagnostics := if stillUnparsed then jobResult.diagnostics else #[]
+              } }
+    state := { state with cursor := state.cursor + jobs }
+  return state.results
+
 /-- The scheduler seam. The main pass is SEQUENTIAL today — the single place a
     core-pinned worker pool (Driver.Pool) or batched uring loop (Driver.Io) will
     slot in, leaving the pure core and `runJob` untouched. Every job shares ONE
@@ -115,50 +160,19 @@ def run_all
   -- read-only — the LSP sharing model). `runJob` catches its own errors, so a
   -- task failure here is a runtime fault, reported per file rather than thrown.
   let tasks ← paths.mapM (fun path => IO.asTask (run_job env style path elabFallback none))
-  let mut state : retry_state := { results := #[] }
+  let mut results : Array result := #[]
   for path in paths, task in tasks do
     match task.get with
-    | .ok jobResult => state := { state with results := state.results.push jobResult }
+    | .ok jobResult => results := results.push jobResult
     | .error message =>
-      state :=
-        { state with
-          results := state.results.push
-            { path,
-              original := "",
-              output := "",
-              diagnostics := #[{ severity := .error, rule := "io", message := toString message }] } }
-  let some (exe, extraArgs) := retry | return state.results
-  let conflicted :=
-    (Array.range state.results.size).filter (fun idx => state.results[idx]!.retryable)
-  if conflicted.isEmpty then return state.results
-  let jobs := (((← IO.getEnv "LEAN4FMT_JOBS").bind (·.toNat?)).getD 8).max 1
-  let spawnRetry (path : System.FilePath) : IO (IO.Process.Child ⟨.null, .piped, .piped⟩) :=
-    IO.Process.spawn
-      { cmd := exe, args := #["--no-retry"] ++ extraArgs ++ #[path.toString],
-        stdin := .null, stdout := .piped, stderr := .piped }
-  while state.cursor < conflicted.size do
-    let wave := conflicted.extract state.cursor (Nat.min (state.cursor + jobs) conflicted.size)
-    state := { state with children := #[] }
-    for resultIndex in wave do
-      state := { state with
-        children := state.children.push (← spawnRetry state.results[resultIndex]!.path) }
-    for (resultIndex, child) in wave.zip state.children do
-      -- stdout is the gated output (bounded: one source file); stderr is a few
-      -- diagnostic lines — read stdout first, the safe order for these sizes
-      let out ← child.stdout.readToEnd
-      let errOut ← child.stderr.readToEnd
-      let exitCode ← child.wait
-      if exitCode == 0 && !out.isEmpty then
-        let jobResult := state.results[resultIndex]!
-        let stillUnparsed := (errOut.splitOn "not formatted:").length > 1
-        state := { state with
-          results :=
-            state.results.set! resultIndex
-              { jobResult with
-                output := out
-                diagnostics := if stillUnparsed then jobResult.diagnostics else #[] } }
-    state := { state with cursor := state.cursor + jobs }
-  return state.results
+      results :=
+        results.push
+          { path,
+            original := "",
+            output := "",
+            diagnostics := #[{ severity := .error, rule := "io", message := toString message }] }
+  let some (exe, extraArgs) := retry | return results
+  run_retries results exe extraArgs
 
 /-- Expand file/dir inputs into the `.lean` file set to process (directories are
     walked, `.lake` build trees skipped), deduplicated and in a deterministic
