@@ -40,6 +40,11 @@ def last_token_trailing? (stx : Lean.Syntax) : Option String :=
     are safe; only line comments eat the rest of the line — §0.4). -/
 def has_line_comment (source : String) : Bool := (source.splitOn "--").length > 1
 
+/-- Does a trivia string contain a block comment? Unlike line comments these
+    do not consume the line, but an active emitter must still own their seam or
+    it can silently discard the token. -/
+def has_block_comment (source : String) : Bool := (source.splitOn "/-").length > 1
+
 /-- True if any token in the subtree carries a line comment in its trivia. Such
     a subtree must never be inlined/flattened (§0.4). -/
 partial
@@ -54,6 +59,21 @@ def subtree_has_line_comment (stx : Lean.Syntax) : Bool :=
   | .atom info _      => inTrivia info
   | .ident info _ _ _ => inTrivia info
   | .node info _ args => inTrivia info || args.any subtree_has_line_comment
+  | .missing          => false
+
+/-- True if any token in the subtree carries a block comment in its trivia. -/
+partial
+def subtree_has_block_comment (stx : Lean.Syntax) : Bool :=
+  let inTrivia (info : SourceInfo) : Bool :=
+    match info with
+    | .original leading _ trailing _ =>
+      has_block_comment (Substring.Raw.toString leading)
+          || has_block_comment (Substring.Raw.toString trailing)
+    | _ => false
+  match stx with
+  | .atom info _      => inTrivia info
+  | .ident info _ _ _ => inTrivia info
+  | .node info _ args => inTrivia info || args.any subtree_has_block_comment
   | .missing          => false
 
 /-- Number of line comments in a trivia string (the counting form of

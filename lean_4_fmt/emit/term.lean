@@ -714,6 +714,9 @@ def aligned_struct_doc?
 
 private partial
 def struct_inst_doc (walk : Walk) (stx : Lean.Syntax) (args : Array Lean.Syntax) : emit_m Doc := do
+  if Lean4Fmt.Syntax.subtree_has_block_comment stx
+      || Lean4Fmt.Syntax.has_block_comment (bare_src stx) then
+    return (← verbatim stx "struct-block-comment")
   let sourceEmpty := ((args[1]?.map bare_src).getD "").trimAscii.toString.isEmpty
   let ellipsisEmpty := ((args[3]?.map bare_src).getD "").trimAscii.toString.isEmpty
   let sourceText := if sourceEmpty then "" else Lean4Fmt.Emit.canon_tok (args[1]?.getD .missing)

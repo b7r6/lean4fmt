@@ -259,7 +259,10 @@ attempted-coverage points on this adversarial slice; recovering that coverage
 is a named optimization target, never a reason to weaken the safety gate.
 
 Current frozen-frontier result:
-`.lean4fmt/mathlib-rejects-binding-anchor` — 192 parsed, zero missing stats,
-125 rejects, 72.3% attempted code-active, 90.9% portable ceiling. Gate 4 remains
+`.lean4fmt/mathlib-rejects-type-comments` — 192 parsed, zero missing stats,
+112 rejects, 70.7% attempted code-active, 90.9% portable ceiling. The latest
+clearances preserve block comments and `private` hygiene in `where` fields,
+column-zero tactic declarations, layout-dependent `haveI` types, and comments
+on active inductive/structure headers. Gate 4 remains
 open until the exact frontier and a fresh 8,245-file mathlib-style run both have
 zero rejects.

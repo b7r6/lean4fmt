@@ -1137,6 +1137,11 @@ def where_field_doc?
     : emit_m (Option Doc) := do
   if transform.getKind != ``Lean.Parser.Term.structInstField then
     return none
+  if ((bare_src transform).splitOn "private").length > 1 then
+    return none
+  if Lean4Fmt.Syntax.subtree_has_block_comment transform
+      || Lean4Fmt.Syntax.has_block_comment (bare_src transform) then
+    return none
   if (← read).breaking.preserveLineBreaks then
     let text := (bare_src transform).trimAscii.toString
     if !text.isEmpty && !text.any (· == '\n')
@@ -1650,6 +1655,8 @@ def route_type_decl? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
   let kind := ctx.defn.getKind
   if kind != ``Lean.Parser.Command.inductive && kind != ``Lean.Parser.Command.structure then
     return none
+  if Lean4Fmt.Syntax.interior_has_line_comment ctx.defn then
+    return some (← verbatim ctx.outer "type-decl-comment")
   if ctx.modifier_hazard then
     return some (← verbatim ctx.outer "modifiers-comment")
   let alignment := (← read).alignment
@@ -1771,6 +1778,16 @@ def make_emit_context (outer defn : Lean.Syntax) : emit_m emit_context := do
 /-- Emit a declaration through ordered, total declaration-family routes. -/
 def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
   let some defn := stx.getArgs[1]? | return (← verbatim stx "decl-shape")
+  let defnSource := bare_src defn
+  -- A declaration body whose first tactic begins at column zero relies on a
+  -- command/tactic boundary that canonical indentation would change.
+  if (defnSource.splitOn "\nexact ").length > 1 then
+    return (← verbatim stx "zero-column-tactic")
+  -- A `haveI` in the declared type opens a layout-sensitive dependent tail;
+  -- flattening the signature can end that scope before the following type.
+  if (defnSource.splitOn "\n").any
+      (fun line => line.trimAscii.toString.startsWith "haveI :") then
+    return (← verbatim stx "type-haveI")
   let ctx ← make_emit_context stx defn
   let some doc ← route_instance? walk ctx | do
     let some doc ← route_type_decl? walk ctx | do
