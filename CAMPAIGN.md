@@ -251,7 +251,7 @@ R12 also corrected the instrument itself: both passes now run `--style mathlib`.
 The first 8,245-file census parsed every file with zero missing stats and found
 241 safety-gate rejects under the old style invocation. Replaying that exact
 frontier with the mathlib style and the binder default-order fix reduced it to
-192. The current monotone clearances reduce the same frozen frontier to 27:
+192. The current monotone clearances reduce the same frozen frontier to 11:
 multiline container children cannot be relocated, adjacency-sensitive
 applications stay opaque, and declarations preserve interior comments plus
 the modifier seams that own ordinary block comments. Shift notation,
@@ -259,10 +259,11 @@ parenthesized projection, nested `calc`, padded parentheses, and multiline
 anonymous constructors now have explicit conservative owners.
 
 Current frozen-frontier result:
-`.lean4fmt/mathlib-rejects-comment-owners-tight` — 192 parsed, zero missing
-stats, 27 rejects, 55.4% attempted code-active, 47.2% shipped code-active, and
-91.3% portable ceiling. The latest clearance rejected a broader comment
-fallback (31.2% shipped) in favor of the smallest declaration owner (47.2%).
+`.lean4fmt/mathlib-rejects-fixed-owners` — 192 parsed, zero missing stats,
+11 rejects, 54.5% attempted code-active, 50.8% shipped code-active, and 91.3%
+portable ceiling. Equation tactic bodies, multiline structure values, padded
+anonymous constructors, and padded negation now reach a fixed point in one
+pass. The remaining frontier is four reparse, five token, and two tree rejects.
 Gate 4 remains
 open until the exact frontier and a fresh 8,245-file mathlib-style run both have
 zero rejects.

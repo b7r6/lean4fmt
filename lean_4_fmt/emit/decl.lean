@@ -1782,6 +1782,14 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   let some defn := stx.getArgs[1]? | return (← verbatim stx "decl-shape")
   let defnSource := bare_src defn
   let declarationSource := bare_src stx
+  if (defnSource.splitOn " => by\n").length > 1
+      && (defnSource.splitOn "\n  |").length > 1 then
+    return (← verbatim stx "equation-tactic-body")
+  if (declarationSource.splitOn "⟨ ").length > 1
+      && (declarationSource.splitOn " ⟩").length > 1 then
+    return (← verbatim stx "padded-anonymous-ctor")
+  if (declarationSource.splitOn "¬ (").length > 1 then
+    return (← verbatim stx "padded-negation")
   if (declarationSource.splitOn "/- ").length > 1 then
     return (← verbatim stx "decl-block-comment")
   if Lean4Fmt.Syntax.interior_has_line_comment stx then

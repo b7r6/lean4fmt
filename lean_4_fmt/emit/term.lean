@@ -1490,6 +1490,11 @@ def emit_node
 partial
 def emit (walk : Walk) (stx : Lean.Syntax) : emit_m Doc := do
   let source := bare_src stx
+  if stx.getKind == ``Lean.Parser.Term.structInst
+      && source.any (· == '\n')
+      && ((source.splitOn "↾fun").length > 1
+          || (source.splitOn " := ").length > 1) then
+    return (← verbatim stx "struct-value-reindent")
   if stx.getKind == ``Lean.Parser.Term.paren
       && (source.splitOn "(calc\n").length > 1 then
     return (← verbatim stx "paren-calc")
