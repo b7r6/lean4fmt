@@ -16,9 +16,9 @@ headers.
 2. **Graph:** internal imports form a deterministic
    `dependent → dependency` graph. SCCs and workspace SCCs are emitted in
    dependency-first order.
-3. **Plan:** target module names and paths are unique and unoccupied. Protected
-   modules and their directly imported module identities are frozen. Every
-   source/path/import operation is recorded before mutation.
+3. **Plan:** target module names and paths are unique and unoccupied. Exact
+   identity overrides compose after canonical casing to resolve intentional
+   collisions. Every source/path/import/Lake operation is recorded before mutation.
 4. **Transaction:** every changed source hash is rechecked, original bytes are
    journaled, all target bytes render before old paths are removed, and any
    executor failure restores the original paths and bytes.
@@ -26,16 +26,11 @@ headers.
    build rolls the source transaction back and cleans/rebuilds affected
    workspaces to remove stale oleans.
 6. **Fixed point:** the final filesystem is inventoried from scratch. Success
-   requires zero path moves, import rewrites, and module changes.
+   requires zero path moves, import rewrites, Lake rewrites, and module changes.
 
-The protected formatting studies are never moved or rewritten:
-
-- `Freeside/ServeFd.lean`
-- `Continuity/Coeffect/GradedMonad.lean`
-- `experimental/algebra/ReeseAlgebra.lean`
-
-An unowned protected source is retained as a read-only dependency observer; it
-does not acquire an invented module identity.
+The whole owned tree participates. The algebra study has its own Lake workspace.
+The historical `Aleph.CLI`/`Aleph.Cli` collision is resolved explicitly as
+`aleph.cli_legacy`/`aleph.cli_11`; no module is protected from the house pass.
 
 ## Acronyms
 
@@ -60,7 +55,7 @@ make case-lean-modules
 Select another policy explicitly:
 
 ```sh
-LEAN4FMT_MODULE_CASE=snake make case-lean-plan
+LEAN4FMT_MODULE_CASE=upperCamel make case-lean-plan
 LEAN4FMT_ACRONYMS=normalize make case-lean-plan
 ```
 
@@ -71,15 +66,12 @@ graph rather than a stale pre-migration snapshot. The `make rename-lean`
 entrypoint enforces this order and rebuilds `aleph` plus `lean4fmt` between the
 module transaction and declaration-resolution pass.
 
-## Gate record — 2026-07-25
+## Gate record — 2026-08-02
 
-- Fixture suite: 11/11, including SCC ordering, collision failure, protected
-  freezes, source-hash races, transaction rollback, and byte-exact injected
-  failure recovery.
-- Repository inventory: 391 modules, 721 internal edges, 391 SCCs, no cycles.
-- Acronym-preserving UpperCamel plan: five module/path changes and six import
-  rewrites across nine module rows.
-- Shadow transaction: `core/codec` 60-job build green, then `codegen` 133-job
-  build green; second plan empty.
-- Real transaction: same two builds green; second plan empty.
-- Protected study hashes unchanged.
+- Fixture suite: 15/15, including collision overrides, Lake root/glob rewrites,
+  source-hash races, transaction rollback, and byte-exact recovery.
+- Repository inventory: 396 modules, 732 internal edges, 396 SCCs, no cycles.
+- Snake transaction: 396 module/path moves, 732 import rewrites, 59 Lake
+  root/glob rewrites across fourteen workspaces.
+- Every workspace built dependency-first; second plan empty with no protected
+  module identities.

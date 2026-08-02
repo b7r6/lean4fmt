@@ -22,6 +22,7 @@ from typing import Iterable
 IMPORT_RE = re.compile(r"^\s*import\s+([A-Za-z_][A-Za-z0-9_'.]*(?:\.[A-Za-z_][A-Za-z0-9_']*)*)\s*(?:--.*)?$")
 SRCDIR_RE = re.compile(r'\bsrcDir\s*:=\s*"([^"]+)"')
 VALID_COMPONENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_']*$")
+LAKE_MODULE_RE = re.compile(r"`([A-Za-z_][A-Za-z0-9_']*(?:\.[A-Za-z_][A-Za-z0-9_']*)*)")
 
 
 def split_words(value: str) -> list[str]:
@@ -189,8 +190,13 @@ def tarjan(graph: dict[str, list[str]]) -> list[list[str]]:
 
 
 def build_inventory(
-    files: Iterable[Path], case: str, protected: set[Path], acronyms: str = "preserve"
+    files: Iterable[Path],
+    case: str,
+    protected: set[Path],
+    acronyms: str = "preserve",
+    overrides: dict[str, str] | None = None,
 ) -> dict:
+    overrides = overrides or {}
     errors: list[str] = []
     modules: list[Module] = []
     protected_observers: list[dict] = []
@@ -213,7 +219,7 @@ def build_inventory(
             workspace = lakefile.parent.resolve()
             roots = roots_cache.setdefault(lakefile.resolve(), lake_source_roots(lakefile))
             name, source_root = module_for_path(raw_path, roots)
-            target = canonical_module(case, name, acronyms)
+            target = overrides.get(name, canonical_module(case, name, acronyms))
             target_path = source_root.joinpath(*target.split(".")).with_suffix(".lean")
             modules.append(
                 Module(
@@ -354,14 +360,39 @@ def build_inventory(
                 "changes": module.name != target or module.path != target_path or bool(rewrites),
             }
         )
+    lakefiles = []
+    for lakefile in sorted({nearest_lakefile(module.path) for module in modules}, key=str):
+        if lakefile is None:
+            continue
+        text = lakefile.read_text(encoding="utf-8")
+        referenced = lake_module_refs(text)
+        rewrites = []
+        for name in referenced:
+            target = effective_target.get(
+                name, overrides.get(name, canonical_module(case, name, acronyms))
+            )
+            if name != target:
+                rewrites.append({"from": name, "to": target})
+        lakefiles.append(
+            {
+                "kind": "lakefile",
+                "path": str(lakefile.resolve()),
+                "target_path": str(lakefile.resolve()),
+                "rewrites": rewrites,
+                "sha256": sha256(lakefile),
+                "changes": bool(rewrites),
+            }
+        )
     return {
         "schema": 1,
         "case": case,
         "acronyms": acronyms,
+        "overrides": dict(sorted(overrides.items())),
         "edge_orientation": "dependent->dependency",
         "valid": not errors,
         "errors": sorted(errors),
         "modules": rows,
+        "lakefiles": lakefiles,
         "protected_observers": sorted(protected_observers, key=lambda row: row["path"]),
         "external_imports": external,
         "sccs_dependency_first": components,
@@ -376,6 +407,7 @@ def build_inventory(
             "module_changes": sum(row["changes"] for row in rows),
             "path_moves": sum(row["path"] != row["target_path"] for row in rows),
             "import_rewrites": sum(len(row["import_rewrites"]) for row in rows),
+            "lakefile_rewrites": sum(len(row["rewrites"]) for row in lakefiles),
             "frozen_modules": len(frozen_reasons),
             "protected": sum(row["protected"] for row in rows) + len(protected_observers),
         },
@@ -416,6 +448,26 @@ def rewrite_imports(text: str, rewrites: dict[str, str]) -> str:
     return "".join(output)
 
 
+def rewrite_lake_config(text: str, rewrites: dict[str, str]) -> str:
+    """Rewrite module identities in Lake `root` and library `globs` fields."""
+    output: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if "root :=" in line or ".submodules `" in line or ".andSubmodules `" in line or ".one `" in line:
+            line = LAKE_MODULE_RE.sub(
+                lambda match: "`" + rewrites.get(match.group(1), match.group(1)), line
+            )
+        output.append(line)
+    return "".join(output)
+
+
+def lake_module_refs(text: str) -> list[str]:
+    refs: set[str] = set()
+    for line in text.splitlines():
+        if "root :=" in line or ".submodules `" in line or ".andSubmodules `" in line or ".one `" in line:
+            refs.update(LAKE_MODULE_RE.findall(line))
+    return sorted(refs)
+
+
 def rollback(journal: Path) -> None:
     state = json.loads((journal / "journal.json").read_text(encoding="utf-8"))
     for row in state["files"]:
@@ -431,7 +483,11 @@ def rollback(journal: Path) -> None:
 def apply_plan(plan: dict, journal: Path) -> None:
     if not plan.get("valid"):
         raise ValueError("refusing to apply an invalid plan")
-    changed = [row for row in plan["modules"] if row["changes"]]
+    changed = [
+        {**row, "kind": "module"}
+        for row in plan["modules"]
+        if row["changes"]
+    ] + [row for row in plan.get("lakefiles", []) if row["changes"]]
     if not changed:
         return
     if journal.exists():
@@ -465,8 +521,12 @@ def apply_plan(plan: dict, journal: Path) -> None:
         # Render all target bytes from the immutable backups.
         for index, row in enumerate(changed):
             source = (originals / f"{index:06d}.lean").read_text(encoding="utf-8")
-            rewrites = {item["from"]: item["to"] for item in row["import_rewrites"]}
-            rendered = rewrite_imports(source, rewrites)
+            if row["kind"] == "lakefile":
+                rewrites = {item["from"]: item["to"] for item in row["rewrites"]}
+                rendered = rewrite_lake_config(source, rewrites)
+            else:
+                rewrites = {item["from"]: item["to"] for item in row["import_rewrites"]}
+                rendered = rewrite_imports(source, rewrites)
             (staged / f"{index:06d}.lean").write_text(rendered, encoding="utf-8")
 
         # Remove old paths only after every target has rendered successfully.
@@ -492,9 +552,16 @@ def apply_plan(plan: dict, journal: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=("snake", "camel", "upperCamel", "preserve"), default="upperCamel")
+    parser.add_argument("--case", choices=("snake", "camel", "upperCamel", "preserve"), default="snake")
     parser.add_argument("--acronyms", choices=("preserve", "normalize"), default="preserve")
     parser.add_argument("--protect", action="append", default=[])
+    parser.add_argument(
+        "--module-override",
+        action="append",
+        default=[],
+        metavar="SOURCE=TARGET",
+        help="exact module identity override, repeatable",
+    )
     parser.add_argument("--output")
     parser.add_argument("--apply-plan")
     parser.add_argument("--rollback")
@@ -512,11 +579,22 @@ def main() -> int:
         return 0
     if not args.inputs:
         parser.error("inventory requires at least one input")
+    overrides: dict[str, str] = {}
+    for value in args.module_override:
+        if "=" not in value:
+            parser.error(f"bad --module-override `{value}`; expected SOURCE=TARGET")
+        source, target = value.split("=", 1)
+        if not source or not target or source in overrides:
+            parser.error(f"bad or duplicate --module-override `{value}`")
+        if not all(valid_module_parts(tuple(name.split("."))) for name in (source, target)):
+            parser.error(f"invalid module identity in --module-override `{value}`")
+        overrides[source] = target
     result = build_inventory(
         expand_inputs(args.inputs),
         args.case,
         {Path(path).resolve() for path in args.protect},
         args.acronyms,
+        overrides,
     )
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.output:

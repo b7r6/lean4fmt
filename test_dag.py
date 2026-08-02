@@ -64,6 +64,26 @@ class DagTests(unittest.TestCase):
             self.assertFalse(result["valid"])
             self.assertTrue(any("target module collision" in error for error in result["errors"]))
 
+    def test_exact_overrides_resolve_canonical_collision(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "lakefile.lean").write_text("import Lake\n", encoding="utf-8")
+            upper = root / "CLI.lean"
+            camel = root / "Cli.lean"
+            upper.write_text("", encoding="utf-8")
+            camel.write_text("", encoding="utf-8")
+            result = dag.build_inventory(
+                [upper, camel],
+                "snake",
+                set(),
+                overrides={"CLI": "cli_legacy", "Cli": "cli_11"},
+            )
+            self.assertTrue(result["valid"])
+            self.assertEqual(
+                {row["target_module"] for row in result["modules"]},
+                {"cli_legacy", "cli_11"},
+            )
+
     def test_empty_scope_fails_closed(self):
         result = dag.build_inventory([], "snake", set())
         self.assertFalse(result["valid"])
@@ -124,6 +144,26 @@ class DagTests(unittest.TestCase):
             self.assertTrue(dependency.exists())
             self.assertFalse(target.exists())
             self.assertIn("import foo_bar", dependent.read_text(encoding="utf-8"))
+
+    def test_lake_roots_follow_module_identity_transaction(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            lakefile = root / "lakefile.lean"
+            lakefile.write_text(
+                "import Lake\nlean_lib X where\n  globs := #[.andSubmodules `FooBar, .submodules `RootPrefix]\n",
+                encoding="utf-8",
+            )
+            source = root / "FooBar.lean"
+            source.write_text("def value := 1\n", encoding="utf-8")
+            plan = dag.build_inventory([source], "snake", set())
+            self.assertTrue(plan["valid"])
+            self.assertEqual(plan["summary"]["lakefile_rewrites"], 2)
+            journal = root / ".journal"
+            dag.apply_plan(plan, journal)
+            self.assertIn("`foo_bar", lakefile.read_text(encoding="utf-8"))
+            self.assertIn("`root_prefix", lakefile.read_text(encoding="utf-8"))
+            dag.rollback(journal)
+            self.assertIn("`FooBar", lakefile.read_text(encoding="utf-8"))
 
     def test_hash_mismatch_prevents_mutation(self):
         with tempfile.TemporaryDirectory() as temporary:

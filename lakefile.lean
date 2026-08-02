@@ -19,10 +19,10 @@ package «lean4fmt» where
 
 lean_lib «Lean4Fmt» where
   -- the whole v2 tree: the barrel (Lean4Fmt.lean) plus every Lean4Fmt.* submodule
-  globs := #[.andSubmodules `Lean4Fmt]
+  globs := #[.andSubmodules `lean_4_fmt]
 
 @[default_target]
 lean_exe «lean4fmt» where
-  root := `Main
+  root := `main
   -- Required to run module initializers when importing syntax extensions
   supportInterpreter := true

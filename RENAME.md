@@ -2,8 +2,8 @@
 
 Goal: promote the casing/rename axis from a verified plan-only core to a
 **build-validated project pass** — the formatter renames project-defined
-identifiers to the house casing (Straylight = snake, namespaces stay
-UpperCamel), token-aware, across a whole tree, with the compiler as the floor.
+identifiers to the house casing (Straylight = snake on every naming axis),
+token-aware, across a whole tree, with the compiler as the floor.
 
 ## The floor is INVERTED here
 
@@ -30,7 +30,7 @@ Medium granularity, per the ask: **modules/namespaces** one axis,
 **theorems/axioms** one axis, **everything else** (types + terms) split into
 `types` and `terms` for headroom. `Style.Naming` carries the four `Case`
 fields; `Rename.Axis` (`ns`/`typ`/`thm`/`term`) maps decl kind → policy field.
-Straylight pins `{ namespaces := upperCamel, types := snake, theorems :=
+Straylight pins `{ namespaces := snake, types := snake, theorems :=
 snake, terms := snake }` — the ServeFd "systems Lean 4" convention.
 
 ## Standing checks (every gate)
@@ -73,7 +73,7 @@ made safe against the one collision class the build floor already proved live.
   collides with a **module basename** in the tree — the "local exemptions" the
   house style reserves. The set on lean4fmt is exactly **Diagnostic, Doc,
   Layout, Naming, Options, Style, Walk** (the `typ`/`term` decls whose name ==
-  a module file basename; `ns` names stay UpperCamel and are immune). Without
+  a module file basename). Without
   it, `Options → options` rewrites `import Lean4Fmt.Style.Options` → `bad
   import`. The exemption is reported (SKIP), not silent.
 
@@ -96,8 +96,8 @@ Straylight/Continuity domain code, per-package, build-validated, honoring the
 per-package exemption sets — the actual house-style adoption, the "systems Lean
 4" visual signal tree-wide. Domain code is already mostly snake and has fewer
 self-referential module collisions than the formatter, so the apply is cleaner
-than the dogfood. The three formatting-study experiments stay excluded
-(`ServeFd`, `GradedMonad`, `experimental/algebra`).
+than the dogfood. The whole owned tree participates; collision skips are
+reported and build-gated rather than hidden behind historical file exemptions.
 
 *Exit: the tree snake per-package, `make` green tree-wide, rejects (compile
 failures) = 0, experiments untouched.*
