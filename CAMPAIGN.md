@@ -337,3 +337,12 @@ laws were added: binder-leading comments force the seam-materializing
 same-line trailing comment before the scoped continuation. The final widened
 gate closes 708/708 at 66.8% code-active and 75.4% shipped-of-portable; the
 348 KB `decl-line-comment` pool is gone from the queue.
+
+The adjacency clearance replaces the whole-application bailout with a seam
+vector. Each seam is the complete trivia gap (previous token trailing plus
+next argument leading): empty gaps remain unbreakably glued; nonempty gaps are
+breakable application lines. One structural exception remains for applications
+containing shorthand structure fields, whose field grammar is indentation
+sensitive. The final gate closes 249/249 at 71.3% / 80.6% and 708/708 at 71.0%
+code-active / 80.3% shipped-of-portable. `application-adjacency` is gone; the
+precise `application-struct-shorthand` residue is 16,485 bytes.

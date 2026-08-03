@@ -1050,6 +1050,14 @@ def glued_application_doc?
   return some (.flatten head ++ .space ++ lastDoc)
 
 private partial
+def has_struct_shorthand_field (stx : Lean.Syntax) : Bool :=
+  if stx.getKind == ``Lean.Parser.Term.structInstField then
+    !(stx.getArgs.any fun child =>
+      child.getArgs.any (·.getKind == ``Lean.Parser.Term.structInstFieldDef))
+  else
+    stx.getArgs.any has_struct_shorthand_field
+
+private partial
 def application_doc
     (walk : Walk)
     (stx : Lean.Syntax)
@@ -1059,20 +1067,33 @@ def application_doc
   let function := args[0]!
   let arguments := (args[1]?.map (·.getArgs)).getD #[]
   let indent := (← read).layout.indent
-  -- A zero-width application seam may be custom postfix notation (`L⟦n⟧`),
-  -- where inserting the ordinary application space changes the macro parse.
-  -- Only own seams the source already classified as whitespace-separated.
+  -- Shorthand structure fields are indentation-separated syntax. Until the
+  -- structure emitter owns that field seam, moving the literal beneath an
+  -- application can reparse `field` as `field := <application>`.
+  if arguments.any has_struct_shorthand_field then
+    return (← verbatim stx "application-struct-shorthand")
+  -- Preserve the parser-classified seam of every argument: whitespace gives a
+  -- breakable application line; zero-width remains unbreakably glued (custom
+  -- postfix syntax such as `L⟦n⟧`). The seam vector is syntax-derived, so
+  -- routing and layout are stable across passes.
+  let mut adjacency : Array Bool := #[]
+  let mut previous := function
   for argument in arguments do
-    if ((Lean4Fmt.Syntax.leading? argument).getD "").isEmpty then
-      return (← verbatim stx "application-adjacency")
+    let gap := (Lean4Fmt.Syntax.last_token_trailing? previous).getD ""
+        ++ (Lean4Fmt.Syntax.leading? argument).getD ""
+    adjacency := adjacency.push gap.isEmpty
+    previous := argument
+  let hasAdjacency := adjacency.any id
   let functionDoc ← walk function
   if Lean4Fmt.Syntax.interior_has_line_comment stx then
     return (← commented_application_doc walk stx function functionDoc arguments indent)
-  if let some glued ← glued_application_doc? walk functionDoc arguments then
-    return glued
+  if !hasAdjacency then
+    if let some glued ← glued_application_doc? walk functionDoc arguments then
+      return glued
   let mut argumentsDoc : Doc := .nil
-  for argument in arguments do
-    argumentsDoc := argumentsDoc ++ .line ++ (← walk argument)
+  for h : idx in [0:arguments.size] do
+    let separator : Doc := if adjacency[idx]! then .nil else .line
+    argumentsDoc := argumentsDoc ++ separator ++ (← walk arguments[idx]!)
   return .group (functionDoc ++ .nest indent argumentsDoc)
 
 private
