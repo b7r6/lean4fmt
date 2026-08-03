@@ -275,6 +275,10 @@ The new owner laws cover nested structure fields, inline `have` values,
 multiline signature/binder continuations, function/`let` values,
 layout-sensitive `where` fields, same-line attributes, and constructor/tuple
 patterns whose whitespace changes macro shape.
-Gate 4 remains
-open until the exact frontier and a fresh 8,245-file mathlib-style run both have
-zero rejects.
+
+Gate 4 is closed. The fresh
+`.lean4fmt/mathlib-full-confirmation-aa6b151` production pass parsed all 8,245
+files with zero missing stats and zero gate rejects: 70.7% attempted/shipped
+code-active, 87.4% portable ceiling, and 80.9% shipped-of-portable. Both
+required monotone clearances—the frozen frontier and an independent fresh
+full-tree run—are zero.
