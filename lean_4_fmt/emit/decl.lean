@@ -1802,9 +1802,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   if (declarationSource.splitOn ":= {").length > 1
       && (declarationSource.splitOn " := ").length > 1 then
     return (← source_exact stx "decl-struct-value-reindent")
-  if (declarationSource.splitOn "] lemma ").length > 1
-      || (declarationSource.splitOn "] theorem ").length > 1 then
-    return (← source_exact stx "same-line-attribute")
   if declarationSource.any (· == '\n')
       && ((declarationSource.splitOn "{ toFun :=").length > 1
           || (declarationSource.splitOn "{ obj ").length > 1) then

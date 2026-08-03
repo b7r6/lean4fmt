@@ -358,3 +358,9 @@ reanchored its still-opaque child and changed the field grammar. A precise
 parent/child `decl-struct-value-reindent` owner preserves only that composition
 boundary. The final gates close 249/249 at 72.9% code-active / 82.5%
 shipped-of-portable and 708/708 at 73.2% / 82.8%, with zero rejects.
+
+Same-line declaration attributes are owned by the existing modifier/declaration
+composition and need no declaration-wide exception. Removing
+`same-line-attribute` closes 249/249 at 73.9% code-active / 83.6%
+shipped-of-portable and 708/708 at 74.0% / 83.8%, with zero rejects and no
+replacement hazard.
