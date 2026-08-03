@@ -282,3 +282,26 @@ files with zero missing stats and zero gate rejects: 70.7% attempted/shipped
 code-active, 87.4% portable ceiling, and 80.9% shipped-of-portable. Both
 required monotone clearances—the frozen frontier and an independent fresh
 full-tree run—are zero.
+
+## Post-Gate-4 accounting correction and frontier curve (2026-08-03)
+
+The Gate 4 safety result remains valid, but its coverage percentages were
+inflated: `source_exact` logged an opt-out and then returned `.textRaw`, whose
+bytes the stats algebra classifies as active. It now returns `.verbatim` at
+base indent zero, preserving identical output while charging the fallback to
+the verbatim column. The old 70.7% / 80.9% figures above are retained as the
+historical ledger, not as current coverage claims.
+
+On the identical stratified 249-file cohort, honest accounting reports 53.9%
+code-active and 60.6% shipped-of-portable, with 249/249 files green. Removing
+the blanket `multiline-signature` fallback raises those to 56.7% and 63.8%
+with 249/249 green. Widening to 708 files found one fixed-point drift: a nested
+`forall` signature gained one binder indent per pass. Replacing the blanket
+guard with the precise `signature-nested-forall` hazard closes 708/708 at
+57.4% code-active and 64.5% shipped-of-portable.
+
+Measured frontier cost for this slice: one accounting correction, one blanket
+guard deletion, and one named 46,015-byte hazard recover 59,785 active bytes
+in the paired 249-file cohort while introducing and clearing one new
+syntax-family failure in 708 files. A fresh full-tree run is required before
+extrapolating these cohort percentages to all of mathlib.

@@ -1792,9 +1792,10 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
       && (declarationSource.splitOn ",").length > 1 then
     return (← source_exact stx "constructor-pattern")
   let signatureSource := (declarationSource.splitOn " :=").head!.splitOn " where" |>.head!
-  if signatureSource.any (· == '\n')
-      && (signatureSource.splitOn "\n").any (fun line => line.startsWith "      ") then
-    return (← source_exact stx "multiline-signature")
+  -- Preserve nested forall continuations until their indent is owned: walking
+  -- them adds one binder indent per pass (mathlib IsTensorProduct).
+  if (signatureSource.splitOn "\n      ∀ ").length > 1 then
+    return (← source_exact stx "signature-nested-forall")
   if (declarationSource.splitOn ":= {").length > 1 then
     return (← source_exact stx "inline-structure-value")
   if (declarationSource.splitOn "] lemma ").length > 1
