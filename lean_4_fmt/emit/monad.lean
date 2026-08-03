@@ -144,7 +144,7 @@ def verbatim (stx : Lean.Syntax) (why : String := "") : emit_m Doc := do
     token payloads whose internal whitespace is semantic. -/
 def source_exact (stx : Lean.Syntax) (why : String) : emit_m Doc := do
   log_opt_out stx why
-  pure (.textRaw (bare_src stx))
+  pure (.verbatim (bare_src stx) 0)
 
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
 def passthrough (stx : Lean.Syntax) : emit_m Doc := do
