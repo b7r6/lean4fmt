@@ -305,3 +305,8 @@ guard deletion, and one named 46,015-byte hazard recover 59,785 active bytes
 in the paired 249-file cohort while introducing and clearing one new
 syntax-family failure in 708 files. A fresh full-tree run is required before
 extrapolating these cohort percentages to all of mathlib.
+
+The next independent clearance removed `binder-continuation`. It remained on
+the favorable slope: 249/249 closed at 57.6% code-active and 64.8%
+shipped-of-portable; the widened gate closed 708/708 with zero rejects at
+58.3% and 65.7%. No replacement hazard was required.

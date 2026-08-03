@@ -1782,10 +1782,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   let some defn := stx.getArgs[1]? | return (← verbatim stx "decl-shape")
   let defnSource := bare_src defn
   let declarationSource := bare_src stx
-  if (declarationSource.splitOn ":=\n      ").length > 1
-      || (declarationSource.splitOn "→\n      [").length > 1
-      || (declarationSource.splitOn "→\n      ∀ ").length > 1 then
-    return (← source_exact stx "binder-continuation")
   if (declarationSource.splitOn ",_)").length > 1 then
     return (← source_exact stx "unspaced-tuple-pattern")
   if (declarationSource.splitOn "fun ⟨").length > 1
