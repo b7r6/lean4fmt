@@ -1850,13 +1850,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
     return (← verbatim stx "zero-column-tactic")
   if (defnSource.splitOn "\n{").length > 1 then
     return (← verbatim stx "zero-column-structure")
-  -- A `haveI` in the declared type opens a layout-sensitive dependent tail;
-  -- flattening the signature can end that scope before the following type.
-  if (defnSource.splitOn "\n").any
-      (fun line =>
-        let trimmed := line.trimAscii.toString
-        trimmed.startsWith "haveI :" || trimmed.startsWith "letI :=") then
-    return (← verbatim stx "type-haveI")
   -- Preserve deliberately padded parenthetical terms as one declaration.
   -- Unknown custom syntax can retain the padding on pass one, then become an
   -- ordinary paren on pass two, producing a false two-step fixed point.

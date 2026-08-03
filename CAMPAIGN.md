@@ -346,3 +346,7 @@ containing shorthand structure fields, whose field grammar is indentation
 sensitive. The final gate closes 249/249 at 71.3% / 80.6% and 708/708 at 71.0%
 code-active / 80.3% shipped-of-portable. `application-adjacency` is gone; the
 precise `application-struct-shorthand` residue is 16,485 bytes.
+
+Typed instance chains no longer require declaration-wide opacity. Removing
+`type-haveI` closes 249/249 at 72.7% / 82.2% and 708/708 at 72.9%
+code-active / 82.6% shipped-of-portable, with no replacement hazard.
