@@ -310,3 +310,10 @@ The next independent clearance removed `binder-continuation`. It remained on
 the favorable slope: 249/249 closed at 57.6% code-active and 64.8%
 shipped-of-portable; the widened gate closed 708/708 with zero rejects at
 58.3% and 65.7%. No replacement hazard was required.
+
+Opening the blanket `paren-projection` fallback raised the paired cohort to
+60.8% / 68.4%. The first 708-file run exposed two fixed-point projection
+chains. A layout-derived `multiline` predicate was rejected because it changed
+routing between passes; token-stable chain predicates preserve only the two
+unowned seams. The final widened gate closes 708/708 at 61.8% code-active and
+69.6% shipped-of-portable.
