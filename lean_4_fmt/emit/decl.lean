@@ -1782,6 +1782,24 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   let some defn := stx.getArgs[1]? | return (← verbatim stx "decl-shape")
   let defnSource := bare_src defn
   let declarationSource := bare_src stx
+  if (declarationSource.splitOn ":=\n      ").length > 1
+      || (declarationSource.splitOn "→\n      [").length > 1
+      || (declarationSource.splitOn "→\n      ∀ ").length > 1 then
+    return (← source_exact stx "binder-continuation")
+  if (declarationSource.splitOn ",_)").length > 1 then
+    return (← source_exact stx "unspaced-tuple-pattern")
+  if (declarationSource.splitOn "fun ⟨").length > 1
+      && (declarationSource.splitOn ",").length > 1 then
+    return (← source_exact stx "constructor-pattern")
+  let signatureSource := (declarationSource.splitOn " :=").head!.splitOn " where" |>.head!
+  if signatureSource.any (· == '\n')
+      && (signatureSource.splitOn "\n").any (fun line => line.startsWith "      ") then
+    return (← source_exact stx "multiline-signature")
+  if (declarationSource.splitOn ":= {").length > 1 then
+    return (← source_exact stx "inline-structure-value")
+  if (declarationSource.splitOn "] lemma ").length > 1
+      || (declarationSource.splitOn "] theorem ").length > 1 then
+    return (← source_exact stx "same-line-attribute")
   if (declarationSource.splitOn ":=\n    {").length > 1 then
     return (← source_exact stx "nested-structure-value")
   if declarationSource.any (· == '\n')
@@ -1793,6 +1811,9 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   if (declarationSource.splitOn ":= fun").length > 1
       && (declarationSource.splitOn "let ⟨").length > 1 then
     return (← verbatim stx "function-let-value")
+  if (declarationSource.splitOn ":= fun").length > 1
+      && (declarationSource.splitOn "have ").length > 1 then
+    return (← verbatim stx "function-have-value")
   if (declarationSource.splitOn "(f :\n").length > 1 then
     return (← verbatim stx "multiline-binder-type")
   if (declarationSource.splitOn " where\n").length > 1

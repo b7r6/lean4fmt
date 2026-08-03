@@ -268,9 +268,13 @@ suffixes, and constructor-valued instances now have explicit owners.
 The fresh `.lean4fmt/mathlib-full-zero-confirmation` discovery pass completed
 all 8,245 files with zero missing stats: 67.2% attempted, 66.4% shipped, 89.3%
 portable ceiling, and 47 rejects (16 reparse, 24 fixed-point, 6 token, 1 tree).
-The first nine-file slice of that new frontier is already green under the next
-owner laws: nested structure fields, inline `have` values, multiline binder
-types, function/`let` values, and layout-sensitive `where` fields.
+The full 47-file discovery frontier is now green:
+`.lean4fmt/mathlib-full-frontier-zero` parsed all 47 with zero missing stats and
+zero rejects, at 73.0% attempted/shipped active and 90.0% portable ceiling.
+The new owner laws cover nested structure fields, inline `have` values,
+multiline signature/binder continuations, function/`let` values,
+layout-sensitive `where` fields, same-line attributes, and constructor/tuple
+patterns whose whitespace changes macro shape.
 Gate 4 remains
 open until the exact frontier and a fresh 8,245-file mathlib-style run both have
 zero rejects.
