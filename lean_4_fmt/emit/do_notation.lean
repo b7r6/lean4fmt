@@ -323,9 +323,16 @@ def emit_let_else (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emi
       | return (← Lean4Fmt.Emit.verbatim stx "do-let-else-branch-shape")
   if strings.size != 1 then
     return (← Lean4Fmt.Emit.verbatim stx "do-let-else-branch-count")
+  let elseTrailing := ((Lean4Fmt.Syntax.trailing? strings[0]!).getD "").trimAscii.toString
+  if elseTrailing.any (· == '\n') then
+    return (← Lean4Fmt.Emit.verbatim stx "do-let-else-branch-trailing")
   let eDoc ← walk strings[0]!
   if is_verbatim_doc eDoc then
     return (← Lean4Fmt.Emit.verbatim stx "do-let-else-branch")
+  -- The single else statement's trailing belongs to this branch seam, not to
+  -- the scoped continuation. Re-append a same-line comment before the
+  -- continuation's structural hardline.
+  let eDoc := eDoc ++ if elseTrailing.isEmpty then .nil else .text (" " ++ elseTrailing)
   -- a[8] carries the CONTINUATION of the do block (the let-else scopes the
   -- rest): emit it through the statement loop at the let's own column
   let some contD ← let_else_continuation? walk args[8]!

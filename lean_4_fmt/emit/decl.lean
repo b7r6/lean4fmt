@@ -493,11 +493,18 @@ def sig_doc
   let args := sig.getArgs
   let binders := (args[0]?.map (·.getArgs)).getD #[]
   let typeInfo ← type_info walk sig
+  -- A comment in a binder's leading trivia owns the seam before that binder.
+  -- Only the per-line layout materializes those seams; fill/oneLine would
+  -- flatten the binders and silently discard the comments.
+  let hasBinderComment := binders.any fun binder =>
+    Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? binder).getD "") > 0
   -- resolve `adaptive` per-declaration through the solver: the sig rides ONE
   -- line while its binders fit the keyword line, else the per-line stack
   -- (Solve.sigOneLineFits). A multi-line binder never rides one line. Other
   -- modes pass through unchanged, so onePerLine/oneLine/fill are byte-identical.
-  let mode ← if (← read).breaking.binders == .adaptive then
+  let mode ← if hasBinderComment then
+    pure Lean4Fmt.Style.binder_layout.onePerLine
+  else if (← read).breaking.binders == .adaptive then
     do adaptive_binder_mode binders typeInfo prefixWidth reserve
   else pure (← read).breaking.binders
   match mode with
@@ -1835,8 +1842,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
     return (← verbatim stx "padded-negation")
   if (declarationSource.splitOn "/- ").length > 1 then
     return (← verbatim stx "decl-block-comment")
-  if Lean4Fmt.Syntax.interior_has_line_comment stx then
-    return (← verbatim stx "decl-line-comment")
   if (defnSource.splitOn "--\n").length > 1 then
     return (← verbatim stx "empty-line-comment")
   -- A declaration body whose first tactic begins at column zero relies on a

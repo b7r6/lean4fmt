@@ -328,3 +328,12 @@ Scouting found one final broad declaration heuristic before that boundary:
 `constructor-pattern` matched any declaration containing `fun ⟨` and any
 comma anywhere. Removing it closes 249/249 at 63.4% / 71.4% and 708/708 at
 64.4% code-active / 72.5% shipped-of-portable, with zero replacement hazards.
+
+The first architectural clearance removes the declaration-wide
+`decl-line-comment` fallback. Existing local owners already covered modifier,
+equation-arm, `where`-field, do-statement, and value-leading seams. Two missing
+laws were added: binder-leading comments force the seam-materializing
+`onePerLine` signature layout, and a pattern-or-else branch reappends its
+same-line trailing comment before the scoped continuation. The final widened
+gate closes 708/708 at 66.8% code-active and 75.4% shipped-of-portable; the
+348 KB `decl-line-comment` pool is gone from the queue.
