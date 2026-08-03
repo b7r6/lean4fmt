@@ -317,3 +317,9 @@ chains. A layout-derived `multiline` predicate was rejected because it changed
 routing between passes; token-stable chain predicates preserve only the two
 unowned seams. The final widened gate closes 708/708 at 61.8% code-active and
 69.6% shipped-of-portable.
+
+Removing `function-have-value` remained independently green: 249/249 reached
+62.1% code-active and 69.9% shipped-of-portable; 708/708 reached 63.0% and
+70.9%. This ends the cheap declaration-owner run. The next measured pools are
+cross-cutting hazards (`decl-line-comment` and `application-adjacency`) and
+should begin with shape bucketing rather than another blanket deletion.
