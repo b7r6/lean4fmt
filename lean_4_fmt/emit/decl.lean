@@ -1784,9 +1784,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   let declarationSource := bare_src stx
   if (declarationSource.splitOn ",_)").length > 1 then
     return (← source_exact stx "unspaced-tuple-pattern")
-  if (declarationSource.splitOn "fun ⟨").length > 1
-      && (declarationSource.splitOn ",").length > 1 then
-    return (← source_exact stx "constructor-pattern")
   let signatureSource := (declarationSource.splitOn " :=").head!.splitOn " where" |>.head!
   -- Preserve nested forall continuations until their indent is owned: walking
   -- them adds one binder indent per pass (mathlib IsTensorProduct).

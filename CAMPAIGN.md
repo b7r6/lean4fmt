@@ -323,3 +323,8 @@ Removing `function-have-value` remained independently green: 249/249 reached
 70.9%. This ends the cheap declaration-owner run. The next measured pools are
 cross-cutting hazards (`decl-line-comment` and `application-adjacency`) and
 should begin with shape bucketing rather than another blanket deletion.
+
+Scouting found one final broad declaration heuristic before that boundary:
+`constructor-pattern` matched any declaration containing `fun ⟨` and any
+comma anywhere. Removing it closes 249/249 at 63.4% / 71.4% and 708/708 at
+64.4% code-active / 72.5% shipped-of-portable, with zero replacement hazards.
