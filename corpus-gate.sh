@@ -39,13 +39,13 @@ for d in $(find "$repo_root/src" -type d -path '*/.lake/build/lib/lean' -not -pa
 done
 export LEAN_PATH="$fmt_lib:$farm:$core_lib"
 
-# Default corpus is every */Continuity/* file; set CORPUS_ALL=1 for the whole
+# Default corpus is every */continuity/* file; set CORPUS_ALL=1 for the whole
 # non-vendor tree (all packages), or CORPUS_LIMIT=N for a quick subset.
 if [ "${CORPUS_ALL:-0}" = "1" ]; then
   mapfile -t files < <(find src -name '*.lean' \
     -not -path '*/vendor/*' -not -path '*/.lake/*' | sort)
 else
-  mapfile -t files < <(find src -path '*/Continuity/*' -name '*.lean' \
+  mapfile -t files < <(find src -path '*/continuity/*' -name '*.lean' \
     -not -path '*/vendor/*' -not -path '*/.lake/*' | sort)
 fi
 # CORPUS_LIMIT=N restricts to the first N files (quick smoke / CI subset).

@@ -1796,13 +1796,15 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   -- them adds one binder indent per pass (mathlib IsTensorProduct).
   if (signatureSource.splitOn "\n      ∀ ").length > 1 then
     return (← source_exact stx "signature-nested-forall")
-  if (declarationSource.splitOn ":= {").length > 1 then
-    return (← source_exact stx "inline-structure-value")
+  -- A comma-less structure literal may align fields by source column. Moving
+  -- its declaration seam would reanchor the opaque term and change the field
+  -- grammar; preserve precisely that parent/child composition boundary.
+  if (declarationSource.splitOn ":= {").length > 1
+      && (declarationSource.splitOn " := ").length > 1 then
+    return (← source_exact stx "decl-struct-value-reindent")
   if (declarationSource.splitOn "] lemma ").length > 1
       || (declarationSource.splitOn "] theorem ").length > 1 then
     return (← source_exact stx "same-line-attribute")
-  if (declarationSource.splitOn ":=\n    {").length > 1 then
-    return (← source_exact stx "nested-structure-value")
   if declarationSource.any (· == '\n')
       && ((declarationSource.splitOn "{ toFun :=").length > 1
           || (declarationSource.splitOn "{ obj ").length > 1) then

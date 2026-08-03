@@ -350,3 +350,11 @@ precise `application-struct-shorthand` residue is 16,485 bytes.
 Typed instance chains no longer require declaration-wide opacity. Removing
 `type-haveI` closes 249/249 at 72.7% / 82.2% and 708/708 at 72.9%
 code-active / 82.6% shipped-of-portable, with no replacement hazard.
+
+Inline and vertically nested structure values no longer require blanket
+declaration opacity. The one exposed counterexample was a comma-less structure
+literal whose fields are aligned by source column: moving the declaration seam
+reanchored its still-opaque child and changed the field grammar. A precise
+parent/child `decl-struct-value-reindent` owner preserves only that composition
+boundary. The final gates close 249/249 at 72.9% code-active / 82.5%
+shipped-of-portable and 708/708 at 73.2% / 82.8%, with zero rejects.
