@@ -380,3 +380,9 @@ Function-valued instance declarations require no instance-wide suffix bailout.
 Removing `instance-function-suffix` closes 249/249 at 74.7% code-active /
 84.5% shipped-of-portable and 708/708 at 74.7% / 84.5%, with zero rejects and
 no replacement hazard.
+
+Constructor-valued instances also require no declaration-wide layout bailout.
+Removing `instance-constructor-layout` is coverage-neutral—the active residue
+already belongs to smaller constructor and structure owners—and closes both
+249/249 and 708/708 at 74.7% code-active / 84.5% shipped-of-portable, with zero
+rejects.
