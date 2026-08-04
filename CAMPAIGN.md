@@ -364,3 +364,9 @@ composition and need no declaration-wide exception. Removing
 `same-line-attribute` closes 249/249 at 73.9% code-active / 83.6%
 shipped-of-portable and 708/708 at 74.0% / 83.8%, with zero rejects and no
 replacement hazard.
+
+Equation-style declarations whose arms end in tactic bodies are already owned
+by the equation-arm and tactic-body composition. Removing
+`equation-tactic-body` closes 249/249 at 74.4% code-active / 84.2%
+shipped-of-portable and 708/708 at 74.4% / 84.2%, with zero rejects and no
+replacement hazard.

@@ -1831,9 +1831,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
     return (← source_exact stx "semantic-token-whitespace")
   if (declarationSource.splitOn "ℓ^").length > 1 then
     return (← verbatim stx "lp-notation")
-  if (defnSource.splitOn " => by\n").length > 1
-      && (defnSource.splitOn "\n  |").length > 1 then
-    return (← verbatim stx "equation-tactic-body")
   if (declarationSource.splitOn "⟨ ").length > 1
       && (declarationSource.splitOn " ⟩").length > 1 then
     return (← verbatim stx "padded-anonymous-ctor")
