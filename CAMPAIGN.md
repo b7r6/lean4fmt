@@ -386,3 +386,8 @@ Removing `instance-constructor-layout` is coverage-neutral—the active residue
 already belongs to smaller constructor and structure owners—and closes both
 249/249 and 708/708 at 74.7% code-active / 84.5% shipped-of-portable, with zero
 rejects.
+
+Function values containing destructuring `let` terms are owned by the existing
+function/let composition. Removing `function-let-value` closes 249/249 at
+74.8% code-active / 84.6% shipped-of-portable and 708/708 at 74.8% / 84.7%,
+with zero rejects and no replacement hazard.
