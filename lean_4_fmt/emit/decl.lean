@@ -1817,9 +1817,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
       && (declarationSource.splitOn ":= let ").length > 1 then
     return (← source_exact stx "where-let-field")
   if declarationSource.trimAscii.toString.startsWith "instance"
-      && (declarationSource.splitOn ":= fun").length > 1 then
-    return (← verbatim stx "instance-function-suffix")
-  if declarationSource.trimAscii.toString.startsWith "instance"
       && ((declarationSource.splitOn "⟨by\n").length > 1
           || (declarationSource.splitOn "⟨\n").length > 1) then
     return (← verbatim stx "instance-constructor-layout")

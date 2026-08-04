@@ -375,3 +375,8 @@ Termination suffixes are likewise owned by the declaration value/suffix
 composition. Removing `termination-suffix` closes 249/249 at 74.6%
 code-active / 84.4% shipped-of-portable and 708/708 at 74.4% / 84.3%, with
 zero rejects and no replacement hazard.
+
+Function-valued instance declarations require no instance-wide suffix bailout.
+Removing `instance-function-suffix` closes 249/249 at 74.7% code-active /
+84.5% shipped-of-portable and 708/708 at 74.7% / 84.5%, with zero rejects and
+no replacement hazard.
