@@ -370,3 +370,8 @@ by the equation-arm and tactic-body composition. Removing
 `equation-tactic-body` closes 249/249 at 74.4% code-active / 84.2%
 shipped-of-portable and 708/708 at 74.4% / 84.2%, with zero rejects and no
 replacement hazard.
+
+Termination suffixes are likewise owned by the declaration value/suffix
+composition. Removing `termination-suffix` closes 249/249 at 74.6%
+code-active / 84.4% shipped-of-portable and 708/708 at 74.4% / 84.3%, with
+zero rejects and no replacement hazard.
