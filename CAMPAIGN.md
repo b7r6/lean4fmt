@@ -391,3 +391,8 @@ Function values containing destructuring `let` terms are owned by the existing
 function/let composition. Removing `function-let-value` closes 249/249 at
 74.8% code-active / 84.6% shipped-of-portable and 708/708 at 74.8% / 84.7%,
 with zero rejects and no replacement hazard.
+
+Inline `have` declaration values need no declaration-wide bailout. Removing
+`inline-have-value` is coverage-neutral—the smaller have/tactic owners already
+account for every sampled occurrence—and closes 249/249 at 74.8% / 84.6% and
+708/708 at 74.8% / 84.7%, with zero rejects.
