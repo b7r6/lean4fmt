@@ -411,3 +411,8 @@ The declaration-wide `padded-anonymous-ctor` heuristic is dead policy: the
 remaining constructor residue is charged to the smaller `trailing-comma` owner.
 Removing it is coverage-neutral and closes both 249/249 and 708/708 at 74.8%
 code-active / 84.7% shipped-of-portable, with zero rejects.
+
+Padded negations need no declaration-wide spelling guard. Removing
+`padded-negation` closes 249/249 at 75.0% code-active / 84.9%
+shipped-of-portable and 708/708 at 74.9% / 84.8%, with zero rejects and no
+replacement hazard.
