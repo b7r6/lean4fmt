@@ -401,3 +401,8 @@ The source-spelling-specific `multiline-binder-type` declaration guard is also
 unnecessary: binder layout already owns the seam. Removing it closes 249/249 at
 74.8% code-active / 84.7% shipped-of-portable and 708/708 at 74.8% / 84.7%,
 with zero rejects and no replacement hazard.
+
+Where-fields whose values begin with `let` are owned by the existing
+where-field/value composition. Removing `where-let-field` closes both 249/249
+and 708/708 at 74.8% code-active / 84.7% shipped-of-portable, with zero rejects
+and no replacement hazard.

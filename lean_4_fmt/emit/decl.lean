@@ -1806,9 +1806,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
       && ((declarationSource.splitOn "{ toFun :=").length > 1
           || (declarationSource.splitOn "{ obj ").length > 1) then
     return (← source_exact stx "nested-structure-fields")
-  if (declarationSource.splitOn " where\n").length > 1
-      && (declarationSource.splitOn ":= let ").length > 1 then
-    return (← source_exact stx "where-let-field")
   if (declarationSource.splitOn "#adaptation_note").length > 1
       || (declarationSource.splitOn "m!\"").length > 1
       || (declarationSource.splitOn "$(").length > 1 then
