@@ -406,3 +406,8 @@ Where-fields whose values begin with `let` are owned by the existing
 where-field/value composition. Removing `where-let-field` closes both 249/249
 and 708/708 at 74.8% code-active / 84.7% shipped-of-portable, with zero rejects
 and no replacement hazard.
+
+The declaration-wide `padded-anonymous-ctor` heuristic is dead policy: the
+remaining constructor residue is charged to the smaller `trailing-comma` owner.
+Removing it is coverage-neutral and closes both 249/249 and 708/708 at 74.8%
+code-active / 84.7% shipped-of-portable, with zero rejects.
