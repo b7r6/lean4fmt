@@ -575,3 +575,10 @@ missing algebraic operation being a suffix-bearing modifier piece rather than
 generic comment support. The six-file classification gate, 249/249, widened
 566/566, and home 234/234 all close with zero rejects; aggregate coverage holds
 at 80.6% / 91.4%, 80.4% / 91.1%, and 84.0% / 88.9%, respectively.
+
+Unsupported structures now report the layer that declined composition rather
+than the declaration-wide `structure-body`: head, deriving clause, `where`
+seam, empty body, fieldless form, or fields. The widened residue is 3,055 bytes
+of `structure-fields` and 936 bytes of `structure-head`; the nine focused
+witnesses, 249, 566, and home gates are all green with zero rejects. Coverage
+holds at 80.6% / 91.4%, 80.4% / 91.1%, and 84.0% / 88.9%.

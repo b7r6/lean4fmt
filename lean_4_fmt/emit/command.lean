@@ -729,6 +729,27 @@ def structure_doc?
   let body := constructorDoc ++ assemble alignMode fieldColMode alignDelta items
   return some (.text head ++ .nest 2 (body ++ derD))
 
+/-- Name the unsupported structure layer after `structure_doc?` declines it. -/
+def structure_failure_reason (defn : Lean.Syntax) : String :=
+  let args := defn.getArgs
+  if args.size != 6 || (structure_head? args).isNone then
+    "structure-head"
+  else
+    let derivingText := (args[5]?.map Lean4Fmt.Emit.canon_tok).getD ""
+    if derivingText.any (· == '\n') then
+      "structure-deriving"
+    else
+      let whereArgs := (args[4]?.map (·.getArgs)).getD #[]
+      if whereArgs.isEmpty then
+        "structure-fieldless"
+      else if whereArgs.size != 3
+          || ((whereArgs[0]?.map bare_src).getD "").trimAscii.toString != "where"
+          || !((Lean4Fmt.Syntax.trailing? whereArgs[0]!).getD "").trimAscii.toString.isEmpty then
+        "structure-where-seam"
+      else
+        let fields := ((whereArgs[2]?.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
+        if fields.isEmpty then "structure-empty-body" else "structure-fields"
+
 /-- Format Batteries' declaration-shaped deprecated alias command. -/
 private
 def emit_alias (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
