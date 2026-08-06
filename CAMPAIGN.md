@@ -567,3 +567,11 @@ right-operand leading comment still needs an explicit placement law, now named
 `chain-seam-comment`. Removing coarse `chain-comment` closes the focused set
 5/5, 249/249 at 80.6% code-active / 91.4% shipped-of-portable, widened 566/566
 at 80.4% / 91.1%, and home at 84.0% / 88.9%, with zero rejects.
+
+The former `modifiers-comment` pool is uniformly a modifier suffix-seam
+hazard: an attribute or visibility token carries a same-line trailing comment
+before the declaration keyword. It is now named `modifier-seam-comment`, the
+missing algebraic operation being a suffix-bearing modifier piece rather than
+generic comment support. The six-file classification gate, 249/249, widened
+566/566, and home 234/234 all close with zero rejects; aggregate coverage holds
+at 80.6% / 91.4%, 80.4% / 91.1%, and 84.0% / 88.9%, respectively.

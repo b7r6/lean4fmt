@@ -1655,7 +1655,7 @@ def route_instance? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (O
   if ctx.defn.getKind != ``Lean.Parser.Command.instance then
     return none
   if ctx.modifier_hazard then
-    return some (← verbatim ctx.outer "modifiers-comment")
+    return some (← verbatim ctx.outer "modifier-seam-comment")
   let some body ← instance_doc? walk ctx.defn |
     let valueKind := (ctx.defn.getArgs[5]?.map (·.getKind)).getD `missing
     let reason := if valueKind == ``Lean.Parser.Command.whereStructInst then
@@ -1671,7 +1671,7 @@ def route_type_decl? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
   if kind != ``Lean.Parser.Command.inductive && kind != ``Lean.Parser.Command.structure then
     return none
   if ctx.modifier_hazard then
-    return some (← verbatim ctx.outer "modifiers-comment")
+    return some (← verbatim ctx.outer "modifier-seam-comment")
   let alignment := (← read).alignment
   let body? ← if kind == ``Lean.Parser.Command.inductive then
     Command.inductive_doc? walk ctx.defn alignment.trailingComments alignment.maxDelta ctx.preserve
@@ -1699,7 +1699,7 @@ def route_example? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (Op
   if ctx.defn.getKind != ``Lean.Parser.Command.example then
     return none
   if ctx.modifier_hazard then
-    return some (← verbatim ctx.outer "modifiers-comment")
+    return some (← verbatim ctx.outer "modifier-seam-comment")
   let body? ← example_body? walk ctx.defn
   let body? ← if body?.isSome then pure body?
   else example_span_doc? ctx.defn
@@ -1711,7 +1711,7 @@ def route_def_where? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
   if !ctx.defShape || ctx.valKind != some ``Lean.Parser.Command.whereStructInst then
     return none
   if ctx.modifier_hazard then
-    return some (← verbatim ctx.outer "modifiers-comment")
+    return some (← verbatim ctx.outer "modifier-seam-comment")
   if ((bare_src ctx.defn).splitOn "\n        calc").length > 1 then
     return some (← verbatim ctx.outer "defwhere-calc")
   -- Preserve an unsupported `where` body as the declaration child while the
@@ -1729,7 +1729,7 @@ def route_inactive? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (O
   if ctx.defShape && active then
     return none
   if ctx.modifier_hazard then
-    return some (← verbatim ctx.outer "modifiers-comment")
+    return some (← verbatim ctx.outer "modifier-seam-comment")
   let source := bare_src ctx.defn
   if !source.isEmpty && !source.any (· == '\n') then
     let some joined := Lean4Fmt.Emit.token_join? ctx.defn
@@ -1765,7 +1765,7 @@ def route_active (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m Doc :
   if isEqns && !eqns_formattable (ctx.defn.getArgs[3]?.getD .missing) then
     return (← verbatim ctx.outer "eqns-unformattable")
   if ctx.modifier_hazard then
-    return (← verbatim ctx.outer "modifiers-comment")
+    return (← verbatim ctx.outer "modifier-seam-comment")
   let (modifiers, modifiersWidth) := active_modifiers ctx
   return modifiers ++ (← defn_doc walk modifiersWidth ctx.defn)
 
