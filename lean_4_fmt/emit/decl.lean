@@ -623,9 +623,7 @@ def simple_value_with_suffix
         | return .span (← verbatim ctx.declVal "val-suffix-lead")
     let suffixDoc ←
       if reanchors_multiline_token (bare_src suffix) then
-        do
-          Lean4Fmt.Emit.log_opt_out suffix "val-suffix-docstring"
-          pure (.textRaw (bare_src suffix))
+        pure (.textRaw (bare_src suffix))
       else
         verbatim suffix
     tail := tail ++ separator ++ suffixDoc

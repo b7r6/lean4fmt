@@ -621,6 +621,13 @@ This removes `val-suffix-multiline`: the two focused witnesses are green;
 249/249 closes at 80.7% / 91.5%, widened 566/566 rises to 80.5% / 91.2%, and
 home remains 84.1% / 89.0%, with zero rejects.
 
+Multiline docstring suffixes were already emitted as owned raw token content
+behind a proved leading separator; a stale explicit opt-out charge mislabeled
+that ownership as `val-suffix-docstring`. Removing the charge makes the
+coverage algebra honest. The six focused files, 249/249, widened 566/566, and
+home gates are green with zero rejects; aggregate coverage holds at 80.7% /
+91.5%, 80.5% / 91.2%, and 84.1% / 89.0%.
+
 Declaration modifiers now have a suffix-bearing attribute piece. An attribute
 such as `@[simp] -- rationale` owns its inline comment and the forced newline
 before the declaration keyword, so the declaration body remains active without
