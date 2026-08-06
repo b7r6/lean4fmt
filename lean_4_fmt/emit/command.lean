@@ -481,8 +481,11 @@ def field_doc?
     (transform : Lean.Syntax)
     (preserve : Bool)
     : Lean4Fmt.Emit.emit_m (Option field_parts) := do
-  if transform.getKind != ``Lean.Parser.Command.structSimpleBinder then
-    return none
+  if transform.getKind == ``Lean.Parser.Command.structInstBinder
+      || transform.getKind == ``Lean.Parser.Command.structExplicitBinder then
+    let some line := Lean4Fmt.Emit.token_join_flat? transform | return none
+    return some { prefixDoc := .nil, name := line, rest := "", line, lineDoc? := none }
+  if transform.getKind != ``Lean.Parser.Command.structSimpleBinder then return none
   let args := transform.getArgs
   if args.size != 4 then
     return none
@@ -704,7 +707,7 @@ def structure_doc?
       | return none
   let derD : Doc := if hasDer then derSep ++ .text derT else .nil
   -- the where-block: ["where", mk?, structFields] — absent for a fieldless
-  -- structure; an explicit `mk ::` stays verbatim
+  -- structure; own a single explicit constructor as the first body item.
   let wargs := (args[4]?.map (·.getArgs)).getD #[]
   if wargs.isEmpty then
     return some (.text head ++ .nest 2 derD)
@@ -712,20 +715,29 @@ def structure_doc?
     return none
   if ((wargs[0]?.map bare_src).getD "").trimAscii.toString != "where" then
     return none
-  if !((wargs[1]?.map bare_src).getD "").trimAscii.toString.isEmpty then
-    return none
   if !((Lean4Fmt.Syntax.trailing? wargs[0]!).getD "").trimAscii.toString.isEmpty then
     return none
   let head := head ++ " where"
+  let constructorDoc ← match wargs[1]!.getArgs.toList with
+    | [] => pure Doc.nil
+    | [constructor] => do
+      let some constructorText := Lean4Fmt.Emit.token_join_flat? constructor | return none
+      let some separator := leading_sep? ((Lean4Fmt.Syntax.leading? constructor).getD "")
+        | return none
+      pure (separator ++ .text constructorText)
+    | _ => return none
   let fields := ((wargs[2]?.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
   if fields.isEmpty then
-    return none
+    if Lean4Fmt.Syntax.count_subtree_line_comments wargs[2]! > 0
+        || Lean4Fmt.Syntax.subtree_has_block_comment wargs[2]! then
+      return none
+    return some (.text head ++ .nest 2 (constructorDoc ++ derD))
   -- fields, one per line at +2: the loop OWNS the inter-field trivia (leading
   -- comment/blank lines placed structurally, same-line trailing comments
   -- re-appended; the LAST field's trailing belongs to the enclosing seam
   -- unless `deriving` follows)
   let some items ← structure_field_items? walk fields hasDer preserve | return none
-  let body := assemble alignMode fieldColMode alignDelta items
+  let body := constructorDoc ++ assemble alignMode fieldColMode alignDelta items
   return some (.text head ++ .nest 2 (body ++ derD))
 
 /-- Format Batteries' declaration-shaped deprecated alias command. -/

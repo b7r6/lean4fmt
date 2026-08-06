@@ -441,3 +441,11 @@ now explicit list-body tokens and survive both flat and broken layouts. The old
 were actually constructors containing multiline opaque children, now named
 `anonymous-ctor-multiline-piece`. The clearance is coverage-neutral and closes
 249/249 and 708/708 at 75.1% / 85.1%, with zero rejects.
+
+Structure bodies now own empty `where` blocks, explicit constructor declarations,
+instance fields, and parenthesized explicit fields. The type-declaration fallback
+also distinguishes `inductive-body` from `structure-body`, making the next
+grammar frontier explicit instead of conflating it with structures. The final
+gates close 249/249 at 75.2% code-active / 85.1% shipped-of-portable and the
+widened 566/566 cohort at 75.2% / 85.0%, with zero rejects; the home corpus closes
+234/234 with zero errors and zero fixed-point drift.

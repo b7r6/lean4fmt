@@ -1683,7 +1683,8 @@ def route_type_decl? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
       ctx.preserve
   -- Keep the wrapper active even when its body is not: modifiers own the seam
   -- before the byte-exact declaration child, so this composition is lossless.
-  let some body := body? | return some (ctx.with_modifiers (← verbatim ctx.defn "structure-body"))
+  let reason := if kind == ``Lean.Parser.Command.inductive then "inductive-body" else "structure-body"
+  let some body := body? | return some (ctx.with_modifiers (← verbatim ctx.defn reason))
   return some (ctx.with_modifiers body)
 
 private
