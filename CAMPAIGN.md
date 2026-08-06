@@ -479,3 +479,12 @@ the child's local emitters. Removing the wrapper-wide `command-in-layout` veto
 closes 249/249 at 76.7% code-active / 86.9% shipped-of-portable and widened
 566/566 at 76.7% / 86.8%, with zero rejects. Home remains 234/234 green at
 81.0% / 85.7%.
+
+Structure-instance values are now rendered by the existing column-relative
+vertical field document instead of fenced at both the declaration seam and the
+term root. The first parent-only attempt correctly failed the 249 gate on
+`Order/BooleanSubalgebra`; removing the stale child veto made that witness
+97.8% active and restored reparse. The joint clearance removes both
+`decl-struct-value-reindent` and `struct-value-reindent`, closing 249/249 at
+78.9% code-active / 89.5% shipped-of-portable and widened 566/566 at 78.7% /
+89.1%, with zero rejects. Home rises to 81.8% / 86.6%, 234/234 green.
