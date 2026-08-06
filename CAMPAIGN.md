@@ -497,6 +497,16 @@ closes 249/249 at 79.6% code-active / 90.3% shipped-of-portable and widened
 566/566 at 79.3% / 89.9%, with zero rejects; home remains 234/234 green at
 81.8% / 86.6%.
 
+The coarse `semantic-token-whitespace` pool is now split without changing
+policy into `adaptation-note-whitespace`, `message-interpolation-whitespace`,
+and `syntax-antiquotation-whitespace`. Direct structure-shorthand application
+arguments now use the ordinary application seam law. The first widened run
+caught HTML quotation syntax whose nested subtree merely resembles a shorthand
+field; those custom-syntax interiors remain precisely fenced as
+`nested-application-struct-shorthand`. Final gates close 249/249 at 80.3%
+code-active / 91.2% shipped-of-portable and widened 566/566 at 79.9% / 90.5%,
+with zero rejects; home remains 234/234 green at 81.8% / 86.6%.
+
 Nested structure literals now recurse through the same column-relative
 structure-field documents as top-level values. The declaration-wide spelling
 heuristic for `{ toFun := ... }` and `{ obj ... }` was therefore redundant and

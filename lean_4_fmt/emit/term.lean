@@ -1065,11 +1065,12 @@ def application_doc
   let function := args[0]!
   let arguments := (args[1]?.map (·.getArgs)).getD #[]
   let indent := (← read).layout.indent
-  -- Shorthand structure fields are indentation-separated syntax. Until the
-  -- structure emitter owns that field seam, moving the literal beneath an
-  -- application can reparse `field` as `field := <application>`.
-  if arguments.any has_struct_shorthand_field then
-    return (← verbatim stx "application-struct-shorthand")
+  -- A direct structure argument has an owned closing-brace seam. Keep nested
+  -- shorthand-shaped subtrees inside custom syntax opaque: their outer macro
+  -- may assign whitespace semantics not represented by ordinary application.
+  if arguments.any fun argument =>
+      argument.getKind != ``Lean.Parser.Term.structInst && has_struct_shorthand_field argument then
+    return (← verbatim stx "nested-application-struct-shorthand")
   -- Preserve the parser-classified seam of every argument: whitespace gives a
   -- breakable application line; zero-width remains unbreakably glued (custom
   -- postfix syntax such as `L⟦n⟧`). The seam vector is syntax-derived, so
