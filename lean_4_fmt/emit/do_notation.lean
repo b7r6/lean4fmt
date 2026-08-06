@@ -499,8 +499,6 @@ def match_alts? (container : Lean.Syntax) : Option (Array Lean.Syntax) :=
     for alternative in alternatives do
       if alternative.getArgs.size != 4 then
         return none
-      if (((Lean4Fmt.Syntax.leading? alternative).getD "").splitOn "/-").length > 1 then
-        return none
     return some alternatives
 
 private

@@ -635,6 +635,13 @@ active. This removes declaration-wide `eqns-arm`; the two focused witnesses,
 249/249, widened 566/566, and home gates all close with zero rejects at 80.7% /
 91.5%, 80.5% / 91.2%, and 84.1% / 89.0% aggregate coverage.
 
+`do match` alternatives now admit full-line block comments in their leading
+seams. The shared separator algebra already preserves and re-anchors those
+comments; the old parser-level veto was redundant. Removing
+`doMatch-arm-block-comment` closes both focused witnesses, 249/249, widened
+566/566, and home with zero rejects; 249 shipped-of-portable rises to 91.6%
+and the aggregate remains 80.5% / 91.2% widened and 84.1% / 89.0% at home.
+
 Declaration modifiers now have a suffix-bearing attribute piece. An attribute
 such as `@[simp] -- rationale` owns its inline comment and the forced newline
 before the declaration keyword, so the declaration body remains active without
