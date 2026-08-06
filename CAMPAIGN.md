@@ -488,3 +488,11 @@ term root. The first parent-only attempt correctly failed the 249 gate on
 `decl-struct-value-reindent` and `struct-value-reindent`, closing 249/249 at
 78.9% code-active / 89.5% shipped-of-portable and widened 566/566 at 78.7% /
 89.1%, with zero rejects. Home rises to 81.8% / 86.6%, 234/234 green.
+
+Nested `∀` continuations in declaration signatures now rely on the structural
+signature/type documents rather than a source-newline fence. Binder and body
+indentation is derived from the enclosing document on every pass, so the old
+indent-growth hazard no longer exists. Removing `signature-nested-forall`
+closes 249/249 at 79.6% code-active / 90.3% shipped-of-portable and widened
+566/566 at 79.3% / 89.9%, with zero rejects; home remains 234/234 green at
+81.8% / 86.6%.
