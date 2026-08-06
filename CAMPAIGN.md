@@ -496,3 +496,11 @@ indent-growth hazard no longer exists. Removing `signature-nested-forall`
 closes 249/249 at 79.6% code-active / 90.3% shipped-of-portable and widened
 566/566 at 79.3% / 89.9%, with zero rejects; home remains 234/234 green at
 81.8% / 86.6%.
+
+Nested structure literals now recurse through the same column-relative
+structure-field documents as top-level values. The declaration-wide spelling
+heuristic for `{ toFun := ... }` and `{ obj ... }` was therefore redundant and
+prevented safe recursive composition. Removing `nested-structure-fields`
+closes 249/249 at 80.1% code-active / 90.9% shipped-of-portable and widened
+566/566 at 79.9% / 90.5%, with zero rejects; home remains 234/234 green at
+81.8% / 86.6%.

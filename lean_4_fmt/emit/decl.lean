@@ -1807,10 +1807,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   let declarationSource := bare_src stx
   if (declarationSource.splitOn ",_)").length > 1 then
     return (← source_exact stx "unspaced-tuple-pattern")
-  if declarationSource.any (· == '\n')
-      && ((declarationSource.splitOn "{ toFun :=").length > 1
-          || (declarationSource.splitOn "{ obj ").length > 1) then
-    return (← source_exact stx "nested-structure-fields")
   if (declarationSource.splitOn "#adaptation_note").length > 1
       || (declarationSource.splitOn "m!\"").length > 1
       || (declarationSource.splitOn "$(").length > 1 then
