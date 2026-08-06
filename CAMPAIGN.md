@@ -550,3 +550,12 @@ whitespace. The focused witnesses close 3/3, the 249 gate closes at 80.5%
 code-active / 91.4% shipped-of-portable, and the widened 566 gate closes at
 80.3% / 91.0%, all with zero rejects; home remains 234/234 green at 83.6% /
 88.4%.
+
+Comments nested inside a simple declaration value are now delegated to the
+value walker. The enclosing `:=` form owns the line-start seam and may compose
+an opaque multiline child unless that child actually re-anchors midline; a
+comment-bearing value with a `where` suffix advances to the narrower
+`val-suffix-multiline` frontier. This removes `val-comment`: the focused gate is
+7/7 green, 249/249 closes at 80.5% code-active / 91.4%
+shipped-of-portable, widened 566/566 at 80.3% / 91.0%, and home rises to 83.9%
+/ 88.8%, with zero rejects throughout.

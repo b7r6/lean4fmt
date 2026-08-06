@@ -608,13 +608,6 @@ def simple_value_with_suffix
     (walk : Lean4Fmt.Emit.Walk)
     (ctx : simple_value_context)
     : emit_m val_form := do
-  let trailingComments :=
-    Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.trailing? ctx.value).getD "")
-  let leadingComments :=
-    Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? ctx.value).getD "")
-  if (if Lean4Fmt.Syntax.owns_seams ctx.value.getKind then leadingComments > 0
-      else Lean4Fmt.Syntax.count_subtree_line_comments ctx.value > trailingComments) then
-    return .span (← verbatim ctx.declVal "val-comment")
   let valueDoc ← walk ctx.value
   if Lean4Fmt.Doc.hasMultilineVerbatim valueDoc then
     return .span (← verbatim ctx.declVal "val-suffix-multiline")
@@ -653,11 +646,6 @@ def simple_value_body
     Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.trailing? ctx.value).getD "")
   let leadingComments :=
     Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? ctx.value).getD "")
-  if (if Lean4Fmt.Syntax.owns_seams ctx.value.getKind then False
-      else
-        Lean4Fmt.Syntax.count_subtree_line_comments ctx.value
-          > trailingComments + leadingComments) then
-    return .span (← verbatim ctx.declVal "val-comment")
   let ownsLeading :=
     ctx.value.getKind == ``Lean.Parser.Term.let || ctx.value.getKind == ``Lean.Parser.Term.have
         || ctx.value.getKind == ``Lean.Parser.Term.letI
