@@ -541,3 +541,12 @@ prevented safe recursive composition. Removing `nested-structure-fields`
 closes 249/249 at 80.1% code-active / 90.9% shipped-of-portable and widened
 566/566 at 79.9% / 90.5%, with zero rejects; home remains 234/234 green at
 81.8% / 86.6%.
+
+Nested application shorthand is now classified by its immediate parser seam.
+Ordinary `choice` arguments such as `{s}` and `{i, j, k}` compose through the
+application document; shorthand-shaped descendants of custom syntax such as a
+`do` argument remain opaque because the outer macro may own significant
+whitespace. The focused witnesses close 3/3, the 249 gate closes at 80.5%
+code-active / 91.4% shipped-of-portable, and the widened 566 gate closes at
+80.3% / 91.0%, all with zero rejects; home remains 234/234 green at 83.6% /
+88.4%.

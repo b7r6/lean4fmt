@@ -1060,7 +1060,9 @@ def application_doc
   -- shorthand-shaped subtrees inside custom syntax opaque: their outer macro
   -- may assign whitespace semantics not represented by ordinary application.
   if arguments.any fun argument =>
-      argument.getKind != ``Lean.Parser.Term.structInst && has_struct_shorthand_field argument then
+      argument.getKind != ``Lean.Parser.Term.structInst &&
+        argument.getKind != `choice &&
+        has_struct_shorthand_field argument then
     return (← verbatim stx "nested-application-struct-shorthand")
   -- Preserve the parser-classified seam of every argument: whitespace gives a
   -- breakable application line; zero-width remains unbreakably glued (custom
