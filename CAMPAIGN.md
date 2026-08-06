@@ -472,3 +472,10 @@ seams, while unsafe children continue to fall back locally. Removing
 `decl-block-comment` closes 249/249 at 75.8% code-active / 85.8%
 shipped-of-portable and widened 566/566 at 75.7% / 85.7%, with zero rejects; the
 home corpus remains 234/234 green at 80.9% / 85.6%.
+
+`... in` command wrappers now own only their prefix and the seam before the
+walked child command; line and block comments inside that child remain under
+the child's local emitters. Removing the wrapper-wide `command-in-layout` veto
+closes 249/249 at 76.7% code-active / 86.9% shipped-of-portable and widened
+566/566 at 76.7% / 86.8%, with zero rejects. Home remains 234/234 green at
+81.0% / 85.7%.
