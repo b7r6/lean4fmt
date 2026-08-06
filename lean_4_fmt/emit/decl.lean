@@ -1687,7 +1687,7 @@ def route_type_decl? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
   -- before the byte-exact declaration child, so this composition is lossless.
   let reason :=
     if kind == ``Lean.Parser.Command.inductive then
-      "inductive-body"
+      Command.inductive_failure_reason ctx.defn
     else
       Command.structure_failure_reason ctx.defn
   let some body := body? | return some (ctx.with_modifiers (← verbatim ctx.defn reason))

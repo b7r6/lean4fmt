@@ -582,3 +582,10 @@ seam, empty body, fieldless form, or fields. The widened residue is 3,055 bytes
 of `structure-fields` and 936 bytes of `structure-head`; the nine focused
 witnesses, 249, 566, and home gates are all green with zero rejects. Coverage
 holds at 80.6% / 91.4%, 80.4% / 91.1%, and 84.0% / 88.9%.
+
+Unsupported inductives now distinguish head/layout failures from constructor
+item failures. The widened residue is 921 bytes of `inductive-constructors`
+and 294 bytes of `inductive-head`; declaration-wide `inductive-body` is gone.
+The two focused witnesses, 249, 566, and home gates all close with zero
+rejects, holding aggregate coverage at 80.6% / 91.4%, 80.4% / 91.1%, and
+84.0% / 88.9%.

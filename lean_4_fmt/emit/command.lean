@@ -447,6 +447,10 @@ def inductive_doc?
   let body := assemble alignMode .never alignDelta items
   return some (.text layout.head ++ .nest 2 (body ++ derivingDoc))
 
+/-- Name the unsupported inductive layer after `inductive_doc?` declines it. -/
+def inductive_failure_reason (defn : Lean.Syntax) : String :=
+  if (inductive_layout? defn).isSome then "inductive-constructors" else "inductive-head"
+
 /-- One structure field `(/-- doc -/)? (modifiers)? name (binders)* : τ (:= v)?`,
     as a single line (the doc comment on its own line above — it lives INSIDE
     the field's declModifiers, unlike a ctor's). `none` on a multi-line piece,
