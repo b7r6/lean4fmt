@@ -614,6 +614,13 @@ witnesses close at 60.2% code-active / 66.2% shipped-of-portable; 249/249,
 widened 566/566, and home remain green at 80.7% / 91.5%, 80.4% / 91.2%, and
 84.1% / 89.0%, with zero rejects.
 
+Simple declaration values now compose a multiline opaque value with an owned
+suffix separator. The `:=` form owns the value's line-start seam and each
+suffix owns its own leading seam, so neither layer needs to absorb the other.
+This removes `val-suffix-multiline`: the two focused witnesses are green;
+249/249 closes at 80.7% / 91.5%, widened 566/566 rises to 80.5% / 91.2%, and
+home remains 84.1% / 89.0%, with zero rejects.
+
 Declaration modifiers now have a suffix-bearing attribute piece. An attribute
 such as `@[simp] -- rationale` owns its inline comment and the forced newline
 before the declaration keyword, so the declaration body remains active without

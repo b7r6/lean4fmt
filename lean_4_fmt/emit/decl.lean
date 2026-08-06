@@ -615,8 +615,6 @@ def simple_value_with_suffix
     (ctx : simple_value_context)
     : emit_m val_form := do
   let valueDoc ← walk ctx.value
-  if Lean4Fmt.Doc.hasMultilineVerbatim valueDoc then
-    return .span (← verbatim ctx.declVal "val-suffix-multiline")
   let mut tail : Doc := .nil
   for slot in [ctx.args[2]?, ctx.args[3]?] do
     let some suffix := slot | continue
