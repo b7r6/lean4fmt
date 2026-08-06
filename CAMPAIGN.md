@@ -605,3 +605,11 @@ seams remain active. This removes `inductive-constructors`: the focused gate is
 2/2 green at 78.8% code-active / 92.9% shipped-of-portable; 249/249, widened
 566/566, and home remain green at 80.6% / 91.4%, 80.4% / 91.1%, and 84.1% /
 89.0%, with zero rejects.
+
+Declaration modifiers now have a suffix-bearing attribute piece. An attribute
+such as `@[simp] -- rationale` owns its inline comment and the forced newline
+before the declaration keyword, so the declaration body remains active without
+losing comment content. This removes `modifier-seam-comment`: the six focused
+witnesses rise to 87.7% code-active / 93.0% shipped-of-portable, 249/249 rises
+to 80.7% / 91.5%, widened 566/566 to 80.4% / 91.2%, and home remains 84.1% /
+89.0%, with zero rejects.

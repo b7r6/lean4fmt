@@ -37,6 +37,7 @@ private
 structure modifier_parts where
   docText   : String
   attrText  : String
+  attrTrail : String
   restParts : List String
   attrSep   : Option Doc
   restSep   : Option Doc
@@ -63,13 +64,16 @@ def assemble_modifiers (attrsOwnLine visOwnLine : Bool) (parts : modifier_parts)
     let restWidth := if parts.restParts.isEmpty then 0 else restStr.length + 1
     let preKeyword := combine_separators parts.restSep parts.kwSep
     let mut state : modifier_state := {}
-    if attrsOwnLine then
+    if attrsOwnLine || !parts.attrTrail.isEmpty then
       if !parts.docText.isEmpty then
         state := { state with out := .textRaw parts.docText, needNl := true }
       if !parts.attrText.isEmpty then
         if state.needNl then
           state := { state with out := state.out ++ (parts.attrSep.getD Doc.hardline) }
-        state := { state with out := state.out ++ .text parts.attrText, needNl := true }
+        state :=
+          { state with
+            out := state.out ++ .text parts.attrText ++ .textRaw parts.attrTrail
+            needNl := true }
       if visOwnLine && !parts.restParts.isEmpty then
         if state.needNl then
           state := { state with out := state.out ++ (parts.restSep.getD Doc.hardline) }
@@ -132,6 +136,8 @@ def modifiers_doc
       let margs := modeValue.getArgs
       let docText := (margs[0]?.map bare_src).getD "" |>.trimAscii.toString
       let attrText := (margs[1]?.map bare_src).getD "" |>.trimAscii.toString
+      let attrTrail :=
+        ((margs[1]?.bind Lean4Fmt.Syntax.trailing?).getD "").trimAsciiEnd.toString
       let restParts :=
         (margs.toList.drop 2).filterMap
           (fun child =>
@@ -172,7 +178,7 @@ def modifiers_doc
       return assemble_modifiers
         attrsOwnLine
         visOwnLine
-        { docText, attrText, restParts, attrSep, restSep := state.restSep, kwSep }
+        { docText, attrText, attrTrail, restParts, attrSep, restSep := state.restSep, kwSep }
 
 /-- Prefix an actively formatted declaration body with its owned modifiers. -/
 private
@@ -1564,10 +1570,16 @@ def modifiers_comment_hazard (modeValue defn : Lean.Syntax) : Bool :=
         fun (line : String) => hasCommentContent line && (Lean4Fmt.Doc.leading_sep? line).isNone
       let mut seenTokens := false
       for child in modeValue.getArgs do
+        let isAttribute := (modeValue.getArgs[1]?.map (· == child)).getD false
+        let ownedTrailComments :=
+          if isAttribute then
+            Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.trailing? child).getD "")
+          else
+            0
         if seenTokens then
           let lead := (Lean4Fmt.Syntax.leading? child).getD ""
           let leadC := Lean4Fmt.Syntax.count_line_comments lead
-          if Lean4Fmt.Syntax.count_subtree_line_comments child > leadC then
+          if Lean4Fmt.Syntax.count_subtree_line_comments child > leadC + ownedTrailComments then
             return true
           if unownable lead then
             return true
@@ -1582,7 +1594,8 @@ def modifiers_comment_hazard (modeValue defn : Lean.Syntax) : Bool :=
                   false
           if !isDocWrap && Lean4Fmt.Syntax.has_line_comment (bare_src child) then
             return true
-          if Lean4Fmt.Syntax.has_line_comment ((Lean4Fmt.Syntax.trailing? child).getD "") then
+          if !isAttribute
+              && Lean4Fmt.Syntax.has_line_comment ((Lean4Fmt.Syntax.trailing? child).getD "") then
             return true
       -- gap between the last modifier and the keyword = the defn head's leading;
       -- with no modifier tokens at all that gap IS the outer leading (exempt).
