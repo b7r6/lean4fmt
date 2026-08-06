@@ -1004,8 +1004,6 @@ def finish_defn_doc (walk : Lean4Fmt.Emit.Walk) (head : defn_head_context) : emi
     match typeInfo with
     | some (_, _, width, false) => 3 + width
     | _ => 0
-  if !typeClean && (← read).breaking.binders == Lean4Fmt.Style.binder_layout.fill then
-    return (← verbatim head.defnSyntax "fill-multiline-type")
   let style ← read
   let exactSig? := exact_signature? style.spacing.preserveBinders head.signature?
   if style.spacing.preserveBinders && exactSig?.isNone then
