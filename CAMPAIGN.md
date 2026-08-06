@@ -649,6 +649,14 @@ opaque individually. This removes `defn-extra-slot`: focused, 249, widened
 566, and home gates are green with zero rejects; widened shipped-of-portable
 rises to 91.3% while 249 holds 91.6% and home holds 89.0%.
 
+The spelling-specific `paren-projection-chain` fence is gone. Parenthesized
+terms now own multiline interiors and projections/applications preserve their
+syntax-derived seams, so the old `).antisymm <|` and measurable-equivalence
+special cases compose through the ordinary documents. The ten focused
+witnesses close at 83.2% code-active / 94.4% shipped-of-portable; 249/249,
+widened 566/566, and home are green with zero rejects at 80.7% / 91.6%, 80.5%
+/ 91.3%, and 84.1% / 89.0%.
+
 Declaration modifiers now have a suffix-bearing attribute piece. An attribute
 such as `@[simp] -- rationale` owns its inline comment and the forced newline
 before the declaration keyword, so the declaration body remains active without

@@ -1530,12 +1530,6 @@ def emit (walk : Walk) (stx : Lean.Syntax) : emit_m Doc := do
   -- changes its macro expansion, so preserve the smallest owning term span.
   if (source.splitOn "⟦").length > 1 then
     return (← verbatim stx "shift-notation")
-  -- These projection chains expose a continuation seam which the surrounding
-  -- application does not yet own. Match token spelling, never current layout,
-  -- so routing itself is a fixed point.
-  if (source.splitOn ").antisymm <|").length > 1
-      || (source.splitOn ").map_measurableEquiv_injective").length > 1 then
-    return (← verbatim stx "paren-projection-chain")
   if !Lean4Fmt.Syntax.owns_seams stx.getKind
       && Lean4Fmt.Syntax.has_unowned_line_comment stx then
     return (← verbatim stx)
