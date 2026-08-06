@@ -515,6 +515,14 @@ collection elements while retaining the actual column hazard. Removing
 shipped-of-portable and widened 566/566 at 79.9% / 90.6%, with zero rejects;
 home remains 234/234 green at 81.9% / 86.6%.
 
+Parenthesized terms now use a real bracket document: flat output remains `(x)`,
+while a multiline interior breaks below `(` at an owned +2 seam and closes on
+its own line. The universal midline-reanchor check subsumes the former special
+cases for `by` and `do`; calc and projection-specific parser fences remain.
+Removing `paren-multiline-piece` closes 249/249 at 80.3% code-active / 91.1%
+shipped-of-portable and widened 566/566 at 80.0% / 90.6%, with zero rejects;
+home remains 234/234 green at 81.9% / 86.6%.
+
 Nested structure literals now recurse through the same column-relative
 structure-field documents as top-level values. The declaration-wide spelling
 heuristic for `{ toFun := ... }` and `{ obj ... }` was therefore redundant and

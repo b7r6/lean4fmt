@@ -135,17 +135,9 @@ def contains_do_by (source : Lean.Syntax) : Bool :=
 private
 def paren_doc (walk : Walk) (stx content : Lean.Syntax) : emit_m Doc := do
   let doc ← walk content
-  if content.getKind == ``Lean.Parser.Term.byTactic
-      || content.getKind == ``Lean.Parser.Term.do then
-    let .verbatim _ _ := doc
-      | return ← if Lean4Fmt.Doc.has_midline_reanchor doc then
-          verbatim stx "paren-multiline-piece"
-        else
-          pure (.text "(" ++ doc ++ .text ")")
+  if Lean4Fmt.Doc.has_midline_reanchor doc then
     return (← verbatim stx "paren-multiline-piece")
-  if Lean4Fmt.Doc.hasMultilineReanchor doc then
-    return (← verbatim stx "paren-multiline-piece")
-  return .text "(" ++ doc ++ .text ")"
+  return Lean4Fmt.Doc.brackets "(" ")" doc
 
 /-- A chain TAIL that is SAFE to glue after the flat head: a by/do block, or
     a spine of app/fun/show ENDING in one — the glued doc's only hardlines
