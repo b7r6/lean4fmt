@@ -1679,8 +1679,6 @@ def route_type_decl? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
   let kind := ctx.defn.getKind
   if kind != ``Lean.Parser.Command.inductive && kind != ``Lean.Parser.Command.structure then
     return none
-  if Lean4Fmt.Syntax.interior_has_line_comment ctx.defn then
-    return some (← verbatim ctx.outer "type-decl-comment")
   if ctx.modifier_hazard then
     return some (← verbatim ctx.outer "modifiers-comment")
   let alignment := (← read).alignment

@@ -648,17 +648,6 @@ def structure_field_item?
     (field : Lean.Syntax)
     (owned preserve : Bool)
     : Lean4Fmt.Emit.emit_m (Option item) := do
-  let zoneCount :=
-    if ((field.getArgs[0]?.map (bare_src ·)).getD "").trimAscii.toString.isEmpty then
-      0
-    else
-      Lean4Fmt.Syntax.count_line_comments
-        ((Lean4Fmt.Syntax.leading? (field.getArgs[1]?.getD .missing)).getD "")
-  if Lean4Fmt.Syntax.count_subtree_line_comments field >
-      Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? field).getD "")
-        + Lean4Fmt.Syntax.count_line_comments
-            ((Lean4Fmt.Syntax.last_token_trailing? field).getD "")
-        + zoneCount then return none
   let trailText := ((Lean4Fmt.Syntax.trailing? field).getD "").trimAscii.toString
   if owned && trailText.any (· == '\n') then
     return none

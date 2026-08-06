@@ -457,3 +457,11 @@ cohorts; unsupported large structural instance values are now isolated as
 `instance-where-body`. Final gates close 249/249 and widened 566/566 at 75.2%
 code-active / 85.2% and 85.1% shipped-of-portable respectively, while the home
 corpus remains 234/234 with zero errors and zero fixed-point drift.
+
+Type declarations no longer carry declaration-wide or field-wide line-comment
+vetoes. Constructor section comments, field Porting-note runs, and comments in
+walked default proofs compose at their existing local seams; token-aware child
+emitters retain authority to reject genuinely unsafe interiors. Removing the
+coarse `type-decl-comment` gate closes 249/249 at 75.4% / 85.4% and widened
+566/566 at 75.3% / 85.2%, with zero rejects. The home corpus rises sharply to
+80.9% code-active / 85.6% shipped-of-portable and remains 234/234 green.
