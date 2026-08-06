@@ -449,3 +449,11 @@ grammar frontier explicit instead of conflating it with structures. The final
 gates close 249/249 at 75.2% code-active / 85.1% shipped-of-portable and the
 widened 566/566 cohort at 75.2% / 85.0%, with zero rejects; the home corpus closes
 234/234 with zero errors and zero fixed-point drift.
+
+Equation-defined instances now reuse the declaration equation-arm algebra, so
+their patterns and bodies remain active under the same alignment and comment
+laws as `def` equations. The old `instance-shape` bucket is empty on both
+cohorts; unsupported large structural instance values are now isolated as
+`instance-where-body`. Final gates close 249/249 and widened 566/566 at 75.2%
+code-active / 85.2% and 85.1% shipped-of-portable respectively, while the home
+corpus remains 234/234 with zero errors and zero fixed-point drift.

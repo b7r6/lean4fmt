@@ -1496,8 +1496,8 @@ def instance_head?
 /-- Active layout for `instance` declarations: head on one line
     (`instance (prio)? (name)? <binders> : τ`), then `:= value` (walked, the
     same placement rules as a def) or `where` + one field per line at +2 (the
-    seam loop owning inter-field trivia). Falls back to whole-declaration
-    verbatim on: equation-style values, `where`-decls suffixes, comments in
+    seam loop owning inter-field trivia), or equation arms nested below the
+    head. Falls back to whole-declaration verbatim on: `where`-decls suffixes, comments in
     seamless zones, multi-line head pieces, or an over-wide head. -/
 private
 def instance_doc_head_value?
@@ -1510,6 +1510,10 @@ def instance_doc_head_value?
     return some (head ++ .text " where" ++ .nest 2 body)
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
     return (← doc_head_val_doc? walk head declVal)
+  if declVal.getKind == ``Lean.Parser.Command.declValEqns then
+    match ← equation_value walk declVal with
+    | .eqns arms => return some (head ++ .nest 2 arms)
+    | _ => return none
   return none
 
 private
@@ -1531,6 +1535,10 @@ def instance_doc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : emit_m (Opt
   let declVal := args[5]!
   if declVal.getKind == ``Lean.Parser.Command.declValSimple then
     head_val_doc? walk state.head declVal
+  else if declVal.getKind == ``Lean.Parser.Command.declValEqns then
+    match ← equation_value walk declVal with
+    | .eqns arms => return some (.text state.head ++ .nest 2 arms)
+    | _ => return none
   else if declVal.getKind == ``Lean.Parser.Command.whereStructInst then
     match ← where_body_doc? walk declVal with
     | some body => return some (.text (state.head ++ " where") ++ .nest 2 body)
@@ -1658,7 +1666,12 @@ def route_instance? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (O
   if ctx.modifier_hazard then
     return some (← verbatim ctx.outer "modifiers-comment")
   let some body ← instance_doc? walk ctx.defn |
-    return some (← verbatim ctx.outer "instance-shape")
+    let valueKind := (ctx.defn.getArgs[5]?.map (·.getKind)).getD `missing
+    let reason := if valueKind == ``Lean.Parser.Command.whereStructInst then
+      "instance-where-body"
+    else
+      "instance-shape"
+    return some (← verbatim ctx.outer reason)
   return some (ctx.with_modifiers body)
 
 private
