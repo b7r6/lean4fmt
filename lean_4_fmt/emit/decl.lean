@@ -684,6 +684,22 @@ def equation_arm_fallback (declVal : Lean.Syntax) : emit_m val_form := do
   | none => value_span declVal "eqns-arm"
 
 private
+def opaque_equation_arms
+    (declVal : Lean.Syntax)
+    (alternatives : Array Lean.Syntax)
+    (suffixTail : Doc)
+    : emit_m val_form := do
+  let mut arms : Doc := .nil
+  for alternative in alternatives do
+    let some separator :=
+        Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? alternative).getD "")
+      | return ← equation_arm_fallback declVal
+    arms :=
+      arms ++ separator
+        ++ (← verbatim alternative "equation-arm-piece")
+  return .eqns (arms ++ suffixTail)
+
+private
 def owned_equation_suffix_separator
     (suffix : Lean.Syntax)
     (separator : Doc)
@@ -724,7 +740,7 @@ def equation_value (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : emit_m 
   let pieces? ← Lean4Fmt.Emit.arm_pieces? walk alternatives Lean4Fmt.Emit.token_join_flat?
   let alignment := (← read).alignment
   if pieces?.isNone then
-    return ← equation_arm_fallback declVal
+    return ← opaque_equation_arms declVal alternatives suffixTail
   let pieces := pieces?.getD #[]
   return .eqns
     (Lean4Fmt.Emit.arms_aligned_runs alignment.matchArms alignment.maxDelta pieces ++ suffixTail)

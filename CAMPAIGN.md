@@ -628,6 +628,13 @@ coverage algebra honest. The six focused files, 249/249, widened 566/566, and
 home gates are green with zero rejects; aggregate coverage holds at 80.7% /
 91.5%, 80.5% / 91.2%, and 84.1% / 89.0%.
 
+Equation declarations now degrade per arm. When the shared active arm parser
+declines a pattern, each alternative remains an opaque line-start item behind
+its owned separator while the declaration signature and sibling arms remain
+active. This removes declaration-wide `eqns-arm`; the two focused witnesses,
+249/249, widened 566/566, and home gates all close with zero rejects at 80.7% /
+91.5%, 80.5% / 91.2%, and 84.1% / 89.0% aggregate coverage.
+
 Declaration modifiers now have a suffix-bearing attribute piece. An attribute
 such as `@[simp] -- rationale` owns its inline comment and the forced newline
 before the declaration keyword, so the declaration body remains active without
