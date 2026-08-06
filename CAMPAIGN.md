@@ -597,3 +597,11 @@ fields, comment seams, and alignment stay active. This removes
 `structure-fields`: the nine focused witnesses close at 85.9% code-active /
 93.8% shipped-of-portable, 249/249 at 80.6% / 91.4%, widened 566/566 at 80.4%
 / 91.1%, and home rises to 84.1% / 89.0%, with zero rejects.
+
+Inductive constructor containers now apply the same line-start composition law
+as structure fields: an unsupported constructor remains an opaque body item,
+while the inductive head, sibling constructors, deriving clause, and comment
+seams remain active. This removes `inductive-constructors`: the focused gate is
+2/2 green at 78.8% code-active / 92.9% shipped-of-portable; 249/249, widened
+566/566, and home remain green at 80.6% / 91.4%, 80.4% / 91.1%, and 84.1% /
+89.0%, with zero rejects.

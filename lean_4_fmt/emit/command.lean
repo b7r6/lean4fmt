@@ -400,8 +400,6 @@ def constructor_items?
   let mut items : Array item := #[]
   for h : idx in [0:constructors.size] do
     let ctor := constructors[idx]
-    if Lean4Fmt.Syntax.interior_has_line_comment ctor then
-      return none
     let trail := ((Lean4Fmt.Syntax.trailing? ctor).getD "").trimAscii.toString
     let owned := idx + 1 != constructors.size || hasDeriving
     if owned && trail.any (· == '\n') then
@@ -409,7 +407,13 @@ def constructor_items?
     let leading := (Lean4Fmt.Syntax.leading? ctor).getD ""
     let some separator := leading_sep? leading | return none
     let plainSeparator := ((leading.splitOn "\n").drop 1).dropLast.isEmpty
-    let some (doc, line, lineDoc?) ← ctor_doc? walk ctor preserve | return none
+    let rendered ←
+      if Lean4Fmt.Syntax.interior_has_line_comment ctor then pure none
+      else ctor_doc? walk ctor preserve
+    let (doc, line, lineDoc?) ← match rendered with
+      | some rendered => pure rendered
+      | none =>
+        pure (.nil, "", some (← Lean4Fmt.Emit.verbatim ctor "inductive-constructor-piece"))
     let rawTrail := (((Lean4Fmt.Syntax.trailing? ctor).getD "").trimAsciiEnd).toString
     let (line, trail) :=
       if preserve && owned && !trail.isEmpty && !rawTrail.any (· == '\n') then
