@@ -515,6 +515,17 @@ collection elements while retaining the actual column hazard. Removing
 shipped-of-portable and widened 566/566 at 79.9% / 90.6%, with zero rejects;
 home remains 234/234 green at 81.9% / 86.6%.
 
+The shared `where` body loop now delegates comments inside field values to the
+value walker, preserves block-comment-bearing fields locally, and owns explicit
+semicolon separators as terminators followed by a fresh field seam. Definitions
+with a fully supported body but an unsafe header are now honestly charged as
+`defwhere-signature`. Instance fields using `:= private name` preserve that
+single-line field grammar atom whole—the focused token gate caught that
+`private` belongs to the field-definition node, not the value child. Final gates
+remove both `defwhere-body` and `instance-where-body`: 249/249 closes at 80.5%
+code-active / 91.3% shipped-of-portable, widened 566/566 at 80.3% / 91.0%, and
+home rises to 83.6% / 88.4%, 234/234 green.
+
 Parenthesized terms now use a real bracket document: flat output remains `(x)`,
 while a multiline interior breaks below `(` at an owned +2 seam and closes on
 its own line. The universal midline-reanchor check subsumes the former special

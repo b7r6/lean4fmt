@@ -1092,17 +1092,15 @@ def defn_doc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.Syntax) 
 private
 def where_field_value_doc
     (walk : Lean4Fmt.Emit.Walk)
-    (field : Lean.Syntax)
     (head : String)
     (value : Lean.Syntax)
     : emit_m (Option Doc) := do
   let valueLeading := (Lean4Fmt.Syntax.leading? value).getD ""
   let leadingComments := Lean4Fmt.Syntax.count_line_comments valueLeading
-  let trailingComments :=
-    Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.last_token_trailing? field).getD "")
-  if Lean4Fmt.Syntax.count_subtree_line_comments field > leadingComments + trailingComments then
-    return none
-  let valueDoc ← walk value
+  let valueDoc ← if ((bare_src value).splitOn "private").length > 1 then
+    verbatim value "where-private-value"
+  else
+    walk value
   if leadingComments > 0 then
     let some separator := Lean4Fmt.Emit.leading_sep? valueLeading | return none
     return some (.text head ++ .text " :=" ++ .nest 2 (separator ++ valueDoc))
@@ -1145,12 +1143,10 @@ def where_field_doc?
     (walk : Lean4Fmt.Emit.Walk)
     (transform : Lean.Syntax)
     : emit_m (Option Doc) := do
-  if transform.getKind != ``Lean.Parser.Term.structInstField then
-    return none
   if ((bare_src transform).splitOn "private").length > 1 then
-    return none
-  if Lean4Fmt.Syntax.subtree_has_block_comment transform
-      || Lean4Fmt.Syntax.has_block_comment (bare_src transform) then
+    let some text := Lean4Fmt.Emit.token_join_flat? transform | return none
+    return some (.text text)
+  if transform.getKind != ``Lean.Parser.Term.structInstField then
     return none
   if (← read).breaking.preserveLineBreaks then
     let text := (bare_src transform).trimAscii.toString
@@ -1191,7 +1187,7 @@ def where_field_doc?
   let some fdef := state.defn? | return some (.text state.head)
   let defArgs := fdef.getArgs
   let some value := defArgs[defArgs.size - 1]? | return none
-  where_field_value_doc walk transform state.head value
+  where_field_value_doc walk state.head value
 
 /-- `<head> := value` placement shared by instance/example heads: inline when
     it fits, else per the bodyOwnLine knob (glued do/by keep the keyword on the
@@ -1252,11 +1248,15 @@ def where_body_doc? (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : emit_m
   let fields := ((whereArgs[1]?.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
   let mut body : Doc := .nil
   let mut fieldCount := 0
+  let mut afterSemicolon := false
   for h : idx in [0:fields.size] do
     let field := fields[idx]
     if (bare_src field).trimAscii.toString.isEmpty then continue -- separator slot
     if field.isAtom then
-      return none
+      if (bare_src field).trimAscii.toString != ";" then return none
+      body := body ++ .text ";" ++ .hardline
+      afterSemicolon := true
+      continue
     -- field-interior comments: whereFieldDoc? owns the accounting now (the
     -- VALUE's leading is a placeable zone — mathlib's `-- Porting note:`
     -- idiom); anything it cannot place still bails there
@@ -1266,10 +1266,13 @@ def where_body_doc? (walk : Lean4Fmt.Emit.Walk) (declVal : Lean.Syntax) : emit_m
     if !last && trailT.any (· == '\n') then
       return none
     let trailDoc : Doc := if !last && !trailT.isEmpty then .text (" " ++ trailT) else .nil
-    let some sep := Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? field).getD "")
+    let sep ← if afterSemicolon then pure Doc.nil else
+      let some separator := Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? field).getD "")
         | return none
+      pure separator
     let some document ← where_field_doc? walk field | return none
     body := body ++ sep ++ document ++ trailDoc
+    afterSemicolon := false
   -- n == 0 is the EMPTY where (`instance … : T where` — every field
   -- defaulted; the mathlib Prop-class idiom): a bare `where` tail, no body
   return some body
@@ -1726,7 +1729,9 @@ def route_def_where? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
   -- Preserve an unsupported `where` body as the declaration child while the
   -- wrapper still formats its independently owned modifiers.
   let some body ← def_where_doc? walk ctx.defn |
-    return some (ctx.with_modifiers (← verbatim ctx.defn "defwhere-body"))
+    let body? ← where_body_doc? walk (ctx.defn.getArgs[3]?.getD .missing)
+    let reason := if body?.isSome then "defwhere-signature" else "defwhere-body"
+    return some (ctx.with_modifiers (← verbatim ctx.defn reason))
   return some (ctx.with_modifiers body)
 
 private
