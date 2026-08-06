@@ -559,3 +559,11 @@ comment-bearing value with a `where` suffix advances to the narrower
 7/7 green, 249/249 closes at 80.5% code-active / 91.4%
 shipped-of-portable, widened 566/566 at 80.3% / 91.0%, and home rises to 83.9%
 / 88.8%, with zero rejects throughout.
+
+Binary chains now distinguish comments owned recursively by their operands from
+comments attached to the operator-to-operand seam. Operand comments compose
+through the existing walkers; the focused comment/token gate proved that a
+right-operand leading comment still needs an explicit placement law, now named
+`chain-seam-comment`. Removing coarse `chain-comment` closes the focused set
+5/5, 249/249 at 80.6% code-active / 91.4% shipped-of-portable, widened 566/566
+at 80.4% / 91.1%, and home at 84.0% / 88.9%, with zero rejects.

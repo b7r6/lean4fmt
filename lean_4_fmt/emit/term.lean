@@ -1237,9 +1237,16 @@ def binary_operator_doc
     (kind : Lean.SyntaxNodeKind)
     (args : Array Lean.Syntax)
     : emit_m Doc := do
-  -- Preserve comment-bearing and adjacency-sensitive operator trees byte-exact.
-  if Lean4Fmt.Syntax.interior_has_line_comment stx then
-    return (← verbatim stx "chain-comment")
+  -- Child comments belong to the child walkers. Comments attached to an
+  -- operator seam need a dedicated binary-chain placement law.
+  let childComments :=
+    Lean4Fmt.Syntax.count_subtree_line_comments args[0]!
+      + Lean4Fmt.Syntax.count_subtree_line_comments args[args.size - 1]!
+  let rhsLeadingComment :=
+    Lean4Fmt.Syntax.has_line_comment
+      ((Lean4Fmt.Syntax.leading? args[args.size - 1]!).getD "")
+  if rhsLeadingComment || Lean4Fmt.Syntax.count_subtree_line_comments stx > childComments then
+    return (← verbatim stx "chain-seam-comment")
   if args.size >= 3 && !binary_operator_shape_safe args then
     return (← verbatim stx)
   let lhs ← walk args[0]!
