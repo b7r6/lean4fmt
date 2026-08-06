@@ -1828,8 +1828,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
     return (← source_exact stx "semantic-token-whitespace")
   if (declarationSource.splitOn "ℓ^").length > 1 then
     return (← verbatim stx "lp-notation")
-  if (declarationSource.splitOn "/- ").length > 1 then
-    return (← verbatim stx "decl-block-comment")
   if (defnSource.splitOn "--\n").length > 1 then
     return (← verbatim stx "empty-line-comment")
   -- A declaration body whose first tactic begins at column zero relies on a

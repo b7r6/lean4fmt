@@ -465,3 +465,10 @@ emitters retain authority to reject genuinely unsafe interiors. Removing the
 coarse `type-decl-comment` gate closes 249/249 at 75.4% / 85.4% and widened
 566/566 at 75.3% / 85.2%, with zero rejects. The home corpus rises sharply to
 80.9% code-active / 85.6% shipped-of-portable and remains 234/234 green.
+
+Block comments no longer trigger a declaration-wide lexical veto. Comments in
+terms and tactic bodies are retained by the subtree walkers that own those
+seams, while unsafe children continue to fall back locally. Removing
+`decl-block-comment` closes 249/249 at 75.8% code-active / 85.8%
+shipped-of-portable and widened 566/566 at 75.7% / 85.7%, with zero rejects; the
+home corpus remains 234/234 green at 80.9% / 85.6%.
