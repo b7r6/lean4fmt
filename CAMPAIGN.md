@@ -642,6 +642,13 @@ comments; the old parser-level veto was redundant. Removing
 566/566, and home with zero rejects; 249 shipped-of-portable rises to 91.6%
 and the aggregate remains 80.5% / 91.2% widened and 84.1% / 89.0% at home.
 
+Definitions now own post-value suffix slots as line-start items. Standalone
+`deriving` clauses compose after the formatted signature and value through
+their syntax-derived leading separators; multiline unknown suffixes remain
+opaque individually. This removes `defn-extra-slot`: focused, 249, widened
+566, and home gates are green with zero rejects; widened shipped-of-portable
+rises to 91.3% while 249 holds 91.6% and home holds 89.0%.
+
 Declaration modifiers now have a suffix-bearing attribute piece. An attribute
 such as `@[simp] -- rationale` owns its inline comment and the forced newline
 before the declaration keyword, so the declaration body remains active without

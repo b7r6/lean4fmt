@@ -1063,12 +1063,22 @@ def finish_defn_doc (walk : Lean4Fmt.Emit.Walk) (head : defn_head_context) : emi
 private
 def defn_doc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.Syntax) : emit_m Doc := do
   let args := defn.getArgs
-  -- content in slots past the value (a standalone `deriving` clause on a
-  -- def) has no placement yet — dropping it would DELETE code (gate-caught
-  -- on mathlib): whole-decl verbatim
+  -- Standalone suffix slots such as `deriving` own a line-start seam after
+  -- the value and compose independently with the formatted definition.
+  let mut suffixTail : Doc := .nil
   for h : idx in [4:args.size] do
-    if !(bare_src args[idx]).trimAscii.toString.isEmpty then
-      return (← verbatim defn "defn-extra-slot")
+    let suffix := args[idx]
+    let suffixText := Lean4Fmt.Emit.canon_tok suffix
+    if suffixText.isEmpty then continue
+    let some separator :=
+        Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? suffix).getD "")
+      | return (← verbatim defn "definition-suffix-seam")
+    let suffixDoc ←
+      if suffixText.any (· == '\n') then
+        verbatim suffix "definition-suffix-piece"
+      else
+        pure (.text suffixText)
+    suffixTail := suffixTail ++ separator ++ suffixDoc
   let keyword :=
     match args[0]? with
     | some (Lean.Syntax.atom _ value) => value
@@ -1083,7 +1093,7 @@ def defn_doc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.Syntax) 
     | some value => span_body_blank bodyOwn value valueForm
     | none       => valueForm
   let nameCol := modsWidth + keyword.length + 1
-  finish_defn_doc
+  let document ← finish_defn_doc
     walk
     { defnSyntax := defn,
       args,
@@ -1094,6 +1104,7 @@ def defn_doc (walk : Lean4Fmt.Emit.Walk) (modsWidth : Nat) (defn : Lean.Syntax) 
       prefixWidth := nameCol + declId.length,
       lineWidth := (← read).layout.lineWidth,
       signature? := args[2]? }
+  return document ++ suffixTail
 
 private
 def where_field_value_doc
