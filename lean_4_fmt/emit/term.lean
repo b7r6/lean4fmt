@@ -32,12 +32,8 @@ def comma_group
     (children : Array Lean.Syntax)
     : emit_m (Option Doc) := do
 
-  -- an authored TRAILING comma (`[a, b,]`) has no slot in the rebuilt list
-  -- (commas go BETWEEN items) — `none` rather than drop the token
-  -- (gate-caught on aleph CLI.lean, tokens; the listItems? lesson again)
-  if (children.back?.map (fun child =>
-      child.isAtom && (bare_src child).trimAscii.toString == ",")).getD false then
-    return none
+  let trailingComma := (children.back?.map (fun child =>
+    child.isAtom && (bare_src child).trimAscii.toString == ",")).getD false
   let mut documents : Array Doc := #[]
   for child in children do
     if child.isAtom then continue
@@ -48,7 +44,7 @@ def comma_group
     documents := documents.push document
   -- literal pools (§5 fill): many short flat items — byte tables, opcode
   -- lists — pack and wrap at the width instead of exploding one per line
-  if documents.size ≥ 8
+  if !trailingComma && documents.size ≥ 8
       && documents.all (fun document => ((Lean4Fmt.Doc.flat_width document).getD 1000) ≤ 12) then
     let items :=
       ((Array.range documents.size).map
@@ -56,7 +52,9 @@ def comma_group
           documents[index]!
             ++ (if index + 1 == documents.size then Doc.nil else Doc.text ","))).toList
     return some (.text lineValue ++ .nest 2 (Doc.fillSep items) ++ .text result)
-  return some (Lean4Fmt.Doc.comma_list lineValue result documents)
+  let body := Lean4Fmt.Doc.sep_by (.text "," ++ .line) documents
+      ++ (if trailingComma then .text "," else .nil)
+  return some (Lean4Fmt.Doc.brackets lineValue result body)
 
 /-- Comment-bearing comma list, FORCED broken (a line comment cannot flatten,
     §0.4): one element per line at +2, each element's leading comment/blank
@@ -312,7 +310,7 @@ def collection_literal_doc
     | none => return (← verbatim stx)
   match ← comma_group walk left "]" children with
   | some doc => return doc
-  | none => return (← verbatim stx "trailing-comma")
+  | none => return (← verbatim stx "collection-multiline-piece")
 
 /-- Mathlib's `{ binder | predicate }` extended set-builder notation. -/
 private partial
@@ -807,7 +805,7 @@ def anonymous_ctor_doc
     | none => return (← verbatim stx)
   match ← comma_group walk "⟨" "⟩" children with
   | some document => return document
-  | none => return (← verbatim stx "trailing-comma")
+  | none => return (← verbatim stx "anonymous-ctor-multiline-piece")
 
 private partial
 def dependent_ite_doc

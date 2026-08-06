@@ -434,3 +434,10 @@ case (`... where app`): a field with no definition or equations is its head.
 Both 249/249 and 708/708 remain zero-reject at 75.1% / 85.1%; the wide residue
 falls from 6,299 to 6,107 bytes. G3 remains open for the next unsupported field
 shape.
+
+Authored trailing commas in collection literals and anonymous constructors are
+now explicit list-body tokens and survive both flat and broken layouts. The old
+`trailing-comma` pool was an instrumentation conflation: all 23,558 wide bytes
+were actually constructors containing multiline opaque children, now named
+`anonymous-ctor-multiline-piece`. The clearance is coverage-neutral and closes
+249/249 and 708/708 at 75.1% / 85.1%, with zero rejects.
