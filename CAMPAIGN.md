@@ -428,3 +428,9 @@ active. The widened probe exposed one token-payload counterexample
 (`Tactic/DefEqAbuse`), which this local law clears. Final gates close 249/249 at
 75.1% / 85.0% and 708/708 at 75.1% / 85.1%, with zero rejects; the remaining
 `val-suffix-docstring` charge is only the semantic comment token itself.
+
+The first `defwhere-body` subclearance adds the missing shorthand-field grammar
+case (`... where app`): a field with no definition or equations is its head.
+Both 249/249 and 708/708 remain zero-reject at 75.1% / 85.1%; the wide residue
+falls from 6,299 to 6,107 bytes. G3 remains open for the next unsupported field
+shape.

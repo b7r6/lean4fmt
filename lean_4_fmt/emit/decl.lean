@@ -1187,7 +1187,8 @@ def where_field_doc?
     return some (.text state.head
       ++ .nest 2
         (Lean4Fmt.Emit.arms_aligned_runs alignment.matchArms alignment.maxDelta pieces))
-  let some fdef := state.defn? | return none
+  -- Shorthand field (`... where app`): the head is the complete field.
+  let some fdef := state.defn? | return some (.text state.head)
   let defArgs := fdef.getArgs
   let some value := defArgs[defArgs.size - 1]? | return none
   where_field_value_doc walk transform state.head value
