@@ -238,7 +238,9 @@ def field_line_doc
     (typeText? : Option String)
     : Option Doc :=
   match state.typeDoc?, state.defaultDoc? with
-  | some doc, _ => some (Doc.text (nameSegment ++ " : ") ++ doc)
+  | some typeDoc, some defaultDoc =>
+    some (Doc.text (nameSegment ++ " : ") ++ typeDoc ++ defaultDoc)
+  | some typeDoc, none => some (Doc.text (nameSegment ++ " : ") ++ typeDoc)
   | none, some defaultDoc =>
     some
       (Doc.text
@@ -509,8 +511,11 @@ def field_doc?
   let defT := ((args[3]?.map bare_src).getD "").trimAscii.toString
   -- Walk the whole default node: its bytes carry the `:=` and any `by`.
   let state ← field_default walk args[3]! defT state
-  if state.typeDoc?.isSome && !defT.isEmpty then
-    return none
+  let state :=
+    if state.typeDoc?.isSome && state.defaultDoc?.isNone && !defT.isEmpty then
+      { state with defaultDoc? := some (.text (" " ++ defT)) }
+    else
+      state
   let defTFlat := if state.defaultDoc?.isSome then "" else defT
   let nameSeg :=
     state.modifiers ++ nameT
@@ -643,7 +648,15 @@ def structure_field_tail?
     : Lean4Fmt.Emit.emit_m (Option item) := do
   let plainSeparator := ((leading.splitOn "\n").drop 1).dropLast.isEmpty
   let rawTrail := (((Lean4Fmt.Syntax.trailing? field).getD "").trimAsciiEnd).toString
-  let some parsed ← field_doc? walk field preserve | return none
+  let parsed ← match ← field_doc? walk field preserve with
+    | some parsed => pure parsed
+    | none =>
+      pure
+        { prefixDoc := .nil
+          name := ""
+          rest := ""
+          line := ""
+          lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece") }
   return some (finish_field_item separator plainSeparator owned preserve parsed trailText rawTrail)
 
 private

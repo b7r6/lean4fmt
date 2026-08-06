@@ -589,3 +589,11 @@ and 294 bytes of `inductive-head`; declaration-wide `inductive-body` is gone.
 The two focused witnesses, 249, 566, and home gates all close with zero
 rejects, holding aggregate coverage at 80.6% / 91.4%, 80.4% / 91.1%, and
 84.0% / 88.9%.
+
+Structure field containers now compose multiline types with either inline or
+multiline defaults. When an individual field grammar remains unsupported, the
+field rides as an opaque line-start item while the structure head, neighboring
+fields, comment seams, and alignment stay active. This removes
+`structure-fields`: the nine focused witnesses close at 85.9% code-active /
+93.8% shipped-of-portable, 249/249 at 80.6% / 91.4%, widened 566/566 at 80.4%
+/ 91.1%, and home rises to 84.1% / 89.0%, with zero rejects.
