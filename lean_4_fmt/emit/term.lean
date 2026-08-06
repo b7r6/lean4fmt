@@ -1245,8 +1245,18 @@ def binary_operator_doc
   let rhsLeadingComment :=
     Lean4Fmt.Syntax.has_line_comment
       ((Lean4Fmt.Syntax.leading? args[args.size - 1]!).getD "")
-  if rhsLeadingComment || Lean4Fmt.Syntax.count_subtree_line_comments stx > childComments then
-    return (← verbatim stx "chain-seam-comment")
+  if rhsLeadingComment then
+    let lead := (Lean4Fmt.Syntax.leading? args[args.size - 1]!).getD ""
+    let some separator := Lean4Fmt.Emit.leading_sep? lead
+      | return (← verbatim stx "chain-rhs-comment-shape")
+    let lhs ← walk args[0]!
+    let some operator ← binary_operator_token? walk args
+      | return (← verbatim stx "chain-op-shape")
+    let rhs ← walk args[args.size - 1]!
+    let continuationIndent := (← read).layout.continuationIndent
+    return .group (lhs ++ .space ++ operator ++ .nest continuationIndent (separator ++ rhs))
+  if Lean4Fmt.Syntax.count_subtree_line_comments stx > childComments then
+    return (← verbatim stx "chain-operator-comment")
   if args.size >= 3 && !binary_operator_shape_safe args then
     return (← verbatim stx)
   let lhs ← walk args[0]!

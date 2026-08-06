@@ -606,6 +606,14 @@ seams remain active. This removes `inductive-constructors`: the focused gate is
 566/566, and home remain green at 80.6% / 91.4%, 80.4% / 91.1%, and 84.1% /
 89.0%, with zero rejects.
 
+Binary operators now own a RHS-leading comment seam. The operator remains with
+the left operand; the full-line comment run and right operand are nested at the
+continuation indent, preserving every comment character without surrendering
+the surrounding chain. This removes `chain-seam-comment`: the five focused
+witnesses close at 60.2% code-active / 66.2% shipped-of-portable; 249/249,
+widened 566/566, and home remain green at 80.7% / 91.5%, 80.4% / 91.2%, and
+84.1% / 89.0%, with zero rejects.
+
 Declaration modifiers now have a suffix-bearing attribute piece. An attribute
 such as `@[simp] -- rationale` owns its inline comment and the forced newline
 before the declaration keyword, so the declaration body remains active without
