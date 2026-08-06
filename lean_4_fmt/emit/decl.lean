@@ -624,9 +624,14 @@ def simple_value_with_suffix
     if (bare_src suffix).trimAscii.toString.isEmpty then continue
     let some separator := Lean4Fmt.Emit.leading_sep? ((Lean4Fmt.Syntax.leading? suffix).getD "")
         | return .span (← verbatim ctx.declVal "val-suffix-lead")
-    if reanchors_multiline_token (bare_src suffix) then
-      return .span (← verbatim ctx.declVal "val-suffix-docstring")
-    tail := tail ++ separator ++ (← verbatim suffix)
+    let suffixDoc ←
+      if reanchors_multiline_token (bare_src suffix) then
+        do
+          Lean4Fmt.Emit.log_opt_out suffix "val-suffix-docstring"
+          pure (.textRaw (bare_src suffix))
+      else
+        verbatim suffix
+    tail := tail ++ separator ++ suffixDoc
   let glue :=
     ctx.value.getKind == ``Lean.Parser.Term.do || ctx.value.getKind == ``Lean.Parser.Term.byTactic
         || ((← read).breaking.glueFun && ctx.value.getKind == ``Lean.Parser.Term.fun)

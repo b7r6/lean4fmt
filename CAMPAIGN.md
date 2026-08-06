@@ -421,3 +421,10 @@ Fill-layout signatures with multiline type documents are owned by the binder
 and type layout composition. Removing `fill-multiline-type` closes 249/249 and
 708/708 at 75.1% code-active / 85.0% shipped-of-portable, with zero rejects and
 no replacement hazard.
+
+Value suffixes containing multiline docstrings now compose locally: the suffix
+comment token rides a column-stable raw doc while the declaration and value stay
+active. The widened probe exposed one token-payload counterexample
+(`Tactic/DefEqAbuse`), which this local law clears. Final gates close 249/249 at
+75.1% / 85.0% and 708/708 at 75.1% / 85.1%, with zero rejects; the remaining
+`val-suffix-docstring` charge is only the semantic comment token itself.
