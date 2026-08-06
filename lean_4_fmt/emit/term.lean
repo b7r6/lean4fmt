@@ -38,8 +38,7 @@ def comma_group
   for child in children do
     if child.isAtom then continue
     let document ← walk child
-    if Lean4Fmt.Doc.hasMultilineVerbatim document
-        || Lean4Fmt.Doc.has_midline_reanchor document then
+    if Lean4Fmt.Doc.has_midline_reanchor document then
       return none
     documents := documents.push document
   -- literal pools (§5 fill): many short flat items — byte tables, opcode

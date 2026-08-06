@@ -507,6 +507,14 @@ field; those custom-syntax interiors remain precisely fenced as
 code-active / 91.2% shipped-of-portable and widened 566/566 at 79.9% / 90.5%,
 with zero rejects; home remains 234/234 green at 81.8% / 86.6%.
 
+Comma-list documents now accept multiline opaque children when the child has
+no midline re-anchor: the broken list gives every child an owned line-start
+seam. This shared law activates recursive anonymous constructors and multiline
+collection elements while retaining the actual column hazard. Removing
+`anonymous-ctor-multiline-piece` closes 249/249 at 80.3% code-active / 91.1%
+shipped-of-portable and widened 566/566 at 79.9% / 90.6%, with zero rejects;
+home remains 234/234 green at 81.9% / 86.6%.
+
 Nested structure literals now recurse through the same column-relative
 structure-field documents as top-level values. The declaration-wide spelling
 heuristic for `{ toFun := ... }` and `{ obj ... }` was therefore redundant and
