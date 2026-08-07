@@ -663,6 +663,12 @@ removes `structure-head`: the five focused witnesses close at 90.1%
 code-active / 94.1% shipped-of-portable, 249/249 at 80.7% / 91.6%, widened
 566/566 at 80.6% / 91.3%, and home at 84.1% / 89.0%, with zero rejects.
 
+Headless inductives now flatten multiline `deriving` syntax through the same
+token-preserving join used by other portable head pieces. This removes
+`inductive-head`: the focused witness rises to 82.7% code-active / 96.9%
+shipped-of-portable, 249/249 closes at 80.8% / 91.6%, widened 566/566 at 80.6%
+/ 91.3%, and home at 84.1% / 89.0%, with zero rejects.
+
 Declaration modifiers now have a suffix-bearing attribute piece. An attribute
 such as `@[simp] -- rationale` owns its inline comment and the forced newline
 before the declaration keyword, so the declaration body remains active without
