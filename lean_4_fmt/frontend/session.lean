@@ -3,7 +3,7 @@
                                                // LEAN4FMT // FRONTEND // SESSION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    THE OPEN QUESTION (DESIGN_V2 §0.5, §14.7): formatting requires running the
+    THE FRONTEND CONSTRAINT (DESIGN_V2 §4): formatting requires running the
     elaborator over some — as-yet-undetermined — portion of the full artifact,
     because a file's own syntax is extended as it elaborates (notation / macro /
     scoped / open register parser tables; `Type*` only exists post-elaboration).

@@ -3,7 +3,7 @@
                                                      // LEAN4FMT // STYLE // CONFIG
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    `fmt.lean` — the project configuration DSL (DESIGN_V2 §5). A fmt.lean sits
+    `fmt.lean` — the project configuration DSL (DESIGN_V2 §7). A fmt.lean sits
     next to a lakefile; nested fmt.lean files inherit and override field-wise
     along the directory chain (root → leaf, later wins). The file is VALID LEAN
     (editors highlight it) but is interpreted DECLARATIVELY — parsed, never

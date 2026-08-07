@@ -3,7 +3,7 @@
                                                      // LEAN4FMT // EMIT // Command
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Open-recursion emitter for the Command category (DESIGN_V2 §11): `inductive`
+    Open-recursion emitter for the Command category (DESIGN_V2 §6): `inductive`
     declarations (reached through `Decl.emit` — the modifiers live there). The
     head goes on one line, each constructor on its own line at +2 (doc comment
     above it, byte-exact), `deriving` at +2 below. Anything the layout can't

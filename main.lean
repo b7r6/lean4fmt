@@ -155,7 +155,7 @@ def fallback_stats_row
     | return (0, verbatimBytes, 0, 0, path.toString)
   return (active, verbatim, trivia, policy, path.toString)
 
-/-- Coverage accounting (`--stats`, DESIGN_V2 §15): per-file
+/-- Coverage accounting (`--stats`, DESIGN_V2 §12): per-file
     active/verbatim/trivia byte rows plus the aggregate. Files the shared env
     cannot parse retry as one-file `--stats` subprocesses (own env); a file
     nothing can parse counts fully verbatim — passthrough is what it gets. -/

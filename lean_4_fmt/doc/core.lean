@@ -3,9 +3,9 @@
                                                         // LEAN4FMT // DOC // CORE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    The document IR (DESIGN_V2 §4): a Wadler/Leijen algebra extended with
+    The document IR (DESIGN_V2 §5): a Wadler/Leijen algebra extended with
     alignment tables (§7), blank-line requests (§8), and opaque verbatim
-    reproduction (§4.1). The walker (`Emit`) produces `Doc` — intent only; the
+    reproduction (§5.2). The walker (`Emit`) produces `Doc` — intent only; the
     renderer (`Doc/Render`) turns it into text under a `Style`.
 
     Pure, Lean-core only. Depends on nothing.

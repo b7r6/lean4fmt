@@ -4,7 +4,7 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     Single-file orchestration: parse → format → gate → text. Delegates to the
-    Frontend safety gate (DESIGN_V2 §11). This is the seam that will switch from
+    Frontend safety gate (DESIGN_V2 §8). This is the seam that will switch from
     the v1 emitter to the v2 Emit→Render spine with no change to callers.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/

@@ -3,7 +3,7 @@
                                                     // LEAN4FMT // STYLE // RESOLVE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    resolve : Preset → List StylePatch → Style  (DESIGN_V2 §5). Patches merged
+    resolve : Preset → List StylePatch → Style  (DESIGN_V2 §7). Patches merged
     left-to-right (later wins).
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -/

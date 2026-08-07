@@ -6,7 +6,7 @@
     The walk monad: `EmitM = ReaderT Style (StateM Diagnostics)`, producing `Doc`.
     The walker expresses INTENT; the renderer decides realization.
 
-    Note on structure (DESIGN_V2 §11): Lean can't have mutual recursion across
+    Note on structure (DESIGN_V2 §6): Lean can't have mutual recursion across
     modules, so the recursion lives in one place (`Emit.walk`) and the per-
     category emitters (`Emit/Module`, `Emit/Term`, …) are OPEN-RECURSION functions
     that take `walk` as a parameter. That is what lets the split live in separate

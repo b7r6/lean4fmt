@@ -1,994 +1,543 @@
-# lean4fmt v2 — Design
+# lean4fmt — A Design for Trustworthy Source Transformation
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                                                       // LEAN4FMT // DESIGN // V2
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    A flexible, multi-style source formatter for Lean 4, built on a document IR
-    with a clang-format-style preset/override ontology, horizontal alignment,
-    advanced blank-line policy, and an io_uring-backed parallel driver.
-    
+    A formatter is a small compiler whose output happens to be source code.
+    Its first duty is therefore not beauty. Its first duty is custody.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-## Status
+## Preface
 
-Design of record for the v2 rewrite. The **v1 prototype is locked in** — it did
-its job as a spike and taught us the invariants, hazards, and the one hard
-external blocker. This document now folds those findings back into the
-production design (§0). Supersedes the v1 architecture.
+Lean source is unusually demanding material for a formatter. Its grammar is
+extensible; parsing and elaboration are interleaved; whitespace may participate
+in macro syntax; comments can alter the lexical fate of the next token; and the
+same surface identifier may denote different declarations in different scopes.
+A tool that merely knows the core grammar cannot safely rewrite a real Lean
+tree. A tool that merely reproduces the parser's pretty printer cannot express a
+project's style. A tool that merely looks correct on examples is not fit to
+rewrite a mathematical library.
 
-### Relationship to existing docs
+lean4fmt is built around a stricter proposition:
 
-- **`ARCHITECTURE.md`** — the AS-BUILT system map (rewritten 2026-07-15):
-  module tree, pipeline, the seam/verbatim/respacing machinery, the
-  zero-passthrough instruments, the progress ledger, and future work. Read it
-  first for orientation; this document remains the design rationale.
-- **`DESIGN.md`** — is a style guide plus v1 phasing. Its style guide content
-  is *not* discarded: it becomes the specification for the **Straylight preset**
-  (§6). The phasing is replaced by §13 here.
-- **`Lean4Fmt/Emitter.lean`** — the working v1 prototype (~1.3k lines). It is the
-  correctness reference for the port. Its final measured behaviour on the
-  continuity corpus (via a test harness, not the shipped exe): **0 mangled, 0
-  non-idempotent, 0 fallbacks** across all 193 *harness-parseable* files (178
-  actively reformatted, 15 already-in-form), every output validated by full
-  `lean`. Builds under both `v4.31.0` and `v4.32.0-rc1`. The 10 files it can't
-  touch fail at the *parser*, not the emitter (§0.4).
+> Every transformation must carry enough local evidence to be attempted, and
+> every emitted file must pass a global semantic safety gate. Where evidence is
+> absent, the source is preserved exactly and the boundary is measured.
 
-### Checkpoint — 2026-07-15 (zero-passthrough campaign)
+This document is the design of record. It describes the system as it exists,
+the laws that constrain its evolution, and the procedure by which new syntax is
+admitted. Historical measurements and the sequence of discoveries live in
+`CAMPAIGN.md`; the source-level map lives in `ARCHITECTURE.md`; naming migration
+details live in `DAG.md` and `RENAME.md`.
 
-The standing directive is **zero passthrough**: for a fixed style, output is a
-function of the parse tree + comment attachments only — one fixed point per
-parse-equivalence class, origin-agnostic. The metric is the perturbation
-fuzzer (`fuzz/`): parse-preserving trivia mutations must not change the
-output; failures are the ranked work queue. Current measured state:
+## 1. The object being built
 
-- **Core fuzz set** (40 files × 3 seeds): **0/120 divergences** since
-  `8848c74`, protected by every round since.
-- **Full corpus** (234 files × 3 seeds): 227 → **102/702**, converging
-  round-by-round (census → port → gate → remeasure). Early drops were fuzzer
-  honesty (multi-line quasiquote templates and comment text are CONTENT and
-  must not be mutated — the pins are encoded in `perturb.py`).
-- **Coverage**: 77.3% of code bytes actively formatted (honest ceiling ≈81%;
-  strings/quasiquotes/moduleDoc are correctly verbatim forever).
-- **Correctness posture unchanged**: gate PASS 234/234, 0 non-idempotent,
-  proof spine T1–T4 holds (T1 unconditional), comment diff check run every
-  round that touches comment guards (it has caught three eaters the gate
-  cannot see).
-- **Key mechanisms added by the campaign**: the token respacing engine
-  (`tokenJoin?`/`canonTok` + pair-rule table), the walk-level join
-  interception (dispatched-but-bailed single-line nodes respace), the
-  string-aware trailing-ws strip in render (doc comments exempt — leaf
-  tokens), seam-owned comment zones with `hasUnownedInteriorComment`, and
-  the `hasMultilineReanchor` refinement (textRaw is placement-stable; only
-  re-anchoring verbatim drifts — multi-line docstrings no longer poison
-  mutuals).
-- **Presets**: straylight/aniva/purtell all PRESCRIPTIVE (preservation values
-  banned from presets); measured finding: preserve-based styles cannot
-  round-trip through a prescriptive wash, so the vendor contract is direct
-  `HEAD → author-style = HEAD`, and origin-agnosticism ≡ active coverage.
+lean4fmt is four related tools sharing one frontend and one policy model:
 
-Next: full-corpus fuzz to 0/702 (remaining classes named in
-`ARCHITECTURE.md §10`), then the vendor wash test as the cross-style
-endpoint, then the knob line and milestone-2 plumbing.
+1. a deterministic formatter from Lean syntax to a document algebra;
+2. a linter for house-style constraints that formatting should not silently
+   repair;
+3. an elaboration-aware project renamer for casing migrations;
+4. a census instrument that distinguishes attempted formatting from formatting
+   safe enough to ship.
 
-### Checkpoint — 2026-07-11 (milestone 1: daily-driver on continuity)
+These are not four modes bolted onto a printer. They are four interpretations of
+the same facts: syntax, ownership, resolved identity, policy, and proof residue.
 
-The v2 spine is SHIPPED and dogfooded. The exe runs `Emit → Doc → Render`
-behind the runtime safety gate; the whole continuity corpus is formatted and
-committed (84 files, blame-shielded). Current measured state:
-
-- **Correctness**: shipping corpus gate 234/234 (double `--write`, 0
-  non-idempotent, 0 errors), including the 12 same-file-notation files via the
-  elaborating fallback. The gate compares tokens, comment content, header
-  imports, and the fixed point. Comment-preservation additionally checked by
-  diff over every reformatted file (it caught two silent comment-eaters the
-  token gate could not see — the check is part of the construct-port loop now).
-- **Coverage** (§15, `--stats`): 22.4% of code bytes actively formatted; the
-  verbatim remainder is ranked and targeted (whole-decl fallbacks
-  structure/inductive/instance ≈20%, value safe-spans ≈19%, signature
-  interiors ≈15%, correctly-verbatim-forever residue ≈11%, tactics 5%).
-- **Throughput** (§12): one shared batch env per invocation + pooled main pass
-  + parallel conflict-retry subprocesses: 234 files in 3.7s / 1.4GB peak on 32
-  cores, batch-idempotent and deterministic under concurrency.
-- **Constructs active**: def/theorem/abbrev/opaque/example decls (sig reflow,
-  eqn defs), let/do binding decomposition, the do-statement family
-  (let/←/reassign/expr/return/if/match) with comment-preserving statement
-  layout, match, structInst, app/binops/lists/if-then-else, `:= do`/`=> do`
-  glue.
-- **Flags**: `--check | --write | --stats`, `--width`, `--style`,
-  `--elab auto|off` (measured: warm full elaboration is 5–20ms/file here;
-  `--elab off` gives strict passthrough with a loud skip diagnostic),
-  `--no-retry` (subprocess recursion guard), `LEAN4FMT_JOBS`.
-
-Next: milestone 2 (friendly repos) — `lake env` discovery replacing the
-hand-built LEAN_PATH farm, packaging, foreign-corpus gate runs; construct
-backlog per §15.
-
----
-
-## 0. Prototype postmortem — what the spike proved
-
-The v1 spike was pushed hard: from "mangles most real files" to clean, idempotent,
-meaning-preserving output across the whole continuity tree. The lessons below are
-not incidental — they are load-bearing constraints the v2 design must honour.
-
-### 0.1 The correctness spine is two runtime invariants, not just CI gates
-
-Two properties turned out to be the entire game, and both must be *checkable at
-runtime*, not merely asserted:
-
-1. **Token-stream preservation.** A formatter may only move whitespace/trivia;
-   it must never add, drop, reorder, or merge a token. Reducing "did we mangle?"
-   to `tokens(parse(s)) == tokens(parse(format(s)))` caught every structural bug
-   we introduced (doubled commas, dropped `mut`, `class`→`structure`, merged
-   `let`s) — things that still *parsed* and so slipped past eyeballing.
-2. **Idempotency as a fixed point.** `format(format(s)) == format(s)`, byte for
-   byte. This is a far sharper tool than it sounds: almost every layout bug we
-   had was *invisible in a single pass* and only showed up as drift on the
-   second. Idempotency testing is the cheapest, highest-yield bug detector we
-   found.
-
-**Production consequence.** These are promoted from "verification obligations"
-(§10) to a **runtime safety gate** the driver runs by default (§4.2). Because the
-v2 core is meaning-preserving *by construction* via the Doc IR, the gate should
-never fire — but it is the seatbelt that guarantees we never emit worse-than-input,
-on any corpus, including mathlib, without having to prove the emitter total first.
-
-### 0.2 Almost every idempotency bug was context-dependent indentation
-
-The ad-hoc string emitter had to *guess* the indentation of a continuation from
-local state (pending newlines, an ad-hoc `indentLevel`). Nearly every non-idempotency
-traced to a wrong guess:
-
-- verbatim blocks re-anchored to the wrong base (first line's indent stripped),
-  so nested blocks grew 2 spaces per pass;
-- a `+1` indent that is correct after `:= by` but wrong for a `let`-chain tail,
-  which must stay column-aligned with its `let`s;
-- newlines that lived in a token's *trailing* trivia, so a skipped explicit
-  newline silently merged two `let`s.
-
-This is the empirical case **for the Doc IR**: indentation must be *compositional*
-(`nest`/`align` around subtrees), computed by the renderer from structure — never
-guessed from mutable state mid-walk. Everything in §0.2 evaporates when nesting is
-structural. (§4.)
-
-### 0.3 Verbatim reproduction is mandatory — and must itself be idempotent
-
-Whole-language coverage is impossible by active formatting alone: tactic blocks,
-`where`/`let rec`, `calc`, custom-syntax DSLs (`[cxx|]`, `[cxxfn|]`), and exotic
-match/equation patterns are too many to restyle and too column-sensitive to risk.
-The prototype's breakthrough was an **opaque reproduction** path: reproduce any
-subtree we don't actively restyle from its original source, re-anchored to the
-current indent. This is now a first-class designed component (§4.1), with rules
-that were paid for in blood:
-
-- **Strip trailing whitespace only; keep the first line's leading indent** — the
-  base-indent must be computed over *all* lines including the first, or
-  re-anchoring is not a fixed point.
-- **Re-anchor** = dedent to the block's own min indent, re-indent to the current
-  level. Emit at the *current* level; never add a context-guessed `+1`.
-- **Never introduce a blank** where a newline is already pending (splits bodies
-  from heads).
-- Prefer `Syntax.reprint`; fall back to the exact source slice
-  (`getSubstring?`) when reprint is unavailable (it is, for some nodes, after
-  `updateLeading`).
-
-### 0.4 Line comments are a first-class layout hazard
-
-A `--` line comment eats the rest of its physical line. Therefore **nothing that
-contains a line comment may ever be flattened/inlined**: doing so lets the comment
-swallow an `else`, a `}`, a match arm, or the next list element. In v1 this became
-a predicate (`hasLineComment`) gating inlining and routing comment-bearing
-`if`/app/list/ctor/struct/match to verbatim. **In v2 this is a renderer law:** a
-`group` whose content carries a line comment is *un-flattenable* — it always
-renders in break mode. (Doc/Render, §4.)
-
-### 0.5 You cannot format Lean without (partially) elaborating it
-
-The deepest finding of the whole spike, and the one that reshapes the design:
-**there is no pure "parse then format" path for real Lean.** A file's own syntax
-is not fixed by its imports — it is *extended as the file elaborates*. `notation`,
-`macro`, `syntax`, `scoped` declarations, `open`, and `set_option` all mutate the
-parser tables, and much surface syntax (mathlib's `Type*`/`Sort*` auto-universe
-binder is the canonical example) is only available *after* elaborating the
-commands or imports that register it. Parsing and elaboration are interleaved by
-construction in Lean — that is what `Lean.Elab.Frontend` does, one command at a
-time: parse a command against the current tables, elaborate it (which may extend
-the tables), then parse the next.
-
-We proved this the hard way, in two steps:
-
-1. `Lean.Parser.testParseModule` (the harness) is a *test helper*, unfit for
-   production: it cannot parse `Type*`/`Sort*` even minimally, does not track
-   `namespace`/`open` scope across commands, prints diagnostics to stdout
-   (corrupting output), and recovers leniently (silently "succeeding" on
-   malformed input).
-2. Replacing it with the real **command-loop parser** — `parseHeader` + iterated
-   `parseCommand` with a `ParserModuleContext` whose `currNamespace`/`openDecls`
-   we advanced by hand — *still* failed: `Mathlib/Logic/Basic.lean` came back
-   with 251 of 319 commands carrying missing nodes. The missing tables were the
-   ones that only exist after *elaborating* the preceding commands. Hand-tracking
-   scope is not enough; the elaborator has to run.
-
-**Consequence — a first-class design constraint.** To format a file, the
-`Frontend` must load and run the elaborator over **some prefix/portion of the
-full artifact** — at minimum the imports, and in general enough of the file's own
-commands to keep the parser tables current. The *exact amount* is
-**as-yet-undetermined** and is now an explicit research question (§14.7):
-
-- The **floor** is: process the header (load imports' oleans) — already required,
-  already the multi-file-init bottleneck (§12).
-- The realistic requirement is the **interleaved frontend**: elaborate each
-  command far enough to register any tables it introduces, collecting the parsed
-  command `Syntax` as we go, then format the collected syntax. This is heavier
-  than a parse and can surface elaboration errors (`sorry`, missing instances)
-  that are *not* our concern — the Frontend must collect syntax regardless of
-  elaboration success.
-- Open optimizations (unmeasured): can we elaborate *lazily* — only far enough to
-  keep parsing correct, skipping proof bodies / tactic elaboration? Can a
-  per-file **elaboration budget** or a "parse-tables-only" fast path cover the
-  common case, falling back to full elaboration on demand?
-
-This does not touch the pure core (`Syntax → Doc → String`) — it makes the
-`Frontend` boundary bigger and more expensive, and it sharpens §12: the *parse*
-phase is not just contended (global init), it is genuinely *compute-heavy*
-(elaboration), which strengthens the case for process-per-file workers over a
-shared read-only environment.
-
-Practical fallback in the meantime: the safety gate (§4.2) degrades any file the
-current parser can't handle to identity, so shipping without the interleaved
-frontend is safe — such files simply pass through unformatted (this is why
-mathlib is a safe no-op today, and why the interleaved frontend is deferred with
-mathlib).
-
-### 0.6 Toolchain-version sensitivity is real
-
-The emitter built under `v4.31.0` but not `v4.32.0-rc1` until `maxRecDepth` was
-raised (the long `emitNode` `if`-chain overflows the elaborator's default in
-4.32). The trivia APIs also drift across versions (`Substring.Raw.toString`,
-`trimAscii`/`trimAsciiStart` vs `trim`, `getSubstring?`, dependent `String.Pos`).
-**v2 must pin the toolchain** and keep trivia access behind `Syntax/Trivia.lean`
-so a version bump touches one module, not the whole walker.
-
-### 0.7 The regression corpus (bugs that must never come back)
-
-Each of these was a real, meaning-changing mangle the prototype hit and fixed.
-They become golden round-trip + idempotency tests in v2:
-
-| # | Bug | Root cause | v2 guard |
-|---|---|---|---|
-| 1 | `class C` → `structure C` | hardcoded keyword in structure emitter | emit the actual `structureTk` token |
-| 2 | `let mut x` → `let x` | dropped optional `mut` modifier | preserve all binder/decl modifiers |
-| 3 | dropped `where` / `termination_by` | value emitter ignored trailing decls | emit full `declVal` incl. suffixes |
-| 4 | `⟨a,b⟩` → `⟨a, ,b⟩` | re-emitted comma atoms + own separators | separators come from one source only |
-| 5 | `∀ a extra` → `∀ aextra` | binder group emitted without spacing | space-join binders |
-| 6 | `fun _ =>` dropped `_` | fun emitter only kept `.ident` binders | emit all binder syntaxes |
-| 7 | `importFoo` / `openFoo` | keyword+path with no separator | header/open handlers |
-| 8 | comment eats `else`/`}`/arm | inlining a line-comment-bearing node | §0.4 renderer law |
-| 9 | equation-def arm dropped | match-alt path lost `⟨…⟩`/`{…}` patterns | opaque reproduction (§0.3) |
-| 10 | multi-line `by` flattened in arm | tactic block treated as "simple" | tactic/proof blocks never inline |
-
----
-
-## 1. Thesis
-
-The one architectural bet: **insert a Wadler/Leijen-style `Doc` IR between the
-syntax walker and the output string**, and split the monolith into
+The formatter's semantic contract for source `s`, style `p`, and result `r` is:
 
 ```
-walk   : Syntax → Doc          -- pure, expresses INTENT
-render : Style → Doc → String  -- pure, decides REALIZATION
+format p s = r
+
+tokens(r)       = tokens(s)
+comments(r)     = comments(s)
+imports(r)      = imports(s)
+syntaxSpine(r)  = syntaxSpine(s)
+format p r      = r
 ```
 
-The v1 emitter conflates walking and rendering — it appends strings through a
-hand-rolled pending-newline/pending-space state machine. That produced one
-house style cleanly, but it is the wrong shape for *many* styles: every knob
-(break-before-vs-after, align-or-don't, wrap-at-width, compact-vs-expanded
-`do`) becomes a special case threaded through the walker, and the combinations
-multiply.
+When any check fails, the ordinary result is `s`, accompanied by a diagnostic.
+The failure mode is therefore identity, never a plausible-looking damaged
+program.
 
-With a `Doc` IR the walker says "this is a group that *may* break," "these rows
-*may* align," "nest the continuation," "a blank line is *wanted* here" — and the
-`Style` plus the layout engine decide what actually happens. This is the seam
-that makes a large, granular knob set tractable, exactly as clang-format
-separates its token annotator / continuation indenter from `FormatStyle`.
+Renaming deliberately changes identifier tokens, so it has a different
+contract. A rename is planned over resolved declaration identities, applied in
+dependency order, reparsed, compiled, and committed only if the whole selected
+closure remains green. Formatting and renaming meet again at the fixed-point
+gate: the renamed tree must still be canonical under its style.
 
-The pure core (`Syntax → Doc → String`) is trivially testable, verifiable
-(idempotence, round-trip — §10), and parallelizable. Everything messy — Lean's
-process-global module init, the filesystem, io_uring — lives *outside* it in
-`Frontend` and `Driver`.
+## 2. Design laws
 
----
+The implementation is governed by a small set of laws. Features are admitted by
+showing how they preserve these laws, not by accumulating special cases until a
+corpus happens to pass.
 
-## 2. Design goals
+### 2.1 Custody
 
-Ordered. Earlier goals dominate later ones when they conflict.
+No emitted change may add, delete, reorder, split, or merge non-trivia tokens.
+Comment text and order are equally protected. This is checked after rendering,
+not inferred from the emitter's intentions.
 
-1. **Meaning-preserving.** `parse (format s)` is structurally equal to `parse s`
-   modulo trivia. A formatter that can change semantics is a bug factory. This
-   is the hard gate in CI.
-2. **Flexible enough for three genuinely different house styles.** The ontology
-   must express **Mathlib**, **Aniva**, and **Straylight** with the *same*
-   knob set. This is the falsification test: if some knob cannot express the
-   difference between two of these styles, the ontology is incomplete (§6).
-3. **Format mathlib4 with minimal churn.** Under the `Mathlib` preset, running
-   `--check` across mathlib4 should produce a small, principled diff. Validated
-   by a corpus harness (§9). This keeps us honest about flexibility and about
-   not being secretly opinionated.
-4. **Horizontal alignment as a first-class discipline** (§7). Struct fields,
-   match arms, `let`/`:=` blocks, record fields, trailing comments. Wired into
-   the `Doc` IR from day one, not bolted on.
-5. **Advanced blank-line policy** (§8). Blank-line placement is one of the
-   biggest levers on Lean readability and one of the most neglected. Treated as
-   a first-class subsystem with its own policy record.
-6. **Blindingly fast on a whole tree** (§11). io_uring for the I/O ends; a
-   shared-nothing core-pinned worker mesh for the parallel work. Honest about
-   the one real bottleneck (Lean's process-global parser init).
-7. **Idempotent and stable.** `format (format s) = format s`. No oscillation.
+### 2.2 Fixed point
 
----
-
-## 3. Architecture
+For fixed policy `p`:
 
 ```
-                  ┌─────────────┐
-   source ──────▶ │  Frontend   │ ──▶ Syntax        impure: quarantines global-init
-                  └─────────────┘
-                        │
-          ┌─────────────┼───────────────────────────┐
-          ▼             ▼                             ▼
-   ┌─────────────┐  ┌─────────────┐            ┌─────────────┐
-   │  Emit/walk  │  │   Rules     │            │   (later)   │
-   │ Syntax→Doc  │  │  lint pass  │            │  range map  │
-   └─────────────┘  └─────────────┘            └─────────────┘
-          │  ◀── Style (resolved config)
-          ▼
-   ┌─────────────┐
-   │ Doc/Render  │ ──▶ String
-   │Style→Doc→Str│
-   └─────────────┘
-          │
-          ▼
-   ┌─────────────┐
-   │   Driver    │  IO, tree-walk, io_uring, mesh, watch
-   └─────────────┘
+format p (format p s) = format p s
 ```
 
-The dividing line is **purity**. Layers L0–L2 (`Syntax`, `Doc`, `Style`,
-`Emit`, `Rules`) are pure and depend only on Lean core. Layers L3+ (`Config`,
-`Frontend`, `Driver`, `Cli`) are impure and may depend on `StdlibEx.*`.
+Idempotence is part of correctness. A second-pass change means that some layout
+decision depended on historical whitespace rather than syntax and policy.
 
----
+### 2.3 Origin independence
 
-## 4. The Doc IR
+If two inputs have the same relevant syntax and comment attachments, a
+prescriptive style should produce the same output. Source whitespace may be
+content, an explicit opaque boundary, or irrelevant trivia; it may not be an
+unacknowledged layout input.
 
-A Wadler/Leijen algebra extended with the two capabilities the clarifications
-made mandatory: **alignment tables** and **blank-line requests**.
+### 2.4 Local opacity
+
+Unsupported syntax is preserved at the smallest complete owner whose placement
+is stable. One opaque child must not force portable siblings or an enclosing
+declaration opaque. Opacity composes upward through explicit seams.
+
+### 2.5 Monotone policy
+
+Adding a rule or tightening a threshold may expose new violations, but it must
+not weaken unrelated policy. Overrides have explicit precedence, and exception
+sets compose by union. A later campaign changes the fixed point by changing the
+policy algebra, not by editing a hidden list of procedural exceptions.
+
+### 2.6 Loud uncertainty
+
+Parse failure, unresolved environment state, an unsafe candidate, a collision,
+or an unknown syntax shape is observable. Production may choose identity for a
+named case; it may not confuse identity with successful active formatting.
+
+## 3. The pipeline
+
+```
+                       project policy
+                             │
+source ──► frontend ──► syntax + trivia ──► emitter ──► Doc ──► renderer
+   │          │                                      │          │
+   │          └── imported env / elaboration         └── style ─┘
+   │                                                           │
+   └──────────────────────── safety gate ◄─────────────────────┘
+                                │
+                         candidate or identity
+```
+
+The phases are intentionally asymmetric.
+
+- The frontend is effectful and version-sensitive because Lean syntax is.
+- The emitter is a structural walk that records layout intent.
+- The document algebra is pure and independent of Lean.
+- The renderer decides line breaks from the document and resolved style.
+- The gate reparses and validates the completed candidate.
+- The driver coordinates files, environments, diagnostics, writes, and
+  concurrency; it does not decide layout.
+
+This separation is the central architectural choice. Syntax code should not
+manipulate columns, rendering code should not inspect parser kinds, and a worker
+pool should not acquire semantic authority merely because it can write files.
+
+## 4. The frontend: Lean is not context-free
+
+Real Lean modules cannot in general be parsed against a grammar fixed at process
+startup. Imports install syntax. Commands within the file install more syntax.
+Namespaces, scoped notation, macros, and options change how subsequent bytes are
+read. The faithful model is Lean's own frontend: parse a command, elaborate it
+far enough to update the environment, then parse the next command.
+
+lean4fmt therefore uses a graduated frontend:
+
+1. load the imported environment under the target repository's toolchain;
+2. take the cheap parser path where it is sufficient;
+3. fall back to the interleaved frontend when file-local syntax demands it;
+4. elaborate proof bodies as `sorry` for table discovery, preserving their
+   parsed syntax while avoiding irrelevant proof-search cost;
+5. retain source ranges and trivia needed by reproduction and resolution.
+
+The target toolchain is part of the input. Lean syntax kinds and compiled
+environments are version-coupled, so foreign-tree census runs build and execute
+lean4fmt under that tree's pinned `lean-toolchain`.
+
+Frontend failure is not an invitation to guess. The file returns unchanged with
+a parse diagnostic.
+
+## 5. The document algebra
+
+The emitter does not print strings. It constructs `Doc`, a Wadler–Leijen-style
+algebra extended for source transformation:
+
+- `text`, concatenation, `line`, `softline`, and `hardline`;
+- `group`, `nest`, `align`, and `flatten`;
+- `fillSep` for width-aware packing;
+- `alignTable` and `align_or` for bounded alignment;
+- `blank` for policy-mediated vertical space;
+- `pad` for width reserved by a caller-owned suffix;
+- `textRaw` for comment content;
+- `verbatim` for an opaque source fragment with a known base indentation.
+
+The distinction between intent and realization matters. `line` means “space if
+this group fits, otherwise a line break”; it does not mean “look at the source
+and copy whatever was there.” `blank 1` requests vertical space; the renderer
+may clamp it according to context and policy. `align_or` makes the fallback
+layout part of the document rather than an emergency renderer heuristic.
+
+The core concatenation operation forms a monoid:
+
+```
+nil <> d = d
+d <> nil = d
+(a <> b) <> c = a <> (b <> c)
+```
+
+Those simple laws are valuable. They let emitters assemble prefixes, values,
+comments, and suffixes independently without smuggling layout state between
+them.
+
+### 5.1 Rendering
+
+Rendering is a bounded choice between flat and broken forms. A group is flat
+only when its measured width fits and its content is flattenable. Nesting affects
+indentation only after a break. Alignment binds future breaks to the current
+column. No emitter guesses the current column.
+
+Line comments are unflattenable. If `--` were moved into the middle of a line,
+it could consume a delimiter, an `else`, or the next arm. The renderer therefore
+treats the presence of a line comment as a semantic layout constraint.
+
+### 5.2 Opaque reproduction
+
+Whole-language coverage requires a principled identity element for unsupported
+subtrees. `verbatim source baseIndent` preserves the fragment's bytes while
+allowing it to be placed at a stable owner seam. Reproduction obeys three rules:
+
+1. preserve content and relative indentation;
+2. re-anchor only when the owner explicitly controls the new base column;
+3. never infer a continuation indent from the fragment's previous placement.
+
+Opaque is not failure. It is a typed boundary between what the formatter can
+currently derive and what it must hold in trust. Coverage accounting makes the
+cost visible so the boundary can move deliberately.
+
+## 6. The emitter: ownership before appearance
+
+The emitter is organized by syntax family—commands, declarations, terms,
+binders, do-notation, tactics, and tokens—but its deeper abstraction is the
+seam.
+
+A seam is a place where two independently meaningful pieces may be joined: a
+declaration head and value, a match pattern and arm body, a structure field and
+its value, a `where` introducer and its equations. Every seam owns:
+
+- the separator tokens;
+- the comments between its children;
+- whether a flat join is legal;
+- the indentation of the broken form;
+- the smallest safe opaque fallback.
+
+This ownership rule prevents the two dominant formatter bugs: comments emitted
+twice because both neighbors claimed them, and comments lost because neither
+did. It also enables per-piece degradation. An unsupported equation pattern can
+remain exact while adjacent equations are actively formatted.
+
+Token respacing is the leaf case of the same model. Canonical spacing is decided
+from syntax-aware token pairs. Tokens whose payload or adjacency is
+whitespace-sensitive remain under an explicit owner. Raw substring tests are
+not durable classifiers; syntax kind and source range are.
+
+## 7. Style is data
+
+A style is a product of independent policy groups: layout, breaking, alignment,
+blank lines, spacing, imports, comments, naming, and linting. Presets provide
+coherent starting points; project configuration and command-line options refine
+them.
+
+Project configuration uses a deliberately small declarative subset of Lean in
+`fmt.lean`:
 
 ```lean
-inductive Doc where
-  -- Wadler/Leijen core
-  | nil
-  | text     (s : String)               -- must not contain '\n'
-  | cat      (a b : Doc)                 -- concatenation; monoid with `nil`
-  | line                                 -- flat: " "   ; broken: newline+indent
-  | softline                             -- flat: ""    ; broken: newline+indent
-  | hardline                             -- always newline+indent
-  | group    (d : Doc)                   -- try flat; break the whole group if it won't fit
-  | nest     (n : Int) (d : Doc)         -- shift the break-indent of `d` by n
-  | align    (d : Doc)                   -- set break-indent to the current column
-  -- extensions
-  | alignTable (spec : ColSpec) (rows : Array Row)  -- horizontal alignment (§7)
-  | blank      (req : BlankReq)          -- a *request* for vertical space (§8)
-  | flatten    (d : Doc)                 -- force flat rendering of `d`
-  | textRaw    (s : String)              -- verbatim (comments): may contain '\n'
-  | verbatim   (src : String) (baseIndent : Nat)  -- opaque reproduction (§4.1)
+def preset := "straylight"
+def layout.lineWidth := 100
+def linting.symbolFloor := 3
+def linting.symbolAllow.1 := "α,β"
 ```
 
-`cat` with `nil` is a monoid; `flatten` distributes over `cat`; these laws are
-provable and pin the renderer (§10).
+The file is parsed, not executed. Unknown keys and malformed values are errors.
+This keeps policy reviewable, toolchain-independent, and safe to discover while
+walking an untrusted tree.
 
-### Rendering
+### 7.1 Patch algebra
 
-Rendering is a single recursive walk carrying `(column, indent, mode)` where
-`mode ∈ {flat, break}`. `group` performs the standard "does the flattened width
-fit in `lineWidth - column`?" test and picks a mode for its subtree.
+A `style_patch` contains optional policy groups. Applying a patch replaces only
+present groups. Patch composition is right-biased: later policy wins.
 
-Two extensions need local, non-standard handling:
-
-- **`alignTable`** — the renderer measures each cell in flat mode, computes
-  per-column widths (capped by `Alignment.maxDelta`), and emits padded rows.
-  Measurement is *local* to the table, which is exactly the "alignment run"
-  semantics we want (§7).
-- **`blank`** — the renderer maintains a *pending vertical space* counter,
-  separate from the character stream. `hardline`, `line`/`softline` in break
-  mode, and `blank` requests all feed it; the counter is resolved against the
-  `BlankLines` policy at the next non-blank emission (collapse, clamp to
-  min/max, respect context). This generalizes v1's `pendingNewlines` into a
-  policy-driven mechanism (§8).
-
-Rendering is pure and total; it never inspects `Syntax`. It is the natural place
-to later hang **format-range** (§ open questions) via a position map, but we do
-not build that now.
-
-**Renderer law (from §0.4).** A `group` whose content carries a line comment
-(`--`) is *un-flattenable*: it must render in break mode. The walker marks such
-groups; the renderer honours it unconditionally. This is not a heuristic — it is
-required for meaning preservation, since flattening would let the comment swallow
-following tokens.
-
-### 4.1 Opaque reproduction (the verbatim node)
-
-Whole-language coverage requires an escape hatch for constructs we do not (yet)
-actively restyle — tactic blocks, `where`/`let rec`, `calc`, custom-syntax DSLs,
-exotic patterns (§0.3). This is a Doc node:
-
-```lean
-  | verbatim (src : String) (baseIndent : Nat)   -- reproduce source, re-anchored
-```
-
-The walker produces `verbatim` for any subtree without an active formatter,
-capturing the exact original text (`Syntax.reprint`, or the source slice via
-`getSubstring?` when reprint is unavailable). The renderer re-anchors it:
-
-- compute the block's own minimum indent over **all** non-blank lines
-  (`baseIndent`), including the first;
-- dedent every line by `baseIndent`, re-indent to the renderer's *current*
-  indent level — never a context-guessed offset;
-- strip trailing whitespace only; do not add a blank when a newline is already
-  pending.
-
-Because indent is compositional in the Doc IR (`nest`/`align`), a `verbatim`
-node nested inside an actively-formatted context re-anchors correctly and
-idempotently by construction — the class of bugs in §0.2 cannot recur. As active
-formatters are added over time, they simply replace `verbatim` for those kinds;
-coverage grows monotonically and the safety gate (§4.2) guarantees every
-intermediate state is still correct.
-
-### 4.2 The runtime safety gate (from §0.1)
-
-The driver wraps single-file formatting in a self-checking gate:
+For patches `a`, `b`, and `c`, and empty patch `ε`:
 
 ```
-format s  ⇒  s'
-  require  tokens(parse s) == tokens(parse s')      -- meaning preserved
-  require  format s' == s'                           -- idempotent (fixed point)
-  require  header(s') imports == header(s) imports   -- imports stay at the top
-  otherwise: emit s unchanged (identity is always safe) and flag the file
+(a ++ b) ++ c = a ++ (b ++ c)
+ε ++ a = a
+a ++ ε = a
 ```
 
-With the v2 Doc core these checks are expected to always pass; the gate exists so
-that on *any* input — a mathlib file using a construct we haven't taught the
-walker, a future Lean syntax — we degrade to identity rather than to a mangle. It
-is the mechanism that lets us honestly claim "never worse than input" on corpora
-we have not yet exhaustively covered. (The gate reparses via `Frontend`, §0.5, so
-it is only as strong as the parser — another reason `Frontend` must be real.)
+The operation is intentionally not commutative; precedence is meaningful.
 
----
+A policy tree is an ordered list of path-rooted patches. Resolution walks from
+root to leaf and applies every matching patch in order. Tree overlay is list
+concatenation, so its associativity follows directly. Component-wise prefix
+matching prevents `Core` from accidentally matching `CoreCodec`.
 
-## 5. The Style ontology
+This gives local policy a proof-amenable meaning: a directory override is a
+function on styles, not an imperative callback. Tightening relations can be
+defined per lint axis, and patches can be checked for preservation of those
+relations.
 
-clang-format resolves `Style ← BasedOnStyle preset ← explicit overrides ←
-.clang-format`. We mirror it with three types.
+### 7.2 Exception algebra
 
-```lean
--- Fully-resolved config the renderer reads. Grouped into sub-records so that
--- --help, docs, and presets stay navigable.
-structure Style where
-  layout     : Layout       -- width, indent, continuation indent
-  breaking   : Breaking     -- where/how to break signatures, binders, do, if
-  alignment  : Alignment    -- the alignment discipline (§7)
-  blankLines : BlankLines   -- the blank-line policy (§8)
-  spacing    : Spacing      -- spaces around operators, in brackets, after kw
-  imports    : Imports      -- grouping/ordering of imports
-  comments   : Comments     -- `--foo`→`-- foo`, doc-comment placement
-
--- Overrides / config deltas: the same shape, every field Optional, with an
--- `Append` where the right operand wins on `some`. CLI flags, project config,
--- and per-directory config are all `StylePatch`es merged in precedence order.
-structure StylePatch where
-  layout     : Option LayoutPatch
-  breaking   : Option BreakingPatch
-  ...
-
--- A preset is just a `Style` value (a named base).
-def resolve (base : Preset) (patches : List StylePatch) : Style :=
-  patches.foldl applyPatch base.toStyle
-```
-
-Choice-knobs are enums with `Repr`/`FromString` so config parsing and
-`--set group.key=value` are mechanical:
-
-```lean
-inductive ColonPlacement | breakBefore | breakAfter
-inductive AlignMode      | always | whenShort | never
-inductive BlankPolicy    | preserve | impose | normalize
-inductive BinderLayout   | oneLine | onePerLine | fill
-```
-
-### Config is a `.lean` file (clarification #1)
-
-The project config is Lean source that evaluates to a `StylePatch`:
-
-```lean
--- .lean4fmt.lean
-import Lean4Fmt.Style
-open Lean4Fmt.Style
-
-def config : StylePatch := Straylight.patch {
-  layout    := { lineWidth := 100 }
-  alignment := { structFields := .always, matchArms := .whenShort }
-  blankLines := { betweenTopLevelDecls := 1, maxConsecutive := 1 }
-}
-```
-
-Benefits: no config-language parser to build or maintain; presets are ordinary
-imports; the full type checker validates the config; `--set` on the CLI is just
-another `StylePatch`. Cost: loading config drags in the frontend. Mitigation:
-config elaboration is cached per-invocation and is independent of the files
-being formatted, so it happens once. `Preset` values themselves are plain data
-and require no elaboration for the built-in styles.
-
----
-
-## 6. Presets (the flexibility test)
-
-Three presets ship, and their *coexistence under one knob set* is the acceptance
-test for the ontology (goal #2).
-
-| Preset | Origin | Notes |
-|---|---|---|
-| **Straylight** | `DESIGN.md` style guide | House style. Width 100, horizontally dense, break-*after* colon, align struct fields and short match arms, assertive-but-tasteful blank-line policy. This is the fully-specified one today. |
-| **Mathlib** | reverse-engineered from mathlib4 | Aspirational: tuned until `--check` over mathlib4 yields minimal churn (§9). Consistency of mathlib4 itself is unknown; the harness measures it. |
-| **Aniva** | the `aniva` Lean 4 style | A known-clean community style (see `~/src/vendor/Pantograph`). Specifics TBD; captured as a preset once pinned down. Placeholder until then. |
-
-Design consequence: if pinning down **Aniva** or **Mathlib** reveals a
-distinction the knob set cannot express, that is a finding — we extend the
-ontology, we do not hardcode. The three-preset requirement is deliberately
-chosen to stress the ontology early.
-
-> **Straylight style — open thread.** The maintainer has strong, not-yet-fully-
-> transcribed beliefs about Lean readability (esp. blank-line discipline and
-> alignment). `DESIGN.md` is the current seed; the Straylight preset spec is a
-> living document to be filled in.
-
----
-
-## 7. Alignment subsystem (clarification #3 — required)
-
-Horizontal alignment is a first-class discipline, expressed via the
-`alignTable` `Doc` node and governed by the `Alignment` sub-record.
-
-### What gets aligned
-
-| Site | Row shape | Knob |
-|---|---|---|
-| Struct fields | `[name, ":", type, default?]` | `alignment.structFields` |
-| Match arms | `[pattern, "=>", body]` | `alignment.matchArms` |
-| `let`/`have` blocks | `[name, ":=", value]` | `alignment.letBlocks` |
-| Record-instance fields | `[field, ":=", value]` | `alignment.recordFields` |
-| Trailing `--` comments | `[code, comment]` | `alignment.trailingComments` |
-| Binder types (opt.) | `[name, ":", type]` | `alignment.binderGroups` |
-
-### Run semantics
-
-An alignment *run* is a maximal sequence of consecutive alignable items with no
-interruption. The **walker** groups a run into one `alignTable`; the renderer
-measures and pads it. Runs are interrupted by:
-
-- a blank line (blank-lines and alignment interact deliberately — a blank line
-  both separates paragraphs *and* resets alignment, matching clang-format's
-  `AlignConsecutive*` semantics),
-- a non-conforming line (different row shape),
-- a comment on its own line (unless trailing-comment alignment is active).
-
-### Guardrails
-
-`AlignMode` controls each site: `.always`, `.whenShort` (align only if the run's
-column delta stays under `alignment.maxDelta`), or `.never`. The
-`maxDelta` cap directly encodes the `DESIGN.md` rule *"don't align when it would
-create excessive whitespace"* — we never produce the ragged
-`| .meshDataFromPeer       => …` anti-pattern.
-
-Because measurement happens in flat mode, alignment composes with breaking: a
-cell that itself must wrap opts out of the column grid for that row rather than
-forcing the whole table wide.
-
----
-
-## 8. Blank-line subsystem (clarification #3 — required)
-
-> "This is one of the ways Lean is fuckin' unreadable."
-
-Blank lines are modeled as *requests* (`Doc.blank`) resolved by policy, never as
-raw newlines emitted by the walker. The `BlankLines` sub-record:
-
-```lean
-structure BlankLines where
-  policy               : BlankPolicy   -- preserve | impose | normalize
-  betweenTopLevelDecls : Nat
-  betweenImportGroups  : Nat
-  afterNamespaceOpen   : Nat
-  beforeNamespaceEnd   : Nat
-  beforeDocComment     : Nat           -- blank before a decl's doc comment
-  beforeSectionBanner  : Nat           -- blank around box-drawing banners
-  afterSectionBanner   : Nat
-  betweenDeclKinds     : Bool          -- blank between runs of different decl kinds
-  aroundBlockComments  : Nat
-  insideDoPhases       : Bool          -- blank between a `let`/`have` run and the tail expr
-  maxConsecutive       : Nat           -- clamp runs of blanks
-```
-
-`BlankPolicy` sets the overall stance:
-
-- **`preserve`** — honor the author's single blanks; only clamp to
-  `maxConsecutive` and strip trailing/leading. Minimal-churn stance (good for
-  the **Mathlib** preset).
-- **`impose`** — the formatter decides blank placement entirely from policy,
-  ignoring the author's blanks. Opinionated stance (candidate for
-  **Straylight**).
-- **`normalize`** — a middle path: impose the *structural* blanks (between
-  decls, around namespaces, import groups) but preserve author blanks *within*
-  bodies.
-
-The renderer's pending-vertical-space counter (§4) is where this resolves:
-requests and structural hardlines feed the counter; at the next real emission
-the policy clamps and contextualizes it. Because it is centralized, we get
-"collapse three blanks to one," "exactly one blank between top-level decls," and
-"blank before every doc comment" for free and consistently.
-
----
-
-## 9. Mathlib4 conformance harness (goal #3)
-
-A corpus differential test, in the spirit of `StdlibEx.Proof.differential`.
+Some safety failures are known to require identity until their syntax class is
+modeled. Identity-clearance files contain exact paths and compose by set union:
 
 ```
-for each file f in mathlib4:
-    original  := read f
-    formatted := lean4fmt --style Mathlib f
-    record diff(original, formatted)      -- via StdlibEx.Bytes.memmem for first-diff
-report: files touched, total hunks, churn histogram
+A ∪ (B ∪ C) = (A ∪ B) ∪ C
+A ∪ B = B ∪ A
+A ∪ A = A
 ```
 
-Goal: drive churn toward a small, *principled* residue (places where mathlib4 is
-internally inconsistent and we impose one choice). The harness doubles as:
+A clearance is consulted only after a candidate fails the semantic gate. It
+cannot make a changed candidate valid; it can only turn a known warning into a
+named identity result. Census accounting assigns that file zero active shipped
+bytes. Unknown failures remain loud, and the production gate bounds the size of
+the clearance set so exceptions may shrink but not silently grow.
 
-- a **flexibility check** — large unexplained churn means the `Mathlib` preset
-  cannot express mathlib4's conventions, i.e. the ontology is too rigid;
-- a **regression guard** — churn must not grow between releases;
-- a **fuzz-ish crash test** — the whole of mathlib4 must format without error.
+## 8. The runtime safety gate
 
-We do the same, at smaller scale, for a corpus in the `aniva` style and for
-our own tree under **Straylight**.
+The gate is the boundary between an attractive candidate and a releasable
+result. It checks:
 
----
+1. the candidate reparses under the relevant environment;
+2. leaf tokens are preserved;
+3. comment content is preserved;
+4. the syntax-kind spine is preserved;
+5. the import header is preserved;
+6. formatting the candidate again produces identical bytes.
 
-## 10. Verification obligations
+On success, the candidate ships. On failure, the original source ships. A debug
+artifact records the failed proof for campaign work.
 
-The Doc split makes these *statable*, which the v1 string-append emitter did
-not. The prototype (§0.1) proved the two runtime invariants below are the
-correctness spine; here they are also the CI gates.
+The gate is deliberately redundant with construction. The document algebra and
+emitter are designed to preserve meaning locally; the gate checks the complete
+artifact globally. Local reasoning makes progress tractable. Global validation
+makes mistakes survivable.
 
-- **Doc algebra laws.** `cat`/`nil` monoid; `flatten` distributes over `cat`;
-  `group (flatten d) = flatten d`. Provable; pins the renderer.
-- **Idempotence.** `format (format s) = format s`, byte-identical, over a corpus.
-  The prototype's highest-yield bug detector (§0.1); also the runtime gate (§4.2).
-- **Token-stream preservation.** `tokens (parse (format s)) = tokens (parse s)`.
-  Strictly stronger than "still parses"; catches drop/merge/reorder that keep the
-  file parseable (§0.7). Runtime gate (§4.2) + CI.
-- **Round-trip safety.** `parse (format s) ≈ parse s` (structural equality
-  modulo trivia). The load-bearing CI gate — a formatter must never change
-  meaning.
-- **Alignment/blank determinism.** Same input + same `Style` ⇒ byte-identical
-  output. No dependence on iteration order or hashing.
+The token and spine checks are not a proof of Lean semantic equivalence in the
+abstract. They are a strong, executable refinement appropriate to a formatter
+whose authorized operation is trivia movement. The compile and corpus gates add
+independent evidence at project scale.
 
-Any future `@[extern]` fast path in the renderer's hot loop is gated by
-`StdlibEx.Proof.differential` against the Lean reference, per the house Track-A
-discipline.
+## 9. Linting: hazards before taste
 
----
+Formatting answers “where should this syntax be laid out?” Linting answers
+“should this syntax have been written this way?” Keeping them distinct avoids
+surprising semantic edits and permits stricter house policy without imposing it
+on foreign code.
 
-## 11. Module tree
+The lint system begins with mechanical hazards:
 
-Package `lean4fmt`, root namespace `Lean4Fmt.*`, following StdlibEx conventions
-(namespace = path, barrel modules, banner comments).
+- minimum symbol length with per-length allowlists;
+- separate allowlists for declarations, fields, binders, recursive helpers,
+  lambdas, and local lets;
+- casing policy by semantic axis;
+- single-expression match arms and other screen-shape constraints;
+- state-bundle and naming conventions used by systems Lean.
 
-```
-Lean4Fmt.lean                    -- lib barrel
-Main.lean                        -- executable root (thin: Cli → Driver)
-Lean4Fmt/
-├── Syntax/                      L0  pure, Lean-core only
-│   ├── Kinds.lean               --   SyntaxNodeKind constants + classifiers (isBinOp, …)
-│   ├── Trivia.lean              --   leading/trailing extraction, comment detect/normalize
-│   └── Query.lean               --   role-based child access, safe indexing
-│
-├── Doc.lean                     L0  pure, Lean-core only  ── THE NEW CORE
-├── Doc/
-│   ├── Core.lean                --   the Doc inductive + monoid + laws (§4)
-│   ├── Builders.lean            --   sepBy, brackets, joinWith, alignTable helpers
-│   └── Render.lean              --   width-aware layout: Style → Doc → String
-│
-├── Style.lean                   L1  pure, depends on nothing (Render depends on it)
-├── Style/
-│   ├── Options.lean             --   resolved `Style` + option enums, grouped sub-records
-│   ├── Patch.lean               --   `StylePatch` (all-Option) + Append merge semantics
-│   ├── Preset.lean              --   Straylight / Mathlib / Aniva
-│   └── Resolve.lean             --   resolve : Preset → List StylePatch → Style
-│
-├── Emit.lean                    L2  pure: Syntax → Doc   (depends Syntax, Doc, Style)
-├── Emit/
-│   ├── Monad.lean               --   EmitM = ReaderT Style (Writer Diagnostic) building Doc
-│   ├── Module.lean              --   header/imports/namespace/section/end
-│   ├── Decl.lean                --   def/theorem/abbrev/opaque/axiom/instance + modifiers
-│   ├── Command.lean             --   structure/inductive/class + deriving
-│   ├── Term.lean                --   app/fun/let/match/if/binop/literals/struct-inst
-│   ├── DoNotation.lean          --   do/doSeq/doLet/doLetArrow/doFor/doIf/doMatch
-│   └── Tactic.lean              --   (later) by-blocks, tactic seqs
-│
-├── Rules.lean                   L2  pure lint pass (depends Syntax, Style)
-├── Rules/
-│   ├── Diagnostic.lean          --   Diagnostic, Severity, render (moved out of v1 Emitter)
-│   ├── Trivia.lean              --   trailing-ws, comment spacing, file-ending
-│   └── Naming.lean              --   (later) naming, import ordering
-│
-├── Config.lean                  L3  loads .lean4fmt.lean → StylePatch
-├── Config/
-│   ├── Discover.lean            --   walk up dirs for .lean4fmt.lean (like .clang-format)
-│   └── Load.lean                --   elaborate the config file to a StylePatch (cached)
-│
-├── Frontend.lean                L3  IMPURE quarantine — the global-init reality
-├── Frontend/
-│   ├── Parse.lean               --   interleaved parse+elaborate (§0.5): run the
-│   │                            --   frontend far enough to keep parser tables
-│   │                            --   current, collect command Syntax, quietly
-│   ├── Gate.lean                --   runtime safety gate (§4.2): token-preserve +
-│   │                            --   idempotent + header + degrade-to-identity
-│   └── Session.lean             --   how much to elaborate (§0.5/§14.7); superset-env
-│                                --   vs process-per-file (§12)
-│
-├── Driver.lean                  L4  IMPURE orchestration — StdlibEx.{IOUring,Fanotify,Logging,Fifo}
-├── Driver/
-│   ├── Format.lean              --   single file: parse → emit → render → string
-│   ├── Check.lean               --   diff vs disk (StdlibEx.Bytes.memmem first-diff), exit codes
-│   ├── Walk.lean                --   discovery via StdlibEx.Linux.Fanotify.scanTree
-│   ├── Io.lean                  --   batched read/write via StdlibEx.IOUring.Loop
-│   ├── Pool.lean                --   parallel workers via StdlibEx.IOUring.Mesh + Fifo (incubator, §11.2)
-│   └── Watch.lean               --   format-on-change via Fanotify
-│
-└── Cli.lean                     L5  arg schema-as-data via StdlibEx.CLI; builds StylePatch
-```
+Allowances are scoped data, not branches in lint code. Traditional mathematical
+trees may admit one-character Greek binders; systems trees may reject them.
+Instance binders, indices, and other terms of art can be named explicitly by
+policy. This makes disagreement cheap: change the policy, rerun to a new fixed
+point, and retain the same machinery and laws.
 
-DAG, bottom-up: `Syntax`,`Doc` → `Style` → `Emit`,`Rules` → `Config`,`Frontend`
-→ `Driver` → `Cli`/`Main`. Nothing in L0–L2 touches IO or `StdlibEx`.
+## 10. Renaming: identity, dependency, transaction
 
-### 11.1 StdlibEx adoption, staged
+Casing conversion is not formatting. Renaming changes tokens, can change name
+resolution, and crosses file boundaries. Its unit of work is therefore a
+dependency closure, not a syntax node.
 
-`StdlibEx.*` sits *below* lean4fmt in the project DAG (root namespace
-`StdlibEx.*`, no upward edges). Adopt in stages so the pure core never blocks on
-the substrate.
+### 10.1 Casing kernel
 
-| Stage | Edge | Consumer | Payoff |
-|---|---|---|---|
-| 1 (now) | `StdlibEx.CLI` | `Cli.lean` | schema-as-data arg surface; dogfoods the parser |
-| 1 (now) | `StdlibEx.Bytes.memmem` | `Driver.Check` | fast first-differing-region diff; round-trip byte compare |
-| 2 | `StdlibEx.Linux.Fanotify.scanTree` | `Driver.Walk` | `(path, mtime, size)` discovery + mtime skip-cache |
-| 2 | `StdlibEx.Logging` | `Driver.*` | structured `--verbose` output |
-| 3 | `StdlibEx.IOUring.Loop` | `Driver.Io` | batched open/statx/read/close + batched writes |
-| 4 | `StdlibEx.IOUring.Mesh` + `Datastructures.Fifo` | `Driver.Pool` | shared-nothing core-pinned workers |
-| test | `StdlibEx.Proof.differential` | verification | gate any `@[extern]` renderer fast path |
+The casing kernel converts among preserved, snake, camel, and upper-camel forms.
+It retains leading underscores and trailing primes, handles digit and acronym
+boundaries, and is guarded for idempotence. Policy maps declaration kinds onto
+four axes: namespaces/modules, types, theorems, and terms.
 
-### 11.2 Parallelism primitive incubation (clarification #4)
+### 10.2 Resolution before rewrite
 
-The core-pinned worker-pool abstraction (`Mesh` + `Fifo` work queue + `MSG_RING`
-handoff) is **incubated in `Driver/Pool.lean`**. Once its interface is clean and
-proven on a real workload, it is promoted into `StdlibEx` (candidate home:
-`StdlibEx.IOUring.Mesh` helpers, or a new `StdlibEx.Parallel`). We do not design
-the general abstraction up front; we grow it from the formatter's concrete need
-and lift it when it stops changing.
+Textual substitution is unsound. Two identical spellings may resolve to
+different constants; projections require field identity; macro expansions and
+quotations may carry occurrences not recoverable from a simple token map.
 
----
+The production path elaborates with info trees enabled and records source byte
+ranges paired with resolved full names. Only occurrences resolving to a planned
+declaration identity are rewritten. Generated constants are collision evidence
+but not rename authority. Local binders also enter the collision set so a type
+cannot be renamed onto a value that would shadow it.
 
-## 12. io_uring reality (honest version)
+The planner rejects keyword targets, same-namespace collisions, module hazards,
+and ambiguous identities. A skip is reported and is monotone: additional
+knowledge may remove candidates from a plan, never authorize an uncertain one.
 
-io_uring is not a "parallel format" button. The actual bottleneck: **parsing
-needs a Lean `Environment` with the file's imports' syntax extensions, and
-Lean's module init is process-global and not re-entrant** (`interpretedModInits`
-— the documented multi-file limitation in `DESIGN.md`). That constrains the
-*parse* phase, not the *emit* phase.
+### 10.3 DAG order
 
-- **I/O ends → io_uring's home turf.** Reading N files, writing N formatted
-  files, the watch-mode change feed — classic batched I/O; `IOUring.Loop`
-  collapses each to one syscall per iteration. Uncomplicated win.
-- **Emit/render → embarrassingly parallel, pure.** `Syntax → Doc → String` has
-  no shared state; distribute work units across core-pinned `IOUring.Mesh`
-  workers via `MSG_RING`. This is where the speed actually comes from once
-  files are parsed.
-- **Parse → the contended *and* compute-heavy phase.** §0.5 sharpened this:
-  parsing requires running the elaborator (to keep parser tables current), so
-  this phase is not merely gated by global init — it is genuinely expensive.
-  Two strategies, decided in `Frontend/Session`:
-  1. **Superset environment** — build one `Environment` for the union of imports
-     across the tree, once, reuse it read-only per file. Amortizes import load;
-     but each file still needs its *own* commands elaborated far enough to parse
-     (§0.5), so this helps the header floor, not the per-file elaboration cost.
-     Also assumes a coherent closure and that read-only reuse is safe.
-  2. **Process-per-file worker pool** — each worker is its own process (fresh
-     global state), fed paths over the mesh. Robust against the init trap; costs
-     spawn + per-worker env build + per-file elaboration, amortized over many
-     files per worker.
-
-  **Lean:** ship (2) first for correctness (it sidesteps the global-init trap
-  and parallelizes the *expensive* parse+elaborate too), then pursue (1) as a
-  measured optimization. The pure core is unaffected either way — only
-  `Frontend/Session` and `Driver/Pool` change. How *little* elaboration we can
-  get away with per file (§14.7) directly sets this phase's cost.
-
-### 12.1 Measured resolution (2026-07-11) — the hybrid shipped
-
-Measurement inverted the lean above: **(1) superset-env is the shipped fast
-path, with (2) process-per-file demoted to a conflict fallback.** The facts
-that decided it:
-
-- **Per-file cost was never elaboration — it was env import.** Warm (env
-  prebuilt), full interleaved elaboration is 5–20ms/file on this corpus; the
-  200–680ms/file observed at process level was `processHeader` + startup. One
-  union `importModules (loadExts := true, leakEnv := true)` per invocation
-  removes it (`Frontend/Env.batchEnv`: header-scan → union → drop
-  unresolvables → import once).
-- **The import model is one-shot per process, by contract.**
-  `ImportingFlag.withImporting`'s `finally` sets `runInitializersRef := false`
-  after the FIRST `importModules`; a second in-process `loadExts` import
-  throws. (An in-process per-import-set env cache was tried first: 30GB peak
-  RSS of half-imported leaked closures before hitting the contract error.
-  Region pointer fix-ups are private pages — every extra env costs its closure
-  in real memory.) **The process is the runtime's unit of env isolation**; any
-  worker needing a different env is a process, which is what the mesh wanted
-  anyway.
-- **Superset conflicts are real**: 60/234 corpus files (the wire-format DSL
-  zoo — colliding syntax categories under co-import) fail to parse under the
-  union though fine under their own imports, and 6 of those conflict with
-  *each other*, so no static partition exists. Superset parsing stays safe for
-  the gate's guarantees either way (source and output are token-compared under
-  the SAME env; kept output is token-identical to input). Conflicted files
-  retry as one-file subprocesses (`--no-retry` guards recursion), spawned in
-  `LEAN4FMT_JOBS`-bounded waves. A tree that co-imports cleanly (mathlib, by
-  construction) takes zero retries.
-- **The main pass is IO tasks over the shared frozen env** (default task
-  priority = the runtime's core-sized pool; `leakEnv` marks the env
-  persistent — the LSP sharing model). Verified batch-idempotent and
-  fresh-run-deterministic under 32-way concurrency.
-
-Measured trajectory on the 234-file corpus, one invocation: 17.9s sequential →
-6.9s (retry waves) → **3.7s / 1.4GB peak** (pooled). Remaining: ~1.5s union
-import (the io_uring olean page-cache prewarm attacks this), ~2s retry waves
-(this repo's DSL quirk), <1s formatting. The io_uring roadmap (statx walk +
-prewarm + MSG_RING broker with refill mailboxes, subtree work units, sequential
-fast path for tiny batches) is unchanged — it now sits on top of a measured
-baseline instead of a guess.
-
----
-
-## 13. Roadmap
-
-- **P-1 — Prototype (done, locked in).** v1 `Emitter.lean` string-walker with an
-  opaque verbatim fallback. Reached 0-mangle / 0-non-idempotent / 0-fallback on
-  the continuity corpus; builds under 4.31 and 4.32. Its role is over: it is the
-  behavioural reference and the source of §0. Not shipped.
-- **P0 — Spine.** `Doc/Core` (incl. `verbatim` §4.1 + un-flattenable-comment law
-  §0.4) + `Doc/Render` + `Style/*` (Straylight only) + `Frontend/Parse`
-  (interleaved parse+elaborate, §0.5) + the runtime safety gate (§4.2). Port v1
-  `Emit/*` as a `Syntax → Doc` walker. **Wire into `Main.lean`, replacing
-  `ppModule`** (done in prototype form: exe now runs the emitter behind the gate;
-  the parser is still the `testParseModule` floor pending §0.5/§14.7). Reproduce
-  v1 output on `Bytes.lean`/`CLI.lean`; import the §0.7 regression corpus as
-  tests. Round-trip + idempotence + token-preservation gates green.
-- **P1 — Alignment & blank lines.** `alignTable` + `Alignment` record;
-  `Doc.blank` + `BlankLines` policy. Prove determinism.
-- **P2 — Ontology & presets.** `StylePatch` merge; `.lean4fmt.lean` discovery +
-  load; `Mathlib` and `Aniva` presets seeded; mathlib4 conformance harness
-  online (now unblocked by the real parser).
-- **P3 — Driver I/O.** `StdlibEx.CLI` arg surface; `Bytes.memmem` diffs;
-  `Fanotify.scanTree` discovery; `Logging`.
-- **P4 — Parallelism.** `IOUring.Loop` batched I/O; `IOUring.Mesh` worker pool
-  (incubator). Watch mode.
-- **P5 — Promotion.** Lift the clean worker-pool primitive into `StdlibEx`.
-
----
-
-## 14. Open questions
-
-1. **Straylight style spec.** The maintainer's readability beliefs (blank-line
-   discipline, alignment) need transcription into the Straylight preset. `DESIGN.md`
-   is the seed. (Owner: maintainer.)
-2. **Aniva style.** Pin down the concrete rules before writing the preset.
-   Reference corpus: `~/src/vendor/Pantograph`.
-3. **Mathlib preset tuning.** Iterative, harness-driven (§9). How much residual
-   churn is "acceptable" needs a number.
-4. **Superset-env safety.** ~~Validate whether one read-only `Environment` can
-   safely re-parse many files, or if (2) process-per-file is mandatory.~~
-   **Answered (§12.1)**: read-only sharing is safe and shipped (token
-   comparison happens under the same env on both sides); what fails is
-   *parseability* under conflicting co-imported syntax extensions — handled by
-   the subprocess retry, zero-cost on co-importable trees.
-5. **Format-range** (`--lines a:b`, clang-format style). **Deferred**
-   (clarification #5): not worth trouble on its own. Kept in mind only insofar
-   as it might tip an otherwise-marginal design choice in `Doc/Render`'s
-   position handling; we do not build the position map preemptively.
-6. **Real parser** — no longer "just a parser," **decided** by §0.5: formatting
-   requires *interleaved parse+elaboration* (`Frontend/Parse`), not a standalone
-   parser. Hand-tracking `namespace`/`open` scope is insufficient; the elaborator
-   must run to register notation. This is the gate that unblocks mathlib.
-7. **How much of the artifact must we elaborate?** (§0.5) — measured on
-   continuity (bench-elab, warm, env prebuilt): cheap parse 1–4ms/file, FULL
-   elaboration 5–20ms/file (2–7×), and `tablesOnly` via `debug.byAsSorry`
-   recovers only 0–12% — on systems code the cost is def/instance elaboration
-   and typeclass resolution, not proofs, so full-depth fallback is the shipped
-   default (`--elab auto`). **Still open for mathlib**, where proofs dominate
-   and `byAsSorry` should bite hard; re-measure there before assuming.
-
-### Deferred: mathlib validation
-
-mathlib's olean cache is fetched (`~/src/vendor/mathlib4`, `v4.32.0-rc1`) and the
-emitter compiles under that toolchain, but mathlib is **intentionally deferred**
-until we return with a real project tree: it is blocked purely on `Frontend/Parse`
-(§0.5), which is P0 work anyway. When P0 lands, the mathlib conformance harness
-(§9) comes online with no formatter changes. mathlib will still be there.
-```
-
----
-
-## 15. Coverage accounting (`--stats`)
-
-The construct-coverage number: how much code the tool actively formats versus
-reproduces verbatim because a construct is not yet ported. Tracked over time —
-the corpus gate prints it on every run — so reach regressions and progress are
-both visible.
-
-**Method.** The produced `Doc` records the attribution exactly: `.text` bytes
-are actively formatted output, `.verbatim` bytes are opaque reproduction,
-`.textRaw` bytes are comments/inter-form trivia (byte-exact by design — not a
-coverage failure). `Doc.stats` folds the tree; `lean4fmt --stats <files|dirs>`
-prints one `active verbatim trivia path` row per file plus the aggregate.
-Files the shared env cannot parse are measured in a one-file subprocess (own
-env); a file nothing can parse counts fully verbatim — passthrough is what it
-gets.
-
-**Baseline (2026-07-11, continuity corpus, 234 files):**
+If module `B` imports module `A`, renaming `A` changes facts consumed by `B`.
+Repository migration proceeds in topological waves over the import DAG:
 
 ```
-// files 234  bytes active=280595 verbatim=971135 trivia=923591
-// coverage: code-active 22.4%  (of all output: active 12.8%, trivia 42.4%)
+roots / providers  ──►  internal users  ──►  leaves / applications
 ```
 
-**Update 2026-07-12** — after inductive/structure/signature/fun/tuple/header/
-mutual/by-block/tactic-interior/§7-alignment/let-chain-seam/where-suffix/forall
-ports: **code-active 43.3%**. Current residue, re-instrumented: value
-safe-spans ~20% (interior-comment values in still-unported leaves — shrinks as
-leaves port), whole-decl fallbacks ~14% (mostly `instance` — the last big
-construct port), typeSpec residue ~12% (comment/too-wide types), correctly-
-verbatim ~19% (ceiling ≈81%), then the tactic tail (`simp`, `tacticHave__`,
-`Lean.cdot`), trivial command lines (`open`/`namespace`/`end`/`in`/`#eval`,
-~4%, nearly free), and comment-bearing match/list terms. The remaining work is
-two themes: the `instance` port, and pushing the seam model from statement
-level into expression level.
+Within a wave, independent modules may be processed concurrently. Between
+waves, the renamed providers are rebuilt so downstream resolution sees the new
+world. A reverse or leaf-first migration would produce stale imports and false
+resolution failures.
 
-**Where the verbatim bytes live** (per-kind instrumentation of `Emit.verbatim`,
-ranked; the reach backlog in priority order):
+### 10.4 Transaction boundary
 
-| share | bucket | disposition |
-|---|---|---|
-| ~20% | whole-decl fallbacks: `structure`/`inductive` (Command emitter is scaffold), `instance`, `where`-defs | port next — the AST-definition files are 100% verbatim on this alone |
-| ~19% | `declValSimple` safe-spans (where/termination suffixes, comment bails, multiline-verbatim leaves inside values) | shrinks as leaf constructs port |
-| ~15% | signature interiors: `typeSpec` + `explicitBinder` + arrows | mostly flat term layout — cheap ports |
-| ~11% | string literals, module docs, DSL quotations, idents | **correctly verbatim forever** — excluded from the honest can't-cope number |
-| ~5% | `byTactic` proof blocks | modest here; becomes the #1 bucket on mathlib |
-| ~4% | comment-bearing `let` chains (whole-term comment guard) | relaxation, same seam pattern as the do-block fix |
-| ~7% | tail: `mutual`, `tuple`, `fun`, `letrec`, module header | header is trivial and un-verbatims the import-barrel files |
+A rename wave is successful only when all of the following hold:
 
-Honest can't-cope is therefore ≈66% of code bytes today; the two big buckets
-plus signature interiors (≈35% of code combined) roughly triple active
-coverage, with a practical ceiling near 85–90% given the correctly-verbatim
-residue.
+- the plan is deterministic across repeated discovery;
+- every rewrite reparses;
+- the selected package closure compiles;
+- the formatter reaches a fixed point afterward;
+- pass two proposes no new rename or skip inconsistent with pass one.
+
+Failure aborts the wave. The build is not merely a test; it is the final oracle
+for namespace, macro, and generated-code interactions that no finite planner can
+claim to model completely.
+
+## 11. Concurrency without semantic drift
+
+Formatting files is parallelizable after their environments and policies are
+resolved. The driver uses bounded workers and deterministic result ordering.
+Writes occur only after each file's gate succeeds. Conflict retry is isolated so
+Lean's process-global frontend state cannot leak between incompatible import
+worlds.
+
+Renaming admits less parallelism. Files in the same dependency wave may be
+handled together, but wave boundaries are semantic barriers. Concurrency may
+reduce latency; it may not alter policy order, dependency order, diagnostics, or
+the committed result.
+
+Determinism is a correctness property. A run that sometimes discovers fewer
+declarations can accidentally authorize a collision. Accordingly, declaration
+identity, occurrence resolution, and collision evidence are harvested from the
+same elaboration whenever possible.
+
+## 12. Measurement: attempted is not shipped
+
+Coverage is evidence about the formatter's modeled surface, not a vanity score.
+The census divides code bytes into:
+
+- **active** — emitted from structural documents;
+- **verbatim** — preserved at an explicit opaque boundary;
+- **policy** — content intentionally outside formatting, such as literal payloads;
+- **rejected** — a candidate was attempted but the runtime gate returned identity;
+- **identity-cleared** — a known exact path returned identity by explicit policy.
+
+The campaign number is shipped active bytes divided by portable bytes. Rejected
+and identity-cleared files contribute zero shipped-active bytes even if their
+attempted pass traversed most of the file. This distinction prevented the
+project from declaring victory on output it would not actually release.
+
+The standing production lock over Mathlib currently records:
+
+- 8,245 files parsed;
+- zero missing statistics;
+- zero unclassified safety-gate rejects;
+- 113 exact identity clearances;
+- 81.8% active code bytes overall;
+- 91.9% shipped active bytes of the portable surface.
+
+`mathlib-full-gate.sh` makes these monotone bounds executable. The local corpus
+gate independently formats twice and requires zero drift and zero errors.
+
+## 13. How the frontier moves
+
+The development loop is a proof-guided burn-down:
+
+1. census a representative or complete tree;
+2. rank opaque reasons by shipped byte cost, not occurrence count;
+3. select one syntax family and collect focused witnesses;
+4. identify the smallest complete owner and its seams;
+5. implement structural emission or narrow the opaque boundary;
+6. run token, comment, spine, reparse, and fixed-point gates;
+7. run affected compilation and the home corpus;
+8. widen the census;
+9. encode the new lower bound and non-increase clearances;
+10. commit only the monotone gain.
+
+A failed experiment is useful if it sharpens a law. The campaign discovered,
+among other things, that source-newline-derived decisions drift, substring
+comment tests misclassify token payloads, a notation's stable owner may be its
+application rather than its visible node, and an unsupported child need not
+poison its siblings. Those facts belong in mechanisms and gates, not folklore.
+
+## 14. Adding a construct
+
+An implementation for a new syntax kind should answer these questions in order:
+
+1. What is the node's stable syntactic shape across supported Lean versions?
+2. Which child owns every delimiter and comment-bearing gap?
+3. What are the flat and broken documents?
+4. Which source bytes are true content rather than historical layout?
+5. Where is the smallest stable opaque fallback?
+6. Can a line comment make the flat form lexically unsafe?
+7. Does the construct introduce or depend on parser tables?
+8. Which focused fixture demonstrates each branch?
+9. Which existing wide and home gates could it regress?
+10. What measurable residue should decrease if the model is correct?
+
+If these questions do not have crisp answers, the construct is not ready for
+active formatting. Preserving it is the correct implementation.
+
+## 15. Boundaries
+
+lean4fmt does not attempt to prove arbitrary program equivalence. It does not
+execute project configuration. It does not silently normalize literal payloads,
+macro languages, or whitespace-sensitive notation. It does not treat a clean
+parse as proof that comments survived. It does not treat a successful first pass
+as proof of canonical layout. It does not rename a tree as a bag of strings.
+
+Nor is universal active formatting the only legitimate endpoint. A syntax class
+may be ceiling-only when its whitespace is content or when no stable owner exists
+under the available frontend. Such a classification must be explicit, local,
+measured, and reversible when the architecture improves.
+
+## 16. The standard of completion
+
+The tool is complete enough for a tree when:
+
+- every file either ships a validated fixed point or a named exact identity;
+- no unknown rejection is hidden;
+- policy resolution is deterministic from root to leaf;
+- formatting is independent of irrelevant source trivia;
+- rename plans are identity-aware, collision-safe, DAG-ordered, and build-green;
+- the corpus and production clearances prevent regression;
+- the remaining opaque surface is quantified and intelligible.
+
+That standard is intentionally stronger than “the output looks good.” Source
+code is accumulated thought. In a proof library, it is also part of the social
+machinery by which mathematics is checked, reviewed, taught, and extended. A
+formatter worthy of that material must make broad change cheap without making
+trust cheap.
+
+That is lean4fmt's purpose: not to impose one final appearance, but to provide a
+safe, compositional process by which a community can choose a style, reach its
+fixed point, change its mind, and reach the next one without surrendering the
+program in between.

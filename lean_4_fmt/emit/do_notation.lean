@@ -3,7 +3,7 @@
                                                      // LEAN4FMT // EMIT // DoNotation
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Open-recursion emitter for the DoNotation category (DESIGN_V2 §11): the `do`
+    Open-recursion emitter for the DoNotation category (DESIGN_V2 §6): the `do`
     block itself plus its binding statements (`doLet`, `doLetArrow`, `doReassign`,
     `doReassignArrow`, `doExpr` — their values walked so they lay out actively).
 

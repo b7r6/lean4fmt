@@ -3,11 +3,11 @@
                                                              // LEAN4FMT // EMIT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    The walker: `Syntax → Doc` (DESIGN_V2 §2/§11). `walk` is the single recursive
+    The walker: `Syntax → Doc` (DESIGN_V2 §3/§6). `walk` is the single recursive
     function; it dispatches on syntax kind to the per-category open-recursion
     emitters (`Emit/Module`, `Emit/Term`, …), passing itself so they can recurse.
 
-    SCAFFOLD: every kind currently routes to verbatim reproduction (§4.1) — a
+    The safe default routes an unsupported kind to verbatim reproduction (§5.2) — a
     safe, meaning-preserving no-op. Active formatting is filled in category by
     category; the safety gate (Frontend) guarantees correctness throughout.
 

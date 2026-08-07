@@ -17,7 +17,8 @@ This document describes the system **as built** (~8.4k lines under
 `Lean4Fmt/`). `DESIGN_V2.md` is the design of record and rationale; this is
 the map of what exists, what is measured, and what remains. The v1 prototype
 this file used to describe lives on only as `Lean4Fmt/Emitter.lean` (the
-correctness reference for the port) and as the postmortem in `DESIGN_V2.md §0`.
+correctness reference for the port); the durable lessons are now stated as the
+design laws in `DESIGN_V2.md §2`.
 
 ---
 
@@ -131,7 +132,7 @@ system's specific obligations:
 - `text` — active layout output (canonical bytes).
 - `textRaw` — comment content, byte-exact, **placement-stable**: multi-line
   textRaw emits its lines raw at their source columns; it does not re-anchor.
-- `verbatim src baseIndent` — opaque reproduction (§4.1 of DESIGN_V2): the
+- `verbatim src baseIndent` — opaque reproduction (`DESIGN_V2.md §5.2`): the
   safe fallback for unported constructs. Multi-line verbatim **re-anchors**:
   the renderer dedents by `baseIndent` and re-indents at the placement column.
   This distinction (re-anchoring vs raw) is load-bearing: a mutual member may
@@ -338,7 +339,7 @@ per-commit detail; `MEMORY`/session notes hold the pitfalls):
 
 | Stage | State |
 |---|---|
-| v1 prototype | locked; postmortem in DESIGN_V2 §0 |
+| v1 prototype | locked; lessons incorporated into DESIGN_V2 §2–5 |
 | v2 spine (Emit→Doc→Render + gate) | shipped; corpus 234/234 |
 | Construct ports (decls, do, match, structure/inductive/instance, tactics, terms) | coverage 22.4% → 68.9% |
 | Proof spine (T1–T4) | all four laws hold, zero sorries; found 3 real bugs |
