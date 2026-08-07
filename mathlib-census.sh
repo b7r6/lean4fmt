@@ -67,6 +67,9 @@ CORE="$(elan run "$TC" lean --print-libdir)"
 LP="$ML/.lake/build/lib/lean"
 for p in "$ML"/.lake/packages/*/.lake/build/lib/lean; do LP="$LP:$p"; done
 export LEAN_PATH="$LP:$CORE" EXE TC
+if [ -f "$here/mathlib-identity-clearances.txt" ]; then
+  export L4F_IDENTITY_CLEARANCES="$here/mathlib-identity-clearances.txt${L4F_IDENTITY_CLEARANCES:+:$L4F_IDENTITY_CLEARANCES}"
+fi
 
 echo "// census: results in $RES"
 

@@ -13,7 +13,7 @@ from pathlib import Path
 res = Path(sys.argv[1])
 clearances_path = Path(sys.argv[2]) if len(sys.argv) > 2 else None
 att_a = att_v = shp_a = shp_v = pol_t = 0
-nfiles = nrej = nerr = 0
+nfiles = nrej = nclear = nerr = 0
 rejects = []
 kind_bytes = Counter()
 kind_count = Counter()
@@ -35,9 +35,14 @@ for out in sorted(res.glob("*.out")):
     # — it hid three rejects across the whole campaign scoreboard)
     if not gate:
         gate = re.search(r"\[gate\]: not formatted: output (failed to reparse)", etext)
+    clearance = re.search(r"\[clearance\]: identity fallback \((.*?)\)", etext)
     if gate:
         nrej += 1
         rejects.append((path, gate[1]))
+        shp_v += a + v
+        cov = 0.0
+    elif clearance:
+        nclear += 1
         shp_v += a + v
         cov = 0.0
     else:
@@ -53,7 +58,7 @@ for out in sorted(res.glob("*.out")):
 code = att_a + att_v
 portable = code - min(pol_t, code)
 pct = lambda n, d: f"{100 * n / d:.1f}%" if d else "-"
-print(f"files: {nfiles} parsed, {nerr} no-stats, {nrej} gate-rejected")
+print(f"files: {nfiles} parsed, {nerr} no-stats, {nrej} gate-rejected, {nclear} identity-cleared")
 print(f"ATTEMPTED code-active: {pct(att_a, code)}")
 print(f"SHIPPED   code-active: {pct(shp_a, code)}")
 print(f"CEILING:   portable {pct(portable, code)} of code (policy {pol_t} bytes)")
@@ -92,6 +97,11 @@ if clearances_path is not None:
     maximum_rejects = int(clearances.get("maximum_gate_rejects", 0))
     if nrej > maximum_rejects:
         failures.append(f"gate rejects {nrej} > {maximum_rejects}")
+    maximum_identity_clearances = int(clearances.get("maximum_identity_clearances", 0))
+    if nclear > maximum_identity_clearances:
+        failures.append(
+            f"identity clearances {nclear} > {maximum_identity_clearances}"
+        )
     for kind, maximum in clearances.get("maximum_kind_bytes", {}).items():
         actual = kind_bytes[kind]
         if actual > int(maximum):

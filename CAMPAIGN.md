@@ -749,6 +749,17 @@ discarded; it does not count as a clearance.
     ceiling-only class with a syntax/policy argument; freeze the census as a
     standing production gate.
 
+G52 closes over all 8,245 Mathlib files: zero missing statistics and zero
+unclassified safety-gate rejects. The production lock ships 81.8% of all code
+bytes and 91.9% of the portable surface. Its remaining 113 failed candidates
+are named by exact path in `mathlib-identity-clearances.txt`; each returns the
+original source and counts as zero shipped-active bytes. The clearance files
+compose by set union (associative, commutative, and idempotent), are consulted
+only after semantic validation fails, and cannot authorize a changed result.
+`mathlib-full-gate.sh` pins coverage at 91.8%, rejects at zero, missing stats at
+zero, and identity clearances at 113, making every regression or new exception
+loud while allowing the exception set to shrink monotonically.
+
 G42 closes by degrading an unsupported multiline pattern at its own arm seam
 instead of collapsing the complete equation set. The eight portable siblings
 in `WhatsNew` remain active; the focused residue falls from 1,744 to 944 bytes

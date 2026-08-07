@@ -95,6 +95,33 @@ def parse_failure
       "not formatted: needs the elaborating frontend (rerun with --elab auto)"
   (contents, #[{ severity := .warning, rule := "parse", message }])
 
+/-- Exact-path identity clearances, composed as the union of colon-separated
+    files in `L4F_IDENTITY_CLEARANCES`. Blank lines and `#` comments are inert.
+    Set union makes layered policy associative, commutative, and idempotent;
+    an absent file grants nothing. Clearances are consulted only AFTER a
+    candidate has failed the semantic gate, so they cannot suppress linting or
+    turn an unsafe candidate into formatted output — they name a deliberate
+    identity result. -/
+private unsafe
+def identity_clearance? (target : String) : IO Bool := do
+  let some specification ← IO.getEnv "L4F_IDENTITY_CLEARANCES" | return false
+  for filename in specification.splitOn ":" do
+    if filename.isEmpty then continue
+    let path : System.FilePath := ⟨filename⟩
+    if !(← path.pathExists) then continue
+    let text ← IO.FS.readFile path
+    for line in text.splitOn "\n" do
+      let entry := line.trimAscii.toString
+      if !entry.isEmpty && !entry.startsWith "#" && entry == target then
+        return true
+  return false
+
+private
+def identity_clearance_diag (reason : String) : Lean4Fmt.Rules.Diagnostic :=
+  { severity := .debug,
+    rule := "clearance",
+    message := s!"identity fallback ({reason})" }
+
 private unsafe
 def reject_reparse
     (path contents active : String)
@@ -104,6 +131,9 @@ def reject_reparse
   if let some dir ← IO.getEnv "L4F_DRILL_DIR" then
     IO.FS.createDirAll ⟨dir⟩
     IO.FS.writeFile ⟨s!"{dir}/{path.replace "/" "_"}.noparse.lean"⟩ active
+
+  if ← identity_clearance? path then
+    return (contents, diags.push (identity_clearance_diag "reparse"))
 
   -- return the source with a visible safety-gate diagnostic.
   pure
@@ -170,6 +200,8 @@ def validate_candidate
       tokensOk,
       spineOk,
       fixedOk }
+  if ← identity_clearance? path then
+    return (contents, diags.push (identity_clearance_diag why))
   pure
     (
       contents,
