@@ -712,3 +712,10 @@ equation arms and signature opaque. This removes `eqns-unformattable`: the
 focused witness closes at 68.8% code-active / 81.5% shipped-of-portable;
 249/249, widened 566/566, and home remain green at 80.8% / 91.7%, 80.6% /
 91.3%, and 84.1% / 89.0%, with zero rejects.
+
+Empty line-comment detection now classifies source lines whose trimmed content
+is exactly `--`, rather than matching the `--\n` suffix inside every multiline
+docstring opener. This removes the false `empty-line-comment` fence: the
+focused witness closes at 30.8% code-active / 40.2% shipped-of-portable,
+249/249 at 80.8% / 91.7%, widened 566/566 rises to 80.6% / 91.4%, and home
+holds 84.1% / 89.0%, with zero rejects.

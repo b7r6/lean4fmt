@@ -1841,7 +1841,7 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
     return (← source_exact stx "syntax-antiquotation-whitespace")
   if (declarationSource.splitOn "ℓ^").length > 1 then
     return (← verbatim stx "lp-notation")
-  if (defnSource.splitOn "--\n").length > 1 then
+  if (defnSource.splitOn "\n").any (fun line => line.trimAscii.toString == "--") then
     return (← verbatim stx "empty-line-comment")
   -- A declaration body whose first tactic begins at column zero relies on a
   -- command/tactic boundary that canonical indentation would change.
