@@ -808,6 +808,25 @@ without an exception. The 101,281-byte named residue disappears; 249, widened
 zero rejects. The census cache hash now excludes generated `.lean4fmt` results,
 so repeated trust gates reuse the exact source/toolchain build.
 
+G51 closes the exposed named frontier. The widened queue contains only six
+explicit smallest-owner classes:
+
+- 6,133 bytes of declarations containing backslash-newline `m!` literals;
+  moving ownership inward made `Choose` non-idempotent, so source-exact
+  declaration ownership is required by the literal's indentation semantics.
+- 4,501 bytes of individual equation arms whose patterns are multiline opaque
+  syntax; siblings remain active and the arm seam is the smallest stable owner.
+- 2,176 bytes in the single JSX-bearing `ClickSuggestions` application; a
+  narrower application owner changes the parsed tree.
+- 383 bytes for an adaptation note inside an anonymous constructor; removing
+  declaration ownership changes the token stream.
+- 241 bytes of dependent-arrow constructor tails and 156 bytes of structure
+  field tails; doc prefixes and sibling items remain active.
+
+These classes are the refined ceiling, not unexamined blanket bails. G50's
+widened and home runs are the G51 fixed point: six named piece classes, zero
+rejects, 82.7% / 93.8% widened and 87.7% / 92.8% home.
+
 Equation declarations now compose multiline opaque suffixes at their owned
 line-start seam. A `where` tail containing a docstring no longer forces its
 equation arms and signature opaque. This removes `eqns-unformattable`: the
