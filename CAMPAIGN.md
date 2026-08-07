@@ -676,3 +676,11 @@ losing comment content. This removes `modifier-seam-comment`: the six focused
 witnesses rise to 87.7% code-active / 93.0% shipped-of-portable, 249/249 rises
 to 80.7% / 91.5%, widened 566/566 to 80.4% / 91.2%, and home remains 84.1% /
 89.0%, with zero rejects.
+
+Top-level `def … where` declarations now compose an independently active
+field body after a multiline opaque signature fragment. Because the signature
+retains its original top-level anchor, owning the body cannot drift the opaque
+return type. This removes `defwhere-signature`: the focused witness closes at
+83.1% code-active / 93.5% shipped-of-portable, 249/249 at 80.8% / 91.6%,
+widened 566/566 at 80.6% / 91.3%, and home at 84.1% / 89.0%, with zero
+rejects.

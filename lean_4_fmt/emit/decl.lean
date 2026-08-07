@@ -1330,9 +1330,11 @@ def def_where_doc? (walk : Lean4Fmt.Emit.Walk) (defn : Lean.Syntax) : emit_m (Op
   -- breaks it — binders/type per the knob, aligned under the name, ` where`
   -- glued to the sig's last line. This was the single largest mathlib bail
   -- class (defwhere-shape: long-signature Equiv/Iso defs). A sig carrying a
-  -- multi-line re-anchoring piece keeps the whole-decl verbatim.
+  -- multi-line re-anchoring piece normally keeps the whole declaration
+  -- verbatim. At top-level, however, the signature starts at its original
+  -- column and the independently rendered `where` body is nested only after
+  -- that piece, so the opaque type remains anchored without owning the body.
   let sigD ← sig_doc walk (kwT.length + 1) flatHead.length 6 dargs[2]!
-  if Lean4Fmt.Doc.hasMultilineReanchor sigD then return none
   return some (.text hd0 ++ sigD ++ .text " where" ++ .nest 2 body)
 
 /-- `example <sig> := value`: keyword + signature single-line, the value via
