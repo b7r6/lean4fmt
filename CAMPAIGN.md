@@ -801,6 +801,13 @@ continued-line exception on `Choose`. Residue falls from 23,949 to 6,133 bytes;
 249, widened 566, and home rise to 81.3% / 92.3%, 81.2% / 92.0%, and 84.2% /
 89.1%, with zero rejects.
 
+G50 removes the declaration-wide syntax-antiquotation fence. The quotation pin
+already preserves every antiquotation payload, and all 40 focused files pass
+without an exception. The 101,281-byte named residue disappears; 249, widened
+566, and home jump to 83.1% / 94.3%, 82.7% / 93.8%, and 87.7% / 92.8%, with
+zero rejects. The census cache hash now excludes generated `.lean4fmt` results,
+so repeated trust gates reuse the exact source/toolchain build.
+
 Equation declarations now compose multiline opaque suffixes at their owned
 line-start seam. A `where` tail containing a docstring no longer forces its
 equation arms and signature opaque. This removes `eqns-unformattable`: the

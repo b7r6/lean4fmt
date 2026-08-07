@@ -1839,8 +1839,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
     return (← source_exact stx "message-interpolation-whitespace")
   if adaptation_note_in_anonymous_ctor defn then
     return (← source_exact stx "adaptation-note-whitespace")
-  if (declarationSource.splitOn "$(").length > 1 then
-    return (← source_exact stx "syntax-antiquotation-whitespace")
   if (declarationSource.splitOn "ℓ^").length > 1 then
     return (← verbatim stx "lp-notation")
   if (defnSource.splitOn "\n").any (fun line => line.trimAscii.toString == "--") then

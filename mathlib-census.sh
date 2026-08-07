@@ -39,7 +39,8 @@ if [[ "$PER" == @* ]]; then LIST_PATH="$(realpath "${PER#@}")"; fi
 
 TC="$(cat "$ML/lean-toolchain")"
 rev="$(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo dev)"
-tree_hash="$({ find "$here" -type f -not -path '*/.lake/*' -not -path '*/fuzz/*' -print0 |
+tree_hash="$({ find "$here" -type f -not -path '*/.lake/*' -not -path '*/.lean4fmt/*' \
+  -not -path '*/fuzz/*' -print0 |
   sort -z | xargs -0 sha256sum; } | sha256sum | cut -c1-12)"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/lean4fmt-census/$rev-$tree_hash-${TC//[:\/]/_}"
 EXE="$cache/.lake/build/bin/lean4fmt"
