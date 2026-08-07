@@ -774,6 +774,13 @@ ordinary `def … where` composition converges unchanged. The focused witness
 closes at 73.0% / 81.3%; 249, widened 566, and home close at 80.8% / 91.7%,
 80.7% / 91.5%, and 84.1% / 89.0%, with zero rejects.
 
+G46 removes the declaration-wide `,_ )`-style source substring fence. Its live
+witness mixed an ordinary tuple pattern with quoted tactic syntax; both are
+already owned by their syntax walkers and preserve their token stream. The
+focused declaration reason disappears at 61.6% / 68.2%; 249, widened 566, and
+home close at 80.8% / 91.7%, 80.7% / 91.5%, and 84.1% / 89.0%, with zero
+rejects.
+
 Equation declarations now compose multiline opaque suffixes at their owned
 line-start seam. A `where` tail containing a docstring no longer forces its
 equation arms and signature opaque. This removes `eqns-unformattable`: the
