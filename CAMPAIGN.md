@@ -657,6 +657,12 @@ witnesses close at 83.2% code-active / 94.4% shipped-of-portable; 249/249,
 widened 566/566, and home are green with zero rejects at 80.7% / 91.6%, 80.5%
 / 91.3%, and 84.1% / 89.0%.
 
+Structure heads now flatten multiline binders, result types, and `extends`
+clauses through token-preserving joins before entering the head document. This
+removes `structure-head`: the five focused witnesses close at 90.1%
+code-active / 94.1% shipped-of-portable, 249/249 at 80.7% / 91.6%, widened
+566/566 at 80.6% / 91.3%, and home at 84.1% / 89.0%, with zero rejects.
+
 Declaration modifiers now have a suffix-bearing attribute piece. An attribute
 such as `@[simp] -- rationale` owns its inline comment and the forced newline
 before the declaration keyword, so the declaration body remains active without

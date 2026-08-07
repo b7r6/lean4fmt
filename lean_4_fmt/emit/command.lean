@@ -553,7 +553,10 @@ private
 def append_structure_type? (head : String) (typeSlot : Array Lean.Syntax) : Option String :=
   match typeSlot.toList with
   | [typeSpec] =>
-    let token := (bare_src ((typeSpec.getArgs[1]?).getD .missing)).trimAscii.toString
+    let typeSyntax := (typeSpec.getArgs[1]?).getD .missing
+    let token := Lean4Fmt.Emit.canon_tok typeSyntax
+    let token :=
+      if token.any (· == '\n') then Lean4Fmt.Emit.token_join_flat? typeSyntax |>.getD token else token
     if token.isEmpty || token.any (· == '\n') then none else some (head ++ " : " ++ token)
   | [] => some head
   | _ => none
@@ -569,13 +572,21 @@ def structure_head? (arguments : Array Lean.Syntax) : Option String :=
     let mut head := keyword ++ " " ++ identifier
     for binder in ((signature[0]?).map (·.getArgs)).getD #[] do
       let token := Lean4Fmt.Emit.canon_tok binder
+      let token :=
+        if token.any (· == '\n') then Lean4Fmt.Emit.token_join_flat? binder |>.getD token else token
       if token.any (· == '\n') then
         return none
       head := head ++ " " ++ token
     let some typedHead := append_structure_type? head (((signature[1]?).map (·.getArgs)).getD #[])
         | return none
     head := typedHead
-    let extendsText := ((arguments[3]?.map bare_src).getD "").trimAscii.toString
+    let extendsSyntax := arguments[3]?.getD .missing
+    let extendsText := (bare_src extendsSyntax).trimAscii.toString
+    let extendsText :=
+      if extendsText.any (· == '\n') then
+        Lean4Fmt.Emit.token_join_flat? extendsSyntax |>.getD extendsText
+      else
+        extendsText
     if extendsText.any (· == '\n') then
       return none
     if !extendsText.isEmpty then head := head ++ " " ++ extendsText
