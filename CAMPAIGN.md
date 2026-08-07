@@ -781,6 +781,12 @@ focused declaration reason disappears at 61.6% / 68.2%; 249, widened 566, and
 home close at 80.8% / 91.7%, 80.7% / 91.5%, and 84.1% / 89.0%, with zero
 rejects.
 
+G47 localizes nested structure-shorthand opacity to the nearest application
+owner. JSX-bearing applications retain their proven wider owner: the tree gate
+caught the unsafe narrow form on `ClickSuggestions`. Widened residue falls from
+14,975 to 2,176 bytes; 249, widened 566, and home rise to 81.0% / 91.9%, 80.9%
+/ 91.7%, and 84.2% / 89.1%, with zero rejects.
+
 Equation declarations now compose multiline opaque suffixes at their owned
 line-start seam. A `where` tail containing a docstring no longer forces its
 equation arms and signature opaque. This removes `eqns-unformattable`: the

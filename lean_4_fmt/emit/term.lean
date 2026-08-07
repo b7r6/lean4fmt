@@ -1057,6 +1057,10 @@ def has_struct_shorthand_field (stx : Lean.Syntax) : Bool :=
     stx.getArgs.any has_struct_shorthand_field
 
 private partial
+def contains_jsx_term (stx : Lean.Syntax) : Bool :=
+  stx.getKind == `ProofWidgets.Jsx.term_ || stx.getArgs.any contains_jsx_term
+
+private partial
 def application_doc
     (walk : Walk)
     (stx : Lean.Syntax)
@@ -1070,9 +1074,11 @@ def application_doc
   -- shorthand-shaped subtrees inside custom syntax opaque: their outer macro
   -- may assign whitespace semantics not represented by ordinary application.
   if arguments.any fun argument =>
-      argument.getKind != ``Lean.Parser.Term.structInst &&
+        argument.getKind != ``Lean.Parser.Term.structInst &&
         argument.getKind != `choice &&
-        has_struct_shorthand_field argument then
+        has_struct_shorthand_field argument &&
+        (contains_jsx_term argument ||
+          !argument.getArgs.any (fun child => child.getArgs.any has_struct_shorthand_field)) then
     return (← verbatim stx "nested-application-struct-shorthand")
   -- Preserve the parser-classified seam of every argument: whitespace gives a
   -- breakable application line; zero-width remains unbreakably glued (custom
