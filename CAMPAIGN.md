@@ -749,6 +749,13 @@ discarded; it does not count as a clearance.
     ceiling-only class with a syntax/policy argument; freeze the census as a
     standing production gate.
 
+G42 closes by degrading an unsupported multiline pattern at its own arm seam
+instead of collapsing the complete equation set. The eight portable siblings
+in `WhatsNew` remain active; the focused residue falls from 1,744 to 944 bytes
+and coverage rises from 63.8% / 69.9% to 72.1% / 79.0%. The 249, widened 566,
+and home gates close at 80.8% / 91.7%, 80.7% / 91.4%, and 84.1% / 89.0%, with
+zero rejects.
+
 Equation declarations now compose multiline opaque suffixes at their owned
 line-start seam. A `where` tail containing a docstring no longer forces its
 equation arms and signature opaque. This removes `eqns-unformattable`: the

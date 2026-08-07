@@ -442,7 +442,14 @@ def arm_pieces?
       match ← alt_pattern_stack? patStx joinFlat? with
       | some (pieceDoc, broken) =>
         state := { state with patternDoc := pieceDoc, patternBroken := broken }
-      | none => return none
+      | none =>
+        let piece : arm_piece :=
+          { sep := sep,
+            plain := plainSep,
+            doc := (← verbatim alt "arm-multiline-pattern-piece") ++ trailDoc,
+            gridRow := none }
+        state := { state with pieces := state.pieces.push piece }
+        continue
     let arrowT := (bare_src (altArgs[2]?.getD .missing)).trimAscii.toString
     let arrowT := if arrowT.isEmpty then "=>" else arrowT
     let body := altArgs[altArgs.size-1]?.getD .missing
