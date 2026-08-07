@@ -1824,12 +1824,18 @@ def make_emit_context (outer defn : Lean.Syntax) : emit_m emit_context := do
       defShape     := defShape,
       valKind      := defn.getArgs[3]?.map (·.getKind) }
 
+private partial
+def adaptation_note_in_anonymous_ctor (stx : Lean.Syntax) : Bool :=
+  (stx.getKind == ``Lean.Parser.Term.anonymousCtor
+      && (bare_src stx).contains "#adaptation_note")
+    || stx.getArgs.any adaptation_note_in_anonymous_ctor
+
 /-- Emit a declaration through ordered, total declaration-family routes. -/
 def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
   let some defn := stx.getArgs[1]? | return (← verbatim stx "decl-shape")
   let defnSource := bare_src defn
   let declarationSource := bare_src stx
-  if (declarationSource.splitOn "#adaptation_note").length > 1 then
+  if adaptation_note_in_anonymous_ctor defn then
     return (← source_exact stx "adaptation-note-whitespace")
   if (declarationSource.splitOn "m!\"").length > 1 then
     return (← source_exact stx "message-interpolation-whitespace")

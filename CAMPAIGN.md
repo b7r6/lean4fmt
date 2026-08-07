@@ -787,6 +787,13 @@ caught the unsafe narrow form on `ClickSuggestions`. Widened residue falls from
 14,975 to 2,176 bytes; 249, widened 566, and home rise to 81.0% / 91.9%, 80.9%
 / 91.7%, and 84.2% / 89.1%, with zero rejects.
 
+G48 removes the blanket adaptation-note declaration fence. Five ordinary
+tactic placements compose through the existing unknown-tactic fallback; only
+an adaptation note nested inside an anonymous constructor retains whole-form
+source-exact ownership, as required by the token gate. Residue falls from
+10,283 to 383 bytes; 249, widened 566, and home rise to 81.1% / 92.1%, 81.0%
+/ 91.8%, and 84.2% / 89.1%, with zero rejects.
+
 Equation declarations now compose multiline opaque suffixes at their owned
 line-start seam. A `where` tail containing a docstring no longer forces its
 equation arms and signature opaque. This removes `eqns-unformattable`: the
