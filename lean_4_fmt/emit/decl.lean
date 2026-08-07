@@ -227,12 +227,6 @@ def eqns_formattable (declVal : Lean.Syntax) : Bool :=
         let isWsL (line : String) : Bool := line.all (fun char => char == ' ' || char == '\t')
         if !isWsL ((((Lean4Fmt.Syntax.leading? slot).getD "").splitOn "\n").headD "") then
           return false
-        -- ws-sensitivity CLASS 5 (Emit/WsSensitivity): a multi-line
-        -- comment/docstring inside the suffix — the verbatim tail re-anchors by
-        -- column and would shift the token's interior bytes
-        let slotText := bare_src slot
-        if reanchors_multiline_token slotText then
-          return false
       let altsNode := (margs[0]?).getD .missing
       let mut alts : Array Lean.Syntax := #[]
       for group in altsNode.getArgs do
@@ -701,13 +695,10 @@ def opaque_equation_arms
 
 private
 def owned_equation_suffix_separator
-    (suffix : Lean.Syntax)
+    (_suffix : Lean.Syntax)
     (separator : Doc)
     : Except String (Option Doc) :=
-  if reanchors_multiline_token (bare_src suffix) then
-    .error "eqns-suffix-docstring"
-  else
-    .ok (some separator)
+  .ok (some separator)
 
 private
 def equation_suffix_separator (suffix : Lean.Syntax) : Except String (Option Doc) :=
