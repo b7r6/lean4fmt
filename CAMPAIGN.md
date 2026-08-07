@@ -706,6 +706,49 @@ focused witness closes at 93.1% code-active / 98.1% shipped-of-portable,
 249/249 rises to 80.8% / 91.7%, widened 566/566 holds 80.6% / 91.3%, and home
 holds 84.1% / 89.0%, with zero rejects.
 
+## Final named-residue ladder (set 2026-08-07 at 80.7 / 91.4 widened)
+
+The widened queue now has nine named bailout families. Burn them in dependency
+order: compositional children before their enclosing lexical guards. Every gate
+must pass focused witnesses, 249, widened 566, and home with zero token,
+parse, or fixed-point rejects before commit and push. A failed conjecture is
+discarded; it does not count as a clearance.
+
+1. **G42 — `equation-arm-piece` (1,744 bytes / 9 arms).** Instrument the shared
+   arm loop, name the exact rejection stage, and move opacity to the smallest
+   pattern or body piece. Exit: residue materially reduced, no new arm-wide
+   bailout.
+2. **G43 — `structure-field-piece` (550 / 2).** Preserve only the unsupported
+   field interior at its line-start seam. Exit: no whole structure-field piece
+   when its head and sibling fields are portable.
+3. **G44 — `inductive-constructor-piece` (564 / 2).** Apply the same piecewise
+   law to constructors. Exit: unsupported constructor tails do not make the
+   constructor head or neighboring constructors opaque.
+4. **G45 — `defwhere-calc` (977 / 1).** Anchor the calc-bearing field/value,
+   retaining the active signature and other `where` fields. Exit: declaration-
+   wide reason removed.
+5. **G46 — `unspaced-tuple-pattern` (410 / 1).** Replace the source substring
+   fence with syntax-derived tuple-pattern ownership. Exit: spacing-sensitive
+   token spelling preserved at the smallest owner.
+6. **G47 — `nested-application-struct-shorthand` (14,975 / 190).** Localize
+   shorthand adjacency to the owning application/field rather than its ancestor
+   stack. Exit: dominant byte pool collapses without changing macro expansion.
+7. **G48 — `adaptation-note-whitespace` (10,283 / 9).** Classify the command
+   structurally and preserve only its whitespace-semantic payload. Exit: parent
+   declarations and tactic sequences remain active.
+8. **G49 — `message-interpolation-whitespace` (23,949 / 18).** Preserve each
+   interpolation owner, not every containing declaration. Exit: message token
+   stream unchanged and declaration-wide reason removed.
+9. **G50 — `syntax-antiquotation-whitespace` (101,281 / 113).** Apply the same
+   smallest-complete-owner law to quotation/antiquotation nodes. Exit: quotation
+   bytes stay exact while enclosing commands compose actively.
+10. **G51 — exposed-residue fixed point.** Rerun widened and home queues after
+    G42–G50; enumerate and gate every newly visible named reason until the named
+    queue is empty or a class is explicitly proved ceiling-only.
+11. **G52 — full-tree lock.** Run all mathlib files, zero rejects; document every
+    ceiling-only class with a syntax/policy argument; freeze the census as a
+    standing production gate.
+
 Equation declarations now compose multiline opaque suffixes at their owned
 line-start seam. A `where` tail containing a docstring no longer forces its
 equation arms and signature opaque. This removes `eqns-unformattable`: the
