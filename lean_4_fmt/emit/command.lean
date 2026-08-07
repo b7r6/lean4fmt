@@ -419,7 +419,18 @@ def constructor_items?
     let (doc, line, lineDoc?) ← match rendered with
       | some rendered => pure rendered
       | none =>
-        pure (.nil, "", some (← Lean4Fmt.Emit.verbatim ctor "inductive-constructor-piece"))
+        let args := ctor.getArgs
+        if ctor.getKind == ``Lean.Parser.Command.ctor && args.size == 5 then
+          let docText := (bare_src args[0]!).trimAscii.toString
+          if !docText.isEmpty then
+            let tail := Lean.mkNullNode (args.extract 1 args.size)
+            pure
+              (.textRaw docText ++ .hardline, "",
+                some (← Lean4Fmt.Emit.verbatim tail "inductive-constructor-tail-piece"))
+          else
+            pure (.nil, "", some (← Lean4Fmt.Emit.verbatim ctor "inductive-constructor-piece"))
+        else
+          pure (.nil, "", some (← Lean4Fmt.Emit.verbatim ctor "inductive-constructor-piece"))
     let rawTrail := (((Lean4Fmt.Syntax.trailing? ctor).getD "").trimAsciiEnd).toString
     let (line, trail) :=
       if preserve && owned && !trail.isEmpty && !rawTrail.any (· == '\n') then
