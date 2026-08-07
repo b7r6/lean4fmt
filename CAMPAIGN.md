@@ -756,6 +756,12 @@ and coverage rises from 63.8% / 69.9% to 72.1% / 79.0%. The 249, widened 566,
 and home gates close at 80.8% / 91.7%, 80.7% / 91.4%, and 84.1% / 89.0%, with
 zero rejects.
 
+G43 closes by admitting implicit structure binders through the flat token law
+and splitting a documented unsupported field into an active doc prefix plus an
+opaque tail at the field seam. Focused `structure-field-piece` falls from 550
+to 156 bytes and closes at 83.1% / 95.4%; 249, widened 566, and home close at
+80.8% / 91.7%, 80.7% / 91.5%, and 84.1% / 89.0%, with zero rejects.
+
 Equation declarations now compose multiline opaque suffixes at their owned
 line-start seam. A `where` tail containing a docstring no longer forces its
 equation arms and signature opaque. This removes `eqns-unformattable`: the

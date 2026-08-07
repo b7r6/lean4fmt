@@ -498,6 +498,7 @@ def field_doc?
     (preserve : Bool)
     : Lean4Fmt.Emit.emit_m (Option field_parts) := do
   if transform.getKind == ``Lean.Parser.Command.structInstBinder
+      || transform.getKind == ``Lean.Parser.Command.structImplicitBinder
       || transform.getKind == ``Lean.Parser.Command.structExplicitBinder then
     let some line := Lean4Fmt.Emit.token_join_flat? transform | return none
     return some { prefixDoc := .nil, name := line, rest := "", line, lineDoc? := none }
@@ -672,12 +673,40 @@ def structure_field_tail?
   let parsed ← match ← field_doc? walk field preserve with
     | some parsed => pure parsed
     | none =>
-      pure
-        { prefixDoc := .nil
-          name := ""
-          rest := ""
-          line := ""
-          lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece") }
+      let args := field.getArgs
+      if field.getKind == ``Lean.Parser.Command.structSimpleBinder && args.size == 4 then
+        match field_modifiers? args[0]! with
+        | some (docText, modifiers) =>
+          if modifiers.isEmpty then
+            let some prefixDoc := field_prefix_doc? field docText modifiers | return none
+            let tail := Lean.mkNullNode (args.extract 1 args.size)
+            pure
+              { prefixDoc
+                name := ""
+                rest := ""
+                line := ""
+                lineDoc? := some (← Lean4Fmt.Emit.verbatim tail "structure-field-tail-piece") }
+          else
+            pure
+              { prefixDoc := .nil
+                name := ""
+                rest := ""
+                line := ""
+                lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece") }
+        | none =>
+          pure
+            { prefixDoc := .nil
+              name := ""
+              rest := ""
+              line := ""
+              lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece") }
+      else
+        pure
+          { prefixDoc := .nil
+            name := ""
+            rest := ""
+            line := ""
+            lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece") }
   return some (finish_field_item separator plainSeparator owned preserve parsed trailText rawTrail)
 
 private
