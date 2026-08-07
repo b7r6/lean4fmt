@@ -1835,10 +1835,10 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   let some defn := stx.getArgs[1]? | return (← verbatim stx "decl-shape")
   let defnSource := bare_src defn
   let declarationSource := bare_src stx
+  if declarationSource.contains "m!\"" && declarationSource.contains "\\\n" then
+    return (← source_exact stx "message-interpolation-whitespace")
   if adaptation_note_in_anonymous_ctor defn then
     return (← source_exact stx "adaptation-note-whitespace")
-  if (declarationSource.splitOn "m!\"").length > 1 then
-    return (← source_exact stx "message-interpolation-whitespace")
   if (declarationSource.splitOn "$(").length > 1 then
     return (← source_exact stx "syntax-antiquotation-whitespace")
   if (declarationSource.splitOn "ℓ^").length > 1 then

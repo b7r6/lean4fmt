@@ -794,6 +794,13 @@ source-exact ownership, as required by the token gate. Residue falls from
 10,283 to 383 bytes; 249, widened 566, and home rise to 81.1% / 92.1%, 81.0%
 / 91.8%, and 84.2% / 89.1%, with zero rejects.
 
+G49 limits message-interpolation source-exact ownership to declarations that
+contain a backslash-newline message literal. Ordinary `m!"..."` nodes now
+compose through their surrounding command; the fixed-point gate proved the
+continued-line exception on `Choose`. Residue falls from 23,949 to 6,133 bytes;
+249, widened 566, and home rise to 81.3% / 92.3%, 81.2% / 92.0%, and 84.2% /
+89.1%, with zero rejects.
+
 Equation declarations now compose multiline opaque suffixes at their owned
 line-start seam. A `where` tail containing a docstring no longer forces its
 equation arms and signature opaque. This removes `eqns-unformattable`: the
