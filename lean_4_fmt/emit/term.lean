@@ -212,6 +212,16 @@ def chain_own_line (value : Lean.Syntax) (vdoc : Doc) : Bool :=
       || value.getKind == ``Lean.Parser.Term.haveI)
       && (Lean4Fmt.Doc.flat_width vdoc).isNone
 
+/-- A multiline opaque field value cannot follow `field :=` mid-line: its
+    source-column re-anchor would become additive on the next pass. Give that
+    value an explicit line-start seam while leaving the field and its enclosing
+    structure active. -/
+private
+def opaque_field_value_own_line (vdoc : Doc) : Bool :=
+  match vdoc with
+  | .verbatim source _ => source.any (· == '\n')
+  | _ => Lean4Fmt.Doc.has_midline_reanchor vdoc
+
 /-- A single `structInstField` = [structInstLVal, «rest»]. The LVal (field name /
     path) is reproduced verbatim; the value (the term after `:=`, found inside the
     `structInstFieldDef` in «rest») is walked so it lays out actively. A shorthand
@@ -247,7 +257,7 @@ def struct_field_value_doc
     if valid
         && Lean4Fmt.Syntax.leaf_toks fd == #[":="] ++ Lean4Fmt.Syntax.leaf_toks value then
       let vdoc ← walk value
-      if chain_own_line value vdoc then
+      if chain_own_line value vdoc || opaque_field_value_own_line vdoc then
         return .text (headT ++ " :=") ++ .nest 2 (.hardline ++ vdoc)
       return .text (headT ++ " := ") ++ vdoc
     let text := Lean4Fmt.Emit.canon_tok field
@@ -261,7 +271,7 @@ def struct_field_value_doc
   -- sepByIndent colGe law; gate-caught on Configuration as a hidden
   -- reparse-fail). A breaking chain value goes OWN-LINE at +2 instead
   -- (the mathlib source shape); flat ones still glue.
-  if chain_own_line value vdoc then
+  if chain_own_line value vdoc || opaque_field_value_own_line vdoc then
     return lval ++ .text " :=" ++ .nest 2 (.hardline ++ vdoc)
   return lval ++ .text " := " ++ vdoc
 

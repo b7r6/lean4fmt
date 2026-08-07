@@ -691,3 +691,10 @@ return type. This removes `defwhere-signature`: the focused witness closes at
 83.1% code-active / 93.5% shipped-of-portable, 249/249 at 80.8% / 91.6%,
 widened 566/566 at 80.6% / 91.3%, and home at 84.1% / 89.0%, with zero
 rejects.
+
+Multiline opaque structure-field values now break after `field :=` onto an
+explicit line-start seam. The opaque value keeps its source-column anchor while
+the field, enclosing structure, and declaration remain active. This removes
+`val-multiline` from its focused witness, which closes at 89.2% code-active /
+93.9% shipped-of-portable; 249/249, widened 566/566, and home remain green at
+80.8% / 91.6%, 80.6% / 91.3%, and 84.1% / 89.0%, with zero rejects.
