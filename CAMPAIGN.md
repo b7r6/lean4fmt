@@ -768,6 +768,12 @@ opaque at the constructor seam. Focused residue falls from 564 to 241 bytes and
 closes at 80.3% / 96.4%; 249, widened 566, and home close at 80.8% / 91.7%,
 80.7% / 91.5%, and 84.1% / 89.0%, with zero rejects.
 
+G45 removes the obsolete `defwhere-calc` declaration fence. The field/value
+walker already owns calc-bearing structure fields at a stable seam, so the
+ordinary `def … where` composition converges unchanged. The focused witness
+closes at 73.0% / 81.3%; 249, widened 566, and home close at 80.8% / 91.7%,
+80.7% / 91.5%, and 84.1% / 89.0%, with zero rejects.
+
 Equation declarations now compose multiline opaque suffixes at their owned
 line-start seam. A `where` tail containing a docstring no longer forces its
 equation arms and signature opaque. This removes `eqns-unformattable`: the

@@ -1745,8 +1745,6 @@ def route_def_where? (walk : Lean4Fmt.Emit.Walk) (ctx : emit_context) : emit_m (
     return none
   if ctx.modifier_hazard then
     return some (← verbatim ctx.outer "modifier-seam-comment")
-  if ((bare_src ctx.defn).splitOn "\n        calc").length > 1 then
-    return some (← verbatim ctx.outer "defwhere-calc")
   -- Preserve an unsupported `where` body as the declaration child while the
   -- wrapper still formats its independently owned modifiers.
   let some body ← def_where_doc? walk ctx.defn |
