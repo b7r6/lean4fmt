@@ -698,3 +698,10 @@ the field, enclosing structure, and declaration remain active. This removes
 `val-multiline` from its focused witness, which closes at 89.2% code-active /
 93.9% shipped-of-portable; 249/249, widened 566/566, and home remain green at
 80.8% / 91.6%, 80.6% / 91.3%, and 84.1% / 89.0%, with zero rejects.
+
+The declaration-wide padded-parenthesis substring fence is gone. Its live
+witnesses were string payloads such as `"( "`, not parenthesized syntax, and
+the syntax walkers already own actual parens. This removes `padded-paren`: the
+focused witness closes at 93.1% code-active / 98.1% shipped-of-portable,
+249/249 rises to 80.8% / 91.7%, widened 566/566 holds 80.6% / 91.3%, and home
+holds 84.1% / 89.0%, with zero rejects.

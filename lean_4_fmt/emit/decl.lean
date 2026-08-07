@@ -1856,11 +1856,6 @@ def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m 
   -- command/tactic boundary that canonical indentation would change.
   if (defnSource.splitOn "\nexact ").length > 1 then
     return (← verbatim stx "zero-column-tactic")
-  -- Preserve deliberately padded parenthetical terms as one declaration.
-  -- Unknown custom syntax can retain the padding on pass one, then become an
-  -- ordinary paren on pass two, producing a false two-step fixed point.
-  if (defnSource.splitOn "( ").length > 1 && (defnSource.splitOn " )").length > 1 then
-    return (← verbatim stx "padded-paren")
   let ctx ← make_emit_context stx defn
   let some doc ← route_instance? walk ctx | do
     let some doc ← route_type_decl? walk ctx | do
