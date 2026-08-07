@@ -719,3 +719,11 @@ docstring opener. This removes the false `empty-line-comment` fence: the
 focused witness closes at 30.8% code-active / 40.2% shipped-of-portable,
 249/249 at 80.8% / 91.7%, widened 566/566 rises to 80.6% / 91.4%, and home
 holds 84.1% / 89.0%, with zero rejects.
+
+Adjacency-sensitive `⟦…⟧` notation now preserves its smallest complete
+application owner plus the notation node itself, rather than every enclosing
+term. The extra owner is required by category-theory shift macros; the focused
+token gate caught the too-small first cut. This removes `shift-notation`: all
+seven witnesses close at 85.6% code-active / 98.0% shipped-of-portable,
+249/249 at 80.8% / 91.7%, widened 566/566 rises to 80.7% / 91.4%, and home
+holds 84.1% / 89.0%, with zero rejects.

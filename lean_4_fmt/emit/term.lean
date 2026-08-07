@@ -1538,7 +1538,14 @@ def emit (walk : Walk) (stx : Lean.Syntax) : emit_m Doc := do
   -- Mathlib shift notation is adjacency-sensitive at both delimiters and may
   -- carry a prime suffix (`X⟦n⟧'`). Generic application/operator spacing
   -- changes its macro expansion, so preserve the smallest owning term span.
-  if (source.splitOn "⟦").length > 1 then
+  let ownsShiftNotation :=
+    let containsShift (node : Lean.Syntax) := ((bare_src node).splitOn "⟦").length > 1
+    let children := stx.getArgs
+    let childContains := children.any containsShift
+    let childIsSmallest := children.any fun child =>
+      containsShift child && !child.getArgs.any containsShift
+    (source.splitOn "⟦").length > 1 && (!childContains || childIsSmallest)
+  if ownsShiftNotation then
     return (← verbatim stx "shift-notation")
   if !Lean4Fmt.Syntax.owns_seams stx.getKind
       && Lean4Fmt.Syntax.has_unowned_line_comment stx then
