@@ -387,6 +387,13 @@ already belongs to smaller constructor and structure owners—and closes both
 249/249 and 708/708 at 74.7% code-active / 84.5% shipped-of-portable, with zero
 rejects.
 
+Old-style `:=` declarations whose structure literal begins at column zero now
+enter the ordinary structure/value routes. Their syntax boundary is explicit;
+canonical indentation no longer needs a declaration-wide fence. This removes
+`zero-column-structure`: the focused witness closes at 85.1% code-active /
+92.2% shipped-of-portable, 249/249 at 80.8% / 91.6%, widened 566/566 at 80.6%
+/ 91.3%, and home at 84.1% / 89.0%, with zero rejects.
+
 Function values containing destructuring `let` terms are owned by the existing
 function/let composition. Removing `function-let-value` closes 249/249 at
 74.8% code-active / 84.6% shipped-of-portable and 708/708 at 74.8% / 84.7%,
