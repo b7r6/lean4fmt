@@ -1,0 +1,58 @@
+:root {
+  --content-max-width: 920px;
+}
+
+html {
+  font-feature-settings: "kern", "liga", "calt";
+}
+
+body {
+  text-rendering: optimizeLegibility;
+}
+
+.content main {
+  max-width: var(--content-max-width);
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.018em;
+}
+
+h1 {
+  margin-bottom: 1.4em;
+}
+
+h2 {
+  margin-top: 2.4em;
+  padding-top: 0.35em;
+  border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+
+p,
+li {
+  line-height: 1.68;
+}
+
+blockquote {
+  border-left-width: 3px;
+  font-style: normal;
+}
+
+code {
+  font-variant-ligatures: none;
+}
+
+pre {
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 4px;
+}
+
+table {
+  width: 100%;
+}
+
+thead {
+  border-bottom: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+}

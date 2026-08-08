@@ -4,16 +4,16 @@ Layout formatting and structural refactoring are separate operations.
 `lean4fmt --lint` reports structural hazards without rewriting source or making
 existing findings fail the command.
 
-Run the whole inventory:
+Inspect one or more files without writing them:
 
 ```sh
-make lint-lean
+nix run . -- --lint --json lean_4_fmt/casing.lean
 ```
 
-Narrow it with the standard `DIR` parameter:
+Shell expansion can supply a complete tree:
 
 ```sh
-make lint-lean DIR=src/apps/freeside
+nix run . -- --lint --json $(find lean_4_fmt -name '*.lean' -print)
 ```
 
 ## Initial rules
@@ -166,9 +166,9 @@ The rules are informational because the initial tree is the baseline. Promotion
 to warnings or errors should happen per rule only after its backlog is burned
 down or explicitly grandfathered.
 
-## Baseline — 2026-07-25
+## Historical baseline — 2026-07-25
 
-Current 411-file formatter fixed point:
+The first 411-file Continuity inventory established this baseline:
 
 | rule | findings |
 |---|---:|

@@ -1,4 +1,9 @@
-# The rename axis (G-L7)
+# Identity-Aware Renaming
+
+This chapter combines the durable rename design with its original gate ledger.
+The opening sections state the production contract. Later dated sections are
+the engineering record: they retain failed approaches because those failures
+explain why resolution, collision evidence, and build transactions are required.
 
 Goal: promote the casing/rename axis from a verified plan-only core to a
 **build-validated project pass** — the formatter renames project-defined

@@ -1,8 +1,13 @@
 # The mathlib4 coverage campaign
 
-Goal-ladder rung 3: **roundtrip mathlib4** — every portable code byte actively
-formatted, zero gate fallbacks, idempotent, in mathlib-canonical form. This
-document is the standing plan; the scoreboard updates per round.
+This is the laboratory notebook for the Mathlib coverage campaign. It preserves
+the hypotheses, regressions, instrument corrections, gate decisions, and final
+ledger in chronological form. Read it as primary evidence, not as the current
+architecture or a polished success narrative.
+
+The campaign objective was to approach active formatting of every portable code
+byte while retaining zero unclassified gate failures, idempotence, and
+Mathlib-canonical output.
 
 The number that matters is **shipped-of-portable**: active bytes over
 portable code bytes, where *shipped* zeroes gate-rejected files (they emit
@@ -13,7 +18,7 @@ quotation commands — permanently verbatim by design).
 ## The instrument
 
 ```sh
-src/lean4fmt/mathlib-census.sh [N-per-dir]    # MATHLIB= to point elsewhere
+./mathlib-census.sh [N-per-dir|all|@file-list] [clearances]
 ```
 
 Builds this tree under mathlib's pinned toolchain (elan, cached per rev),

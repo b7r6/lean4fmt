@@ -40,31 +40,32 @@ The historical `Aleph.CLI`/`Aleph.Cli` collision is resolved explicitly as
 
 ## Commands
 
-Read-only audit:
+Create a read-only plan over one or more Lake workspaces:
 
 ```sh
-make case-lean-plan
+python3 dag.py --case snake --output module-plan.json path/to/workspace
 ```
 
 Apply the journaled transaction:
 
 ```sh
-make case-lean-modules
+python3 dag.py --apply-plan module-plan.json --journal module-journal.json
 ```
 
 Select another policy explicitly:
 
 ```sh
-LEAN4FMT_MODULE_CASE=upperCamel make case-lean-plan
-LEAN4FMT_ACRONYMS=normalize make case-lean-plan
+python3 dag.py --case upperCamel --output module-plan.json path/to/workspace
+python3 dag.py --case snake --acronyms normalize \
+  --output module-plan.json path/to/workspace
 ```
 
 The module operation intentionally precedes declaration casing. Once module
 paths and imports reach their fixed point and affected oleans have been rebuilt,
 the existing elaborator-backed declaration rename can resolve against the new
-graph rather than a stale pre-migration snapshot. The `make rename-lean`
-entrypoint enforces this order and rebuilds `aleph` plus `lean4fmt` between the
-module transaction and declaration-resolution pass.
+graph rather than a stale pre-migration snapshot. A repository orchestrator must
+enforce this order and rebuild each affected workspace between the module
+transaction and declaration-resolution pass.
 
 ## Gate record — 2026-08-02
 

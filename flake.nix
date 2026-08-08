@@ -68,11 +68,61 @@
             platforms = import systems;
           };
         };
+      bookFor =
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          root = toString ./.;
+          source = nixpkgs.lib.cleanSourceWith {
+            src = ./.;
+            filter =
+              path: _type:
+              let
+                relative = nixpkgs.lib.removePrefix "${root}/" (toString path);
+                top = builtins.head (nixpkgs.lib.splitString "/" relative);
+              in
+              relative == ""
+              || top == "theme"
+              || relative == "Lean4Fmt"
+              || relative == "Lean4Fmt/Solve"
+              || relative == "Lean4Fmt/Solve/CAMPAIGN.md"
+              || builtins.elem relative [
+                "ARCHITECTURE.md"
+                "CAMPAIGN.md"
+                "DAG.md"
+                "DESIGN.md"
+                "DESIGN_V2.md"
+                "DISTRIBUTED_GATE.md"
+                "LINT.md"
+                "README.md"
+                "RENAME.md"
+                "SUMMARY.md"
+                "book.toml"
+              ];
+          };
+        in
+        pkgs.stdenvNoCC.mkDerivation {
+          pname = "custody-of-source";
+          version = "0-unstable";
+          src = source;
+          nativeBuildInputs = [ pkgs.mdbook ];
+          buildPhase = ''
+            runHook preBuild
+            mdbook build
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            cp -r .book $out
+            runHook postInstall
+          '';
+        };
     in
     {
       packages = eachSystem (system: {
         default = packageFor system;
         lean4fmt = packageFor system;
+        book = bookFor system;
       });
 
       apps = eachSystem (system: {
@@ -86,6 +136,7 @@
 
       checks = eachSystem (system: {
         package = self.packages.${system}.default;
+        book = self.packages.${system}.book;
       });
 
       devShells = eachSystem (
@@ -100,6 +151,7 @@
           default = pkgs.mkShell {
             packages = [
               pkgs.lean.lean-all
+              pkgs.mdbook
               pkgs.rsync
             ];
           };

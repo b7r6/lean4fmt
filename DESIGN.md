@@ -1,335 +1,237 @@
-# lean4fmt Design Notes
+# The Straylight Style
 
-A source-code formatter for Lean 4, targeting systems programming style.
+The formatter core is multi-style. Straylight is one policy: the house style
+for systems programs written in Lean 4. It is intentionally different from a
+mathematical-library style, and it is not imposed on Mathlib.
 
-> **Role now.** The production design is `DESIGN_V2.md`. This document's
-> **style guide** (below) is not superseded — it is the seed for the
-> **Straylight preset** (`DESIGN_V2.md §7`). Its status and phasing notes are v1
-> history; the production development loop is `DESIGN_V2.md §13`.
+This chapter specifies the fixed point. It does not prescribe how every input
+must be edited by hand. Formatting handles layout; linting identifies design
+hazards; renaming is a separate transactional operation.
 
-## Status
+## 1. Purpose
 
-Working! The parser pipeline now handles all standard Lean 4 syntax including
-imports with complex dependencies.
+Systems Lean is read as executable architecture. State ownership, resource
+lifetime, error paths, and event demultiplexing must remain visible during
+review. A proof-heavy mathematical file optimizes for different things: compact
+binders, conventional one-letter variables, and frequent transitions between
+tactic and term modes.
 
-**Key insight**: The lakefile needs `supportInterpreter := true` to run module
-initializers when loading syntax extensions from imports.
+The style therefore favors:
 
-## Architecture
+- explicit state and ownership;
+- screen-sized control flow;
+- stable, reviewable diffs;
+- names that survive reading without local context;
+- comments that explain invariants and transitions;
+- compact syntax where compactness preserves the shape of the computation.
 
-```
-Source → Parser.testParseModule → Syntax → ppModule → Format → pretty → String
-                    ↑
-            Environment with
-            imported syntax
-```
+The principle is density without concealment.
 
-The Lean pretty printer does most of the work. We customize via:
-1. Width hints to the layout algorithm
-2. Post-processing for mechanical rules (trailing whitespace, file ending)
-3. Eventually: custom syntax-aware formatters for specific constructs
+## 2. Layout
 
-## Why Not Mathlib Style
+### 2.1 Width and indentation
 
-Mathlib's style is optimized for theorem-heavy, tactic-heavy code where:
-- Proofs are often throwaway (generated, long, not meant to be read)
-- Screen real estate goes to displaying goals
-- Tactics run across many lines
+The default line width is 100 columns. Indentation advances by two spaces.
+Tabs are never emitted. Trailing whitespace is removed, and each file ends with
+one newline.
 
-Systems code is different:
-- Most code is `def`, `structure`, `opaque`, FFI bindings
-- Proofs are short and intentional (axiom contracts, invariants)
-- Readability of the *code* matters more than fitting in a small pane
-- We read and review diffs constantly
-
-## Systems Lean 4 Style Guide
-
-### Line Width: 100
-
-Modern screens. Dense code. The 80-column tradition assumes a VT100.
-
-### Horizontal Density
-
-Keep related things together. Don't break lines just because you can.
+A construct stays on one line when it fits and its flat form is lexically safe.
+Breaking is structural: continuation indentation follows the document algebra,
+not the historical whitespace of the source.
 
 ```lean
--- YES: fits on one line, keep it there
-def read (fd : Int32) (size : UInt32) (offset : Int64) : IO ByteArray
-
--- NO: unnecessary vertical sprawl
-def read
-    (fd : Int32)
-    (size : UInt32)
-    (offset : Int64) :
-    IO ByteArray
+def connect (host : String) (port : UInt16) (alpn : String) : IO Connection
 ```
 
-### Signatures
-
-One line when they fit. When breaking, break after `:` not before.
+Long signatures break as one declaration, with the result type owned by the
+signature rather than stranded as punctuation:
 
 ```lean
--- YES: one line
-def connect (host : String) (port : UInt16) (alpn : String) : IO Conn
-
--- YES: long signature, break after colon
-def processHeader (header : Syntax) (opts : Options) (msgs : MessageLog)
-    (inputCtx : InputContext) (trustLevel : UInt32) : IO (Environment × MessageLog)
-
--- NO: break before colon
-def processHeader (header : Syntax) (opts : Options) (msgs : MessageLog)
-    (inputCtx : InputContext) (trustLevel : UInt32)
+def process_header
+    (header : Syntax)
+    (options : Options)
+    (messages : MessageLog)
+    (input_context : InputContext)
     : IO (Environment × MessageLog)
 ```
 
-### Indentation: 2 Spaces
+### 2.2 Blocks
 
-Matches the existing codebase. Lean's nested structures don't need 4.
-
-### `do` Blocks: Compact
+`do`, `by`, loop, and match bodies add one indentation level. Extra indentation
+does not confer meaning and is not used decoratively.
 
 ```lean
--- YES
-def main : IO Unit := do
-  let x ← getLine
-  IO.println x
-
--- NO: extra indent
-def main : IO Unit := do
-    let x ← getLine
-    IO.println x
+def read_request : IO ByteArray := do
+  let socket ← accept
+  receive socket
 ```
 
-### Match Arms
+Line comments make a group unflattenable. The formatter never moves code after
+`--` onto the comment's physical line.
 
-Align `=>` when patterns are short and similar length. Don't align when it
-would create excessive whitespace.
+### 2.3 Vertical space
+
+One blank line separates conceptual stanzas. Multiple blank lines do not encode
+additional structure. Within a function, a blank-line break introduces a new
+step and should normally be preceded by an imperative stanza comment.
 
 ```lean
--- YES: aligned, patterns are short
-match mode with
-| .format => printOutput
-| .check  => checkDiff  
-| .write  => writeFile
+  -- remove the container's reference before extending the buffer.
+  let clients := state.clients.erase client_idx
+  let buffer := previous ++ chunk
 
--- YES: not aligned, patterns vary too much
-match result with
-| .ok value => process value
-| .error e => handleError e
-
--- NO: excessive alignment whitespace
-match kind with
-| .nop                    => handleNop
-| .accept                 => handleAccept
-| .meshDataFromPeer       => handleMeshData
+  -- dispatch the next complete request.
+  route_request loop state buffer
 ```
 
-### Structure Fields
+## 3. Declarations
 
-One per line. Align colons when field names are similar length.
+### 3.1 State bundles
+
+Three or more mutable variables threaded through a loop belong in a structure.
+Handlers take the state and return the next state. The loop body becomes a thin
+dispatch table.
 
 ```lean
-structure Event where
+structure worker_state where
+  pool    : Array upstream_slot
+  clients : Std.HashMap UInt32 client_state
+  waitq   : Array queued_request
+```
+
+### 3.2 Thin demultiplexers
+
+An event loop should fit on one screen. Each branch calls a named handler. A
+large branch is a missing function, not an invitation to fold more syntax into
+the loop.
+
+```lean
+match event.kind with
+| .meshFd  => state ← handle_mesh_fd loop state event
+| .connect => state ← handle_connect loop state event
+| .recv    => state ← handle_recv loop config state event
+| _        => pure ()
+```
+
+Match arms contain one expression by default. Guard and extraction work belongs
+inside that expression or in a named handler. This keeps the match readable as
+a table of alternatives.
+
+### 3.3 Function size
+
+Roughly fifty lines is a useful pressure signal, not a mechanical law. When a
+function no longer fits on a screen, look for a state transition, resource
+boundary, or semantic phase that deserves a name.
+
+### 3.4 Structures and inductives
+
+Fields and constructors occupy one line each when their signatures fit. Small,
+related field names may align their colons when the padding remains bounded.
+
+```lean
+structure event where
   ud    : UInt64
   res   : Int64
   flags : UInt32
-  kind  : OpKind
+  kind  : operation_kind
 ```
 
-### Imports
+Alignment is abandoned when it creates a wide whitespace canyon. The fallback
+layout is canonical and is part of the style definition.
 
-Grouped by origin. No blank lines within a group. One blank line between groups.
+## 4. Names
+
+Straylight uses snake case for project-defined modules, namespaces, types,
+theorems, and terms where Lean's module-resolution constraints permit it.
+Renaming is performed by resolved declaration identity across the import DAG;
+the formatter never changes identifier spelling as a layout side effect.
+
+Names should state their role. `fd`, `ud`, `cfg`, and `idx` are accepted terms
+of art. `p`, `w`, `n`, and `evs` usually discard information. Throwaway indices
+use `idx`, `jdx`, and `kdx`. A mathematical tree may admit traditional Greek
+binders through a local policy override; a systems tree does not inherit that
+exception automatically.
+
+Structure fields may remain compact when qualification supplies the missing
+context: `slot.st` and `slot.acc` are readable because the owner is present.
+
+The symbol-length floor is a lint rule with scoped, per-length allowlists. It is
+not encoded as a collection of exceptions in the checker. Changing the policy
+produces a new fixed point without changing the rule engine.
+
+## 5. Comments
+
+Comments explain facts the type or control-flow structure does not already say.
+The useful categories are:
+
+- invariant: what must remain true;
+- ownership: who may mutate or release a resource;
+- transition: what the next block accomplishes;
+- hazard: why an apparently simpler implementation is wrong;
+- evidence: which external contract or measured behavior justifies a choice.
+
+Doc comments describe the public declaration. Module comments explain the
+architecture, data path, and invariants before presenting implementation detail.
+Decorative rulers may partition a long module, but they do not substitute for
+headings or names.
+
+Do not narrate syntax:
 
 ```lean
-import Lean
-import Lean.Elab
-import Lean.PrettyPrinter
+-- Bad: increment next.
+next := next + 1
 
-import StdlibEx.IOUring
-import StdlibEx.TLS
-
-import MyProject.Core
-import MyProject.Utils
+-- Good: advance the round-robin worker cursor.
+next_worker := next_worker + 1
 ```
 
-### Namespace Style
+## 6. Resource-sensitive code
 
-`namespace`/`end` pairs, not brace style. The `end` marker aids navigation.
+Lean's reference counting is part of systems performance. When an append relies
+on unique ownership, remove the container's reference before appending and
+state the reason at the site. Do not hide the sequence behind an abstraction
+that obscures the reference-count transition.
 
 ```lean
--- YES
-namespace StdlibEx.IOUring
-
-def init (entries : UInt32) : IO RingHandle := ...
-
-end StdlibEx.IOUring
-
--- NO (Lean doesn't even support this, but for the record)
-namespace StdlibEx.IOUring {
-  ...
-}
+-- RC==1: erase the map reference before append so `++` can extend in place.
+let clients := state.clients.erase client_idx
+let buffer := if previous.isEmpty then chunk else previous ++ chunk
 ```
 
-### `where` Clauses
+File descriptors, registered slots, buffers, and completion identifiers should
+have one visible owner at every state. Names and handler boundaries should make
+that owner obvious.
 
-Inline for short helpers. Break to new line for longer ones.
+## 7. Imports and namespaces
+
+Imports are grouped by origin and kept stable within their semantic group.
+Reordering imports is not presumed semantics-free: imported syntax and
+initializers may affect later parsing and elaboration.
+
+Namespaces use explicit `namespace` and `end` markers. Top-level declarations
+remain flush-left. The closing marker names the namespace when that improves
+navigation.
+
+## 8. Proofs and tactics
+
+Short proofs stay attached to their statement:
 
 ```lean
--- YES: short helper
-def foo := bar + baz where
-  bar := 1
-  baz := 2
-
--- YES: longer helper, own line
-def processEvents (events : Array Event) := events.foldl handle init
-  where
-    handle acc ev := ...
-    init := ...
+theorem normalize_idempotent : normalize (normalize value) = normalize value := by
+  simp [normalize]
 ```
 
-### `by` Placement
+Long proofs break structurally. Tactics are not exempt from naming and layout
+merely because they occur in proof mode, but the linter policy remains less
+aggressive here until the cost of stricter conventions is measured on real
+trees.
 
-Same line as signature when the proof is short. New line when multiline.
+## 9. Policy, not scripture
 
-```lean
--- YES: short proof
-theorem cleanup_idempotent : ... := by simp [cleanup]
+Straylight is a resolved `Style` value plus tree-local overrides. It is not a
+claim that all Lean should look alike. Mathlib, generated code, embedded DSLs,
+and experimental trees have different rational interests.
 
--- YES: multiline proof
-theorem response_valid : ... := by
-  intro h
-  cases h
-  · simp
-  · exact ih
-```
-
-### Comments
-
-Preserve as-is. Normalize `--foo` to `-- foo` (space after `--`).
-
-Doc comments (`/-- ... -/`) stay attached to their declaration.
-
-### Trailing Whitespace
-
-Never. Strip it.
-
-### File Ending
-
-Single newline. No trailing blank lines.
-
-### Operators
-
-Spaces around binary operators. No space after unary.
-
-```lean
--- YES
-let x := a + b * c
-let y := -x
-
--- NO
-let x:=a+b*c
-let y := - x
-```
-
-## Open Questions
-
-1. **Type ascription alignment**: In `let x : T := ...`, align the `:`s in a block?
-   
-2. **Long `if` conditions**: Break before `then` or after `if`?
-
-3. **Tactic combinators**: `<;>` on same line or break?
-
-4. **Attribute lists**: `@[extern "foo", inline]` or one per line?
-
-5. **Anonymous constructor syntax**: `⟨a, b, c⟩` vs explicit constructor?
-
-## Implementation Phases
-
-### Phase 1: Make It Work ✓
-
-- [x] Fix import resolution for complex files
-- [x] Basic CLI: `--check`, `--write`, `--width`
-- [ ] Round-trip safety: parse → format → parse ≡ original AST
-- [ ] Handle all stdlib files without crashing
-
-### Phase 2: Style Rules
-
-- [ ] Line width enforcement (soft wrap at 100)
-- [ ] Trailing whitespace removal
-- [ ] File ending normalization
-- [ ] Import grouping (maybe: this might be too opinionated)
-
-### Phase 3: Syntax-Aware Formatting
-
-- [ ] Match arm alignment heuristic
-- [ ] Structure field alignment
-- [ ] Signature breaking rules
-- [ ] `where` clause formatting
-
-### Phase 4: Configuration
-
-```toml
-# lean4fmt.toml
-[style]
-line_width = 100
-indent = 2
-align_match_arms = true
-align_struct_fields = true
-```
-
-### Phase 5: Integration
-
-- [ ] Pre-commit hook
-- [ ] CI check (`lean4fmt --check`)
-- [ ] Editor integration (format on save)
-
-## Technical Notes
-
-### The Pretty Printer Pipeline
-
-Lean's `PrettyPrinter` module:
-1. `ppModule : TSyntax `module → CoreM Format` — syntax to format
-2. `Format.pretty : Format → Nat → String` — layout with width
-
-The `Format` type is a tree of text, line breaks, and groups. The layout
-algorithm decides which groups to break based on available width.
-
-### Known Limitations
-
-**Multi-file processing**: Due to Lean's module initialization semantics,
-the `interpretedModInits` global tracks which modules have run their initializers.
-After processing one file, subsequent files may fail because Init's initializers
-won't run again. Workaround: use `xargs -n1` to invoke the formatter once per file.
-
-```bash
-find . -name '*.lean' | xargs -n1 lean4fmt --check
-```
-
-### Why Parsing Worked
-
-The fix required two things:
-
-1. **`enableInitializersExecution`**: Must be called before `processHeader` so
-   that `[init]` attributes run when loading modules. This registers syntax
-   extensions, macros, etc.
-
-2. **`supportInterpreter := true`**: In the lakefile's `lean_exe` declaration.
-   Without this, the compiled binary can't run the interpreted code that
-   registers syntax extensions. The error message is:
-   
-   ```
-   Could not find native implementation of external declaration 'IO.getRandomBytes'
-   ```
-
-The `opaque`/`@[implemented_by]` pattern lets us call `unsafe` functions like
-`enableInitializersExecution` from a safe `main`.
-
-### Alternatives Considered
-
-1. **String manipulation**: Too fragile, loses structure
-2. **Regex-based**: Can't handle nested syntax
-3. **Custom parser**: Reinventing the wheel
-4. **Lean's `#check_failure`**: Not a formatter
-
-Using the real frontend is the right call — it handles all syntax extensions,
-macros, notations. We just need to get the setup right.
+The unifying principle is process. Preserve the composition laws, make every
+exception explicit, run the gates, and let a policy change produce a new fixed
+point. A house style earns authority by being cheap to revise and safe to apply.

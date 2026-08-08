@@ -1,5 +1,10 @@
 # The layout-solver campaign
 
+This appendix is the original gate ledger for the layout solver. It is retained
+as evidence: the durable solver architecture is described in the main chapters,
+while this record preserves the alternatives, staging decisions, and measured
+exit conditions that produced it.
+
 Goal: promote the constraint solver (`Lean4Fmt/Solve/Layout.lean`) from a
 verified isolated core to **the house layout engine** — the shipping formatter
 selects the most-preferred declaration shape that satisfies the width
