@@ -22,9 +22,73 @@ import lean_4_fmt.style.preset
 open Lean
 open Lean4Fmt
 
+/-- Version of the `lean` in PATH, parsed from `lean --version`
+    ("Lean (version 4.31.0, target, commit, Release)"). `none` when no
+    `lean` is runnable at all. -/
+private
+def path_lean_version : IO (Option String) := do
+  try
+    let out ← IO.Process.run { cmd := "lean", args := #["--version"] }
+    match out.trimAscii.copy.splitOn " " |>.dropWhile (fun t => !(t.endsWith "version")) with
+    | _ :: v :: _ =>
+      return some (if v.endsWith "," then v.dropRight 1 else v)
+    | _ => return none
+  catch _ => return none
+
+/-- Error text for a PATH `lean` whose version disagrees with the binary. -/
+private
+def mismatch_msg (v : String) : String :=
+  s!"lean4fmt was built against Lean {Lean.versionString}, but the `lean` in PATH reports {v}. " ++
+  "A sysroot taken from it would hold oleans this binary cannot read. " ++
+  s!"Set LEAN_SYSROOT to a Lean {Lean.versionString} toolchain prefix, or run where `lean` is {Lean.versionString}."
+
+/-- Error text when no usable `lean` is found at all. -/
+private
+def no_lean_msg : String :=
+  s!"no `lean` found in PATH and no elan toolchain for Lean {Lean.versionString}. " ++
+  s!"Set LEAN_SYSROOT to a Lean {Lean.versionString} toolchain prefix."
+
+/-- Sysroot resolution that cannot disagree with the binary. `findSysroot`
+    asks `lean` in PATH; under elan that shim dispatches on the CALLER'S
+    directory (`lean-toolchain`, else the elan default), so a formatter built
+    against one toolchain but run inside a project pinned to another reads
+    foreign oleans and dies with `incompatible header`. Resolution order:
+
+    1. `LEAN_SYSROOT` — explicit caller control, as with `LEAN_PATH` below.
+    2. The elan toolchain matching THIS BINARY's compile-time
+       `Lean.versionString` — zero spawns, always names oleans this binary
+       can read.
+    3. `lean --print-prefix` from PATH, accepted only if `lean --version`
+       reports the same version; otherwise a clear error naming both
+       versions and the `LEAN_SYSROOT` remedy, instead of the olean header
+       failure. -/
+private
+def find_own_sysroot : IO System.FilePath := do
+  if let some root ← IO.getEnv "LEAN_SYSROOT" then
+    return ⟨root⟩
+  let elanHome ← match ← IO.getEnv "ELAN_HOME" with
+    | some d => pure d
+    | none => match ← IO.getEnv "HOME" with
+      | some h => pure (h ++ "/.elan")
+      | none => pure ""
+  if elanHome != "" then
+    let own : System.FilePath :=
+      ⟨s!"{elanHome}/toolchains/leanprover--lean4---v{Lean.versionString}"⟩
+    if (← (own / "bin" / "lean").pathExists) then
+      return own
+  match ← path_lean_version with
+  | some v =>
+    if v == Lean.versionString then
+      let out ← IO.Process.run { cmd := "lean", args := #["--print-prefix"] }
+      return ⟨out.trimAscii.copy⟩
+    else
+      throw (IO.userError (mismatch_msg v))
+  | none =>
+    throw (IO.userError no_lean_msg)
+
 unsafe
 def init_env_impl : IO Unit := do
-  initSearchPath (← findSysroot)
+  initSearchPath (← find_own_sysroot)
   enableInitializersExecution -- required before importing modules with syntax extensions
 
 @[implemented_by init_env_impl]
