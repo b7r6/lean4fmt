@@ -1,0 +1,32 @@
+[book]
+title = "Custody of Source"
+authors = ["b7r6"]
+description = "The design and engineering of a trustworthy Lean 4 formatter"
+language = "en"
+src = "doc"
+
+[build]
+build-dir = ".book"
+create-missing = false
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/b7r6/lean4fmt"
+edit-url-template = "https://github.com/b7r6/lean4fmt/edit/main/doc/{path}"
+additional-css = ["theme/lean4fmt.css"]
+no-section-label = true
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 30
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 1
+boost-paragraph = 1
+expand = true
+heading-split-level = 2
