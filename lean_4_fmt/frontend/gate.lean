@@ -35,17 +35,18 @@ open Lean
     the interleaved elaborating frontend (`Session.parseModule?`, `full` depth).
     `env` is imported once per process by `formatFile`; both the source parse and
     the fixed-point reparse reuse it (re-importing per call is what breaks). -/
-unsafe def parse_full?
-           (env : Environment)
-           (path contents : String)
-           (elabFallback : Bool := true)
-           : IO (Option Lean.Syntax) := do
-
+unsafe
+def parse_full?
+    (env : Environment)
+    (path contents : String)
+    (elabFallback : Bool := true)
+    : IO (Option Lean.Syntax) := do
   let some stx ← parse_module? env path contents |
     if elabFallback then Session.parse_module? env path contents else pure none
   pure (some stx)
 
-private structure rejection_context where
+private
+structure rejection_context where
   path     : String
   active   : String
   active2  : String
@@ -56,10 +57,8 @@ private structure rejection_context where
   fixedOk  : Bool
 
 /-- Materialize a rejected candidate for the opt-in drill workflow. -/
-private unsafe def dump_rejection
-                   (context : rejection_context)
-                   : IO Unit := do
-
+private unsafe
+def dump_rejection (context : rejection_context) : IO Unit := do
   let some dir ← IO.getEnv "L4F_DRILL_DIR" | return
   let slug := context.path.replace "/" "_"
   IO.FS.createDirAll ⟨dir⟩
@@ -84,11 +83,11 @@ private unsafe def dump_rejection
     IO.eprintln
       s!"SPINEDIFF {context.path} @{idx}: {(sourceSpine.extract (idx - 2) (idx + 4)).toList} vs {(outputSpine.extract (idx - 2) (idx + 4)).toList} (sizes {sourceSpine.size}/{outputSpine.size})"
 
-private def parse_failure
-            (contents : String)
-            (elabFallback : Bool)
-            : String × Array Lean4Fmt.Rules.Diagnostic :=
-
+private
+def parse_failure
+    (contents : String)
+    (elabFallback : Bool)
+    : String × Array Lean4Fmt.Rules.Diagnostic :=
   let message :=
     if elabFallback then
       "not formatted: could not parse (unresolved imports or unsupported syntax)"
@@ -103,10 +102,8 @@ private def parse_failure
     candidate has failed the semantic gate, so they cannot suppress linting or
     turn an unsafe candidate into formatted output — they name a deliberate
     identity result. -/
-private unsafe def identity_clearance?
-                   (target : String)
-                   : IO Bool := do
-
+private unsafe
+def identity_clearance? (target : String) : IO Bool := do
   let some specification ← IO.getEnv "L4F_IDENTITY_CLEARANCES" | return false
   for filename in specification.splitOn ":" do
     if filename.isEmpty then continue
@@ -119,16 +116,15 @@ private unsafe def identity_clearance?
         return true
   return false
 
-private def identity_clearance_diag
-            (reason : String)
-            : Lean4Fmt.Rules.Diagnostic :=
-
+private
+def identity_clearance_diag (reason : String) : Lean4Fmt.Rules.Diagnostic :=
   { severity := .debug, rule := "clearance", message := s!"identity fallback ({reason})" }
 
-private unsafe def reject_reparse
-                   (path contents active : String)
-                   (diags : Array Lean4Fmt.Rules.Diagnostic)
-                   : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
+private unsafe
+def reject_reparse
+    (path contents active : String)
+    (diags : Array Lean4Fmt.Rules.Diagnostic)
+    : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
 
   -- expose the invalid candidate to the opt-in drill workflow.
   if let some dir ← IO.getEnv "L4F_DRILL_DIR" then
@@ -148,13 +144,13 @@ private unsafe def reject_reparse
           message  := "not formatted: output failed to reparse (gate fallback)" }
     )
 
-private unsafe def align_source_frontend
-                   (env : Environment)
-                   (path contents active : String)
-                   (elabFallback : Bool)
-                   (source : Lean.Syntax)
-                   : IO Lean.Syntax := do
-
+private unsafe
+def align_source_frontend
+    (env : Environment)
+    (path contents active : String)
+    (elabFallback : Bool)
+    (source : Lean.Syntax)
+    : IO Lean.Syntax := do
   if elabFallback
       && (← parse_module? env path active).isNone
       && (← parse_module? env path contents).isSome then
@@ -162,24 +158,23 @@ private unsafe def align_source_frontend
   else
     pure source
 
-private def rejection_reason
-            (tokensOk spineOk commentsOk headerOk : Bool)
-            : String :=
-
+private
+def rejection_reason (tokensOk spineOk commentsOk headerOk : Bool) : String :=
   if !tokensOk then
     "tokens"
   else if !spineOk then
     "tree"
   else if !commentsOk then "comments" else if !headerOk then "header" else "fixed-point"
 
-private unsafe def validate_candidate
-                   (env : Environment)
-                   (path contents active : String)
-                   (style : Lean4Fmt.Style.Style)
-                   (elabFallback : Bool)
-                   (source output : Lean.Syntax)
-                   (diags : Array Lean4Fmt.Rules.Diagnostic)
-                   : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
+private unsafe
+def validate_candidate
+    (env : Environment)
+    (path contents active : String)
+    (style : Lean4Fmt.Style.Style)
+    (elabFallback : Bool)
+    (source output : Lean.Syntax)
+    (diags : Array Lean4Fmt.Rules.Diagnostic)
+    : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
 
   -- align both inputs on the elaborating frontend when the output requires it.
   let source ← align_source_frontend env path contents active elabFallback source
@@ -222,13 +217,13 @@ private unsafe def validate_candidate
     syntax regardless of whether the reformat is kept). An unparseable file passes
     through UNCHANGED but never silently: a warning diagnostic says why (skipped
     coverage must be visible — a formatter that quietly no-ops looks like it ran). -/
-unsafe def format_safe
-           (env : Environment)
-           (path contents : String)
-           (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
-           (elabFallback : Bool := true)
-           : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
-
+unsafe
+def format_safe
+    (env : Environment)
+    (path contents : String)
+    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
+    (elabFallback : Bool := true)
+    : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   let some source ← parse_full? env path contents elabFallback |
     return parse_failure contents elabFallback
 
@@ -244,12 +239,12 @@ unsafe def format_safe
   validate_candidate env path contents active style elabFallback source output diags
 
 /-- Build the environment for a file (loads its imports) and format it. -/
-unsafe def format_file
-           (path contents : String)
-           (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
-           (elabFallback : Bool := true)
-           : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
-
+unsafe
+def format_file
+    (path contents : String)
+    (style : Lean4Fmt.Style.Style := Lean4Fmt.Style.default)
+    (elabFallback : Bool := true)
+    : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   let ictx := Parser.mkInputContext contents path
   let (hdr, _, msgs) ← Parser.parseHeader ictx
   let (env, _) ← Elab.processHeader hdr {} msgs ictx (trustLevel := 1024)

@@ -39,9 +39,7 @@ inductive symbol_role
     the role their names receive. This is the binding-surface manifest: adding
     a harvester requires adding its parser kind here, where laws can exact-cover
     the classification independently of traversal details. -/
-def binding_kind_inventory
-    : List (Name × symbol_role) :=
-
+def binding_kind_inventory : List (Name × symbol_role) :=
   [
     (``Lean.Parser.Command.declId, .declaration),
     (``Lean.Parser.Command.ctor, .declaration),
@@ -82,10 +80,7 @@ def binding_kind_inventory
 
 /-- Classify a syntax node through the audited manifest. `none` means the node
     is not a recognized binding site; callers must not infer an exemption. -/
-def role_of_kind
-    (kind : Name)
-    : Option symbol_role :=
-
+def role_of_kind (kind : Name) : Option symbol_role :=
   (binding_kind_inventory.find? (·.1 == kind)).map (·.2)
 
 /-- Roles stay diagnostic unless a later, explicit policy says otherwise.
@@ -107,26 +102,21 @@ def symbol_role.name : symbol_role → String
   | .loopIndex         => "loop-index"
   | .collectionElement => "collection-element"
 
-private partial def first_ident : Syntax → Option Syntax
+private partial
+def first_ident : Syntax → Option Syntax
   | stx@(.ident ..) => some stx
   | .node _ _ args  => args.findSome? first_ident
   | _               => none
 
-private partial def ident_leaves
-                    (stx : Syntax)
-                    (found : Array Syntax := #[])
-                    : Array Syntax :=
-
+private partial
+def ident_leaves (stx : Syntax) (found : Array Syntax := #[]) : Array Syntax :=
   match stx with
   | ident@(.ident ..) => found.push ident
   | .node _ _ args    => args.foldl (fun result child => ident_leaves child result) found
   | _                 => found
 
-private partial def binder_idents_before_colon
-                    (stx : Syntax)
-                    (found : Array Syntax := #[])
-                    : Array Syntax × Bool :=
-
+private partial
+def binder_idents_before_colon (stx : Syntax) (found : Array Syntax := #[]) : Array Syntax × Bool :=
   match stx with
   | ident@(.ident ..) => (found.push ident, false)
   | .atom _ ":" => (found, true)
@@ -139,15 +129,14 @@ private partial def binder_idents_before_colon
         (found, false)
   | _ => (found, false)
 
-private partial def contains_colon : Syntax → Bool
+private partial
+def contains_colon : Syntax → Bool
   | .atom _ ":"    => true
   | .node _ _ args => args.any contains_colon
   | _              => false
 
-private def core_name
-            (stx : Syntax)
-            : String :=
-
+private
+def core_name (stx : Syntax) : String :=
   let raw :=
     match stx with
     | .ident _ raw _ _ => raw.toString
@@ -155,38 +144,31 @@ private def core_name
   let tail := (raw.splitOn ".").getLast!
   ((tail.dropWhile (· == '_')).dropEndWhile '\'').toString
 
-private def allowed_in
-            (buckets : List (Nat × List String))
-            (name : String)
-            : Bool :=
-
+private
+def allowed_in (buckets : List (Nat × List String)) (name : String) : Bool :=
   (buckets.find? (·.1 == name.length)).any (·.2.contains name)
 
-private def in_range
-            (char : Char)
-            (lower upper : Nat)
-            : Bool :=
+private
+def in_range (char : Char) (lower upper : Nat) : Bool := lower ≤ char.toNat && char.toNat ≤ upper
 
-  lower ≤ char.toNat && char.toNat ≤ upper
+private
+def greek (char : Char) : Bool := in_range char 0x0370 0x03ff || in_range char 0x1f00 0x1fff
 
-private def greek (char : Char) : Bool := in_range char 0x0370 0x03ff || in_range char 0x1f00 0x1fff
+private
+def hebrew (char : Char) : Bool := in_range char 0x0590 0x05ff
 
-private def hebrew (char : Char) : Bool := in_range char 0x0590 0x05ff
-
-private def subscript_or_modifier
-            (char : Char)
-            : Bool :=
-
+private
+def subscript_or_modifier (char : Char) : Bool :=
   in_range char 0x1d2c 0x1d6a || in_range char 0x2070 0x209f
 
 /-- Report a named instance binder that violates the traditional convention. -/
-private def report_instance_name
-            (role : symbol_role)
-            (name : String)
-            (pos : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_instance_name
+    (role : symbol_role)
+    (name : String)
+    (pos : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   found.push
     {
       severity := .info
@@ -197,14 +179,14 @@ private def report_instance_name
     }
 
 /-- Report a short pattern or match-arm binder that lacks a semantic name. -/
-private def report_pattern_name
-            (policy : Linting)
-            (role : symbol_role)
-            (name : String)
-            (pos : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_pattern_name
+    (policy : Linting)
+    (role : symbol_role)
+    (name : String)
+    (pos : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   found.push
     {
       severity := .info
@@ -216,13 +198,13 @@ private def report_pattern_name
 
 /-- Report a collection loop whose binder is short, placeholder-like, or uses
     vocabulary reserved for positional counters. -/
-private def report_collection_element
-            (policy : Linting)
-            (name : String)
-            (pos : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_collection_element
+    (policy : Linting)
+    (name : String)
+    (pos : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   found.push
     {
       severity := .info
@@ -235,13 +217,13 @@ private def report_collection_element
 /-- Report a short or placeholder-like field that lacks an explicit field-policy
     exception. Fields use their own rule so API-sensitive exceptions remain
     visible and tree-local rather than disappearing into generic symbol debt. -/
-private def report_field_name
-            (policy : Linting)
-            (qualifiedName : String)
-            (pos : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_field_name
+    (policy : Linting)
+    (qualifiedName : String)
+    (pos : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   found.push
     {
       severity := .info
@@ -253,13 +235,13 @@ private def report_field_name
 
 /-- Report a short or placeholder-like declaration head without a declaration
     policy exception. Constructor diagnostics carry their syntactic owner. -/
-private def report_declaration_name
-            (policy : Linting)
-            (qualifiedName : String)
-            (pos : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_declaration_name
+    (policy : Linting)
+    (qualifiedName : String)
+    (pos : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   found.push
     {
       severity := .info
@@ -272,13 +254,13 @@ private def report_declaration_name
 /-- Report a short term-mode recursive helper head. Recursive helper names have
     their own policy and rule so enabling the semantic gate never also emits the
     generic symbol-floor diagnostic for the same binding site. -/
-private def report_recursive_helper_name
-            (policy : Linting)
-            (name : String)
-            (pos : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_recursive_helper_name
+    (policy : Linting)
+    (name : String)
+    (pos : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   found.push
     {
       severity := .info
@@ -289,13 +271,13 @@ private def report_recursive_helper_name
     }
 
 /-- Report a short lambda binder through its role-local semantic gate. -/
-private def report_lambda_name
-            (policy : Linting)
-            (name : String)
-            (pos : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_lambda_name
+    (policy : Linting)
+    (name : String)
+    (pos : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   found.push
     {
       severity := .info
@@ -308,13 +290,13 @@ private def report_lambda_name
 /-- Report a short immutable, do-block, or mutable let binder through its
     role-local semantic gate. Assignment targets and resolved uses are not
     binding sites and therefore never reach this reporter. -/
-private def report_let_name
-            (policy : Linting)
-            (name : String)
-            (pos : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_let_name
+    (policy : Linting)
+    (name : String)
+    (pos : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   found.push
     {
       severity := .info
@@ -326,23 +308,20 @@ private def report_let_name
 
 /-- Whether a named instance binder obeys the traditional Lean convention:
     one Greek or Hebrew base letter followed only by modifiers/subscripts. -/
-def traditional_instance_name
-    (name : String)
-    : Bool :=
-
+def traditional_instance_name (name : String) : Bool :=
   match name.toList with
   | head :: tail => (greek head || hebrew head) && tail.all subscript_or_modifier
   | []           => false
 
-private def report_symbol_floor
-            (policy : Linting)
-            (role : symbol_role)
-            (name : String)
-            (traditional roleAllowed : Bool)
-            (pos : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_symbol_floor
+    (policy : Linting)
+    (role : symbol_role)
+    (name : String)
+    (traditional roleAllowed : Bool)
+    (pos : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   if role != .field && policy.symbolDeny.contains name then
     found.push
       {
@@ -366,12 +345,8 @@ private def report_symbol_floor
         message := s!"`{name}` has {name.length} characters; minimum is {policy.symbolMinChars}"
       }
 
-private def role_is_traditional
-            (policy : Linting)
-            (role : symbol_role)
-            (name : String)
-            : Bool :=
-
+private
+def role_is_traditional (policy : Linting) (role : symbol_role) (name : String) : Bool :=
   match role with
   | .field => false
   | .instanceBinder => policy.allowTraditionalInstances && traditional_instance_name name
@@ -382,12 +357,8 @@ private def role_is_traditional
               || (policy.allowHebrewSymbols && name.toList.any hebrew)
         )
 
-private def role_is_allowed
-            (policy : Linting)
-            (role : symbol_role)
-            (name : String)
-            : Bool :=
-
+private
+def role_is_allowed (policy : Linting) (role : symbol_role) (name : String) : Bool :=
   if role == .lambdaBinder then
     allowed_in policy.lambdaAllow name
   else if role == .letBinder then
@@ -396,24 +367,20 @@ private def role_is_allowed
     allowed_in policy.symbolAllow name || (role == .field && allowed_in policy.fieldAllow name)
         || (role == .recursiveHelper && allowed_in policy.recursiveHelperAllow name)
 
-private def semantic_name_valid
-            (policy : Linting)
-            (name : String)
-            (roleAllowed : Bool)
-            : Bool :=
-
+private
+def semantic_name_valid (policy : Linting) (name : String) (roleAllowed : Bool) : Bool :=
   name.isEmpty || roleAllowed
       || (name.length ≥ policy.symbolMinChars && !policy.symbolDeny.contains name)
 
-private def report_semantic_role?
-            (policy : Linting)
-            (role : symbol_role)
-            (name : String)
-            (roleAllowed : Bool)
-            (pos : Nat)
-            (found : Array Diagnostic)
-            : Option (Array Diagnostic) :=
-
+private
+def report_semantic_role?
+    (policy : Linting)
+    (role : symbol_role)
+    (name : String)
+    (roleAllowed : Bool)
+    (pos : Nat)
+    (found : Array Diagnostic)
+    : Option (Array Diagnostic) :=
   if role == .field && policy.requireSemanticFieldNames then
     some found
   else if role == .declaration && policy.requireSemanticDeclarationNames then
@@ -439,13 +406,13 @@ private def report_semantic_role?
   else
     none
 
-private def report
-            (policy : Linting)
-            (role : symbol_role)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report
+    (policy : Linting)
+    (role : symbol_role)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   let name := core_name stx
   let traditional := role_is_traditional policy role name
   let roleAllowed := role_is_allowed policy role name
@@ -477,34 +444,30 @@ private def report
     | some found => found
     | none       => report_symbol_floor policy role name traditional roleAllowed pos found
 
-private def report_first
-            (policy : Linting)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_first (policy : Linting) (stx : Syntax) (found : Array Diagnostic) : Array Diagnostic :=
   match first_ident stx with
   | some ident => report policy .declaration ident found
   | none       => found
 
-private def report_first_role
-            (policy : Linting)
-            (role : symbol_role)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_first_role
+    (policy : Linting)
+    (role : symbol_role)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match first_ident stx with
   | some ident => report policy role ident found
   | none       => found
 
-private def report_binder
-            (policy : Linting)
-            (role : symbol_role)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_binder
+    (policy : Linting)
+    (role : symbol_role)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   let args := stx.getArgs
   if args.size < 3 then
     found
@@ -517,14 +480,14 @@ private def report_binder
       |>.1
     names.foldl (fun result ident => report policy role ident result) found
 
-private def report_child
-            (policy : Linting)
-            (role : symbol_role)
-            (stx : Syntax)
-            (index : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_child
+    (policy : Linting)
+    (role : symbol_role)
+    (stx : Syntax)
+    (index : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match stx.getArgs[index]? with
   | some child =>
     match first_ident child with
@@ -532,13 +495,13 @@ private def report_child
     | none       => found
   | none => found
 
-private def report_field
-            (policy : Linting)
-            (owner : Option String)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_field
+    (policy : Linting)
+    (owner : Option String)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match first_ident stx with
   | none => found
   | some ident =>
@@ -559,13 +522,13 @@ private def report_field
         let pos := (ident.getRange?.map (·.start.byteIdx)).getD 0
         report_field_name policy qualifiedName pos found
 
-private def report_declaration
-            (policy : Linting)
-            (owner : Option String)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_declaration
+    (policy : Linting)
+    (owner : Option String)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match first_ident stx with
   | none => found
   | some ident =>
@@ -585,15 +548,14 @@ private def report_declaration
         let pos := (ident.getRange?.map (·.start.byteIdx)).getD 0
         report_declaration_name policy qualifiedName pos found
 
-private def pattern_ident_is_reference : Syntax → Bool
+private
+def pattern_ident_is_reference : Syntax → Bool
   | .ident _ raw _ preResolved =>
     raw.toString.contains '.' || preResolved.any fun | .decl .. => true | _ => false
   | _ => false
 
-private def pattern_is_dotted
-            (args : Array Syntax)
-            : Bool :=
-
+private
+def pattern_is_dotted (args : Array Syntax) : Bool :=
   match (args[0]? : Option Syntax) with
   | some (.atom _ ".") => true
   | _ => false
@@ -682,12 +644,12 @@ mutual
 
 end
 
-private def report_basic_fun
-            (policy : Linting)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_basic_fun
+    (policy : Linting)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match stx.getArgs[0]? with
   | none => found
   | some binders =>
@@ -703,35 +665,32 @@ private def report_basic_fun
       )
       found
 
-private def report_pattern_child
-            (policy : Linting)
-            (role : symbol_role)
-            (stx : Syntax)
-            (index : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_pattern_child
+    (policy : Linting)
+    (role : symbol_role)
+    (stx : Syntax)
+    (index : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match stx.getArgs[index]? with
   | some pattern => report_pattern policy pattern role false found
   | none         => found
 
 /-- Whether a loop iterable is bracket-range syntax rather than a collection
     expression. Only this syntax receives positional counter names. -/
-def positional_loop_iterable
-    (stx : Syntax)
-    : Bool :=
-
+def positional_loop_iterable (stx : Syntax) : Bool :=
   let kind := stx.getKind
   kind == `Std.Legacy.Range.«term[_:_]» || kind == `Std.Legacy.Range.«term[_:_:_]»
       || kind == `Std.Legacy.Range.«term[:_]»
 
-private def report_term_binding
-            (policy : Linting)
-            (kind : Name)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_term_binding
+    (policy : Linting)
+    (kind : Name)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   if kind == ``Lean.Parser.Term.basicFun then
     report_basic_fun policy stx found
   else if kind == ``Lean.Parser.Term.letPatDecl || kind == ``Lean.Parser.Term.doPatDecl then
@@ -748,13 +707,13 @@ private def report_term_binding
   else
     found
 
-private def report_binder_site
-            (policy : Linting)
-            (kind : Name)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_binder_site
+    (policy : Linting)
+    (kind : Name)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   if kind == ``Lean.Parser.Term.explicitBinder || kind == ``Lean.Parser.Term.implicitBinder
       || kind == ``Lean.Parser.Term.strictImplicitBinder then
     report_binder policy .parameterBinder stx found
@@ -763,12 +722,12 @@ private def report_binder_site
   else
     found
 
-private def report_tactic_binders
-            (policy : Linting)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_tactic_binders
+    (policy : Linting)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match stx.getArgs[1]? with
   | some binders =>
     (ident_leaves binders).foldl
@@ -776,13 +735,13 @@ private def report_tactic_binders
       found
   | none => found
 
-private def report_tactic_binders_in_child
-            (policy : Linting)
-            (stx : Syntax)
-            (index : Nat)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_tactic_binders_in_child
+    (policy : Linting)
+    (stx : Syntax)
+    (index : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match stx.getArgs[index]? with
   | some binders =>
     (ident_leaves binders).foldl
@@ -790,12 +749,12 @@ private def report_tactic_binders_in_child
       found
   | none => found
 
-private def report_case_binders
-            (policy : Linting)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_case_binders
+    (policy : Linting)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match stx.getArgs[1]? with
   | some alternatives =>
     alternatives.getArgs.foldl
@@ -810,22 +769,22 @@ private def report_case_binders
       found
   | none => found
 
-private def report_suffices_binder
-            (policy : Linting)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_suffices_binder
+    (policy : Linting)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match stx.getArgs[1]? with
   | some declaration => report_child policy .tacticBinder declaration 0 found
   | none             => found
 
-private def report_generalize_binders
-            (policy : Linting)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_generalize_binders
+    (policy : Linting)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match stx.getArgs[1]? with
   | some arguments =>
     arguments.getArgs.foldl
@@ -837,12 +796,12 @@ private def report_generalize_binders
       found
   | none => found
 
-private def report_induction_alternative_binders
-            (policy : Linting)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_induction_alternative_binders
+    (policy : Linting)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match stx.getArgs[2]? with
   | some binders =>
     (ident_leaves binders).foldl
@@ -850,12 +809,12 @@ private def report_induction_alternative_binders
       found
   | none => found
 
-private def report_rcases_pattern_binder
-            (policy : Linting)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_rcases_pattern_binder
+    (policy : Linting)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   match stx.getArgs[0]? with
   | some ident =>
     let isRfl :=
@@ -865,12 +824,12 @@ private def report_rcases_pattern_binder
     if isRfl then found else report policy .tacticBinder ident found
   | none => found
 
-private partial def report_tactic_config_binders
-                    (policy : Linting)
-                    (stx : Syntax)
-                    (found : Array Diagnostic)
-                    : Array Diagnostic :=
-
+private partial
+def report_tactic_config_binders
+    (policy : Linting)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   let found :=
     if stx.getKind == ``Lean.Parser.Term.letOptEq then
       report_child policy .tacticBinder stx 3 found
@@ -878,13 +837,13 @@ private partial def report_tactic_config_binders
       found
   stx.getArgs.foldl (fun result child => report_tactic_config_binders policy child result) found
 
-private def report_tactic_binding
-            (policy : Linting)
-            (kind : Name)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_tactic_binding
+    (policy : Linting)
+    (kind : Name)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   if kind == ``Lean.Parser.Tactic.intro || kind == ``Lean.Parser.Tactic.renameI
       || kind == `Lean.Parser.Tactic.«tacticNext_=>_» then
     report_tactic_binders policy stx found
@@ -915,10 +874,8 @@ private def report_tactic_binding
   else
     found
 
-private def tactic_declaration_kind
-            (kind : Name)
-            : Bool :=
-
+private
+def tactic_declaration_kind (kind : Name) : Bool :=
   kind == ``Lean.Parser.Tactic.tacticHave__ || kind == `Lean.Parser.Tactic.tacticLet__
       || kind == `Lean.Parser.Tactic.tacticHaveI__
       || kind == `Lean.Parser.Tactic.tacticLetI__
@@ -926,14 +883,14 @@ private def tactic_declaration_kind
       || kind == `Lean.Parser.Tactic.tacticHave'
       || kind == `Lean.Parser.Tactic.tacticLet'__
 
-private def report_let_declaration?
-            (policy : Linting)
-            (kind : Name)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            (claimedRole : Option symbol_role)
-            : Option (Array Diagnostic) :=
-
+private
+def report_let_declaration?
+    (policy : Linting)
+    (kind : Name)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    (claimedRole : Option symbol_role)
+    : Option (Array Diagnostic) :=
   if kind == ``Lean.Parser.Term.letIdDecl || kind == ``Lean.Parser.Term.letIdDeclNoBinders then
     some
         <| match claimedRole with
@@ -952,16 +909,16 @@ private def report_let_declaration?
   else
     none
 
-private def report_node
-            (policy : Linting)
-            (kind : Name)
-            (stx : Syntax)
-            (found : Array Diagnostic)
-            (claimedRole : Option symbol_role)
-            (fieldOwner : Option String)
-            (declarationOwner : Option String)
-            : Array Diagnostic :=
-
+private
+def report_node
+    (policy : Linting)
+    (kind : Name)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    (claimedRole : Option symbol_role)
+    (fieldOwner : Option String)
+    (declarationOwner : Option String)
+    : Array Diagnostic :=
   match report_let_declaration? policy kind stx found claimedRole with
   | some found => found
   | none =>
@@ -984,76 +941,69 @@ private def report_node
         stx
         (report_binder_site policy kind stx (report_term_binding policy kind stx found))
 
-private def field_owner_at
-            (kind : Name)
-            (stx : Syntax)
-            (inherited : Option String)
-            : Option String :=
-
+private
+def field_owner_at (kind : Name) (stx : Syntax) (inherited : Option String) : Option String :=
   if kind == ``Lean.Parser.Command.structure || kind.toString == "Lean.Parser.Command.class" then
     (stx.getArgs[1]? >>= first_ident).map core_name
   else
     inherited
 
-private def declaration_owner_at
-            (kind : Name)
-            (stx : Syntax)
-            (inherited : Option String)
-            : Option String :=
-
+private
+def declaration_owner_at (kind : Name) (stx : Syntax) (inherited : Option String) : Option String :=
   if kind == ``Lean.Parser.Command.inductive then
     (stx.getArgs[1]? >>= first_ident).map core_name
   else
     inherited
 
-private abbrev descend_fn := Syntax → Array Diagnostic → Option symbol_role → Array Diagnostic
+private
+abbrev descend_fn := Syntax → Array Diagnostic → Option symbol_role → Array Diagnostic
 
-private def descend_plain
-            (descend : descend_fn)
-            (children : Array Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def descend_plain
+    (descend : descend_fn)
+    (children : Array Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   children.foldl (fun result child => descend child result none) found
 
-private def visit_tactic_declaration
-            (descend : descend_fn)
-            (children : Array Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def visit_tactic_declaration
+    (descend : descend_fn)
+    (children : Array Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   let precedingChildren := children.extract 0 (children.size - 1)
   let found := descend_plain descend precedingChildren found
   descend children[children.size - 1]! found (some .tacticBinder)
 
-private def visit_tactic_letrec
-            (descend : descend_fn)
-            (children : Array Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def visit_tactic_letrec
+    (descend : descend_fn)
+    (children : Array Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   let found := descend children[0]! found none
   let found := descend children[1]! found none
   let found := descend children[2]! found (some .tacticBinder)
   descend_plain descend (children.extract 3 children.size) found
 
-private def visit_recursive_declarations
-            (descend : descend_fn)
-            (children : Array Syntax)
-            (claimedRole : Option symbol_role)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def visit_recursive_declarations
+    (descend : descend_fn)
+    (children : Array Syntax)
+    (claimedRole : Option symbol_role)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   let recursiveRole := claimedRole.getD .recursiveHelper
   children.foldl (fun result child => descend child result (some recursiveRole)) found
 
-private def visit_claimed_recursive_declaration
-            (descend : descend_fn)
-            (children : Array Syntax)
-            (claimedRole : Option symbol_role)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def visit_claimed_recursive_declaration
+    (descend : descend_fn)
+    (children : Array Syntax)
+    (claimedRole : Option symbol_role)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   children.foldl
     (
       fun result child =>
@@ -1064,13 +1014,13 @@ private def visit_claimed_recursive_declaration
     )
     found
 
-private def visit_term_let_declaration
-            (descend : descend_fn)
-            (declaration : Syntax)
-            (siblings : Array Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def visit_term_let_declaration
+    (descend : descend_fn)
+    (declaration : Syntax)
+    (siblings : Array Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   if declaration.getKind == ``Lean.Parser.Term.letIdDecl
       || declaration.getKind == ``Lean.Parser.Term.letIdDeclNoBinders then
     let found := descend declaration found (some .letBinder)
@@ -1079,12 +1029,12 @@ private def visit_term_let_declaration
     let found := descend declaration found none
     descend_plain descend siblings found
 
-private def visit_term_let
-            (descend : descend_fn)
-            (children : Array Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def visit_term_let
+    (descend : descend_fn)
+    (children : Array Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   children.foldl
     (
       fun result child =>
@@ -1102,22 +1052,22 @@ private def visit_term_let
     )
     found
 
-private def visit_claimed_let_declaration
-            (descend : descend_fn)
-            (children : Array Syntax)
-            (claimedRole : Option symbol_role)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def visit_claimed_let_declaration
+    (descend : descend_fn)
+    (children : Array Syntax)
+    (claimedRole : Option symbol_role)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   let found := descend children[0]! found claimedRole
   descend_plain descend (children.extract 1 children.size) found
 
-private def visit_reassignment
-            (descend : descend_fn)
-            (children : Array Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def visit_reassignment
+    (descend : descend_fn)
+    (children : Array Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   children.foldl
     (
       fun result child =>
@@ -1128,15 +1078,15 @@ private def visit_reassignment
     )
     found
 
-private partial def visit
-                    (policy : Linting)
-                    (stx : Syntax)
-                    (found : Array Diagnostic)
-                    (claimedRole : Option symbol_role := none)
-                    (fieldOwner : Option String := none)
-                    (declarationOwner : Option String := none)
-                    : Array Diagnostic :=
-
+private partial
+def visit
+    (policy : Linting)
+    (stx : Syntax)
+    (found : Array Diagnostic)
+    (claimedRole : Option symbol_role := none)
+    (fieldOwner : Option String := none)
+    (declarationOwner : Option String := none)
+    : Array Diagnostic :=
   let kind := stx.getKind
   let fieldOwner := field_owner_at kind stx fieldOwner
   let declarationOwner := declaration_owner_at kind stx declarationOwner
@@ -1164,11 +1114,8 @@ private partial def visit
   else
     descend_plain descend children found
 
-private partial def collect_for_declarations
-                    (stx : Syntax)
-                    (found : Array Syntax := #[])
-                    : Array Syntax :=
-
+private partial
+def collect_for_declarations (stx : Syntax) (found : Array Syntax := #[]) : Array Syntax :=
   if stx.getKind == ``Lean.Parser.Term.doForDecl then
     found.push stx
   else
@@ -1176,16 +1123,11 @@ private partial def collect_for_declarations
 
 /-- HFT positional counter name at a nesting depth. Three or more nested
     positional loops saturate at `kdx`; deeper nests should be extracted. -/
-def positional_loop_name
-    (depth : Nat)
-    : String :=
-
+def positional_loop_name (depth : Nat) : String :=
   if depth == 0 then "idx" else if depth == 1 then "jdx" else "kdx"
 
-private def loop_declarations
-            (stx : Syntax)
-            : Array Syntax :=
-
+private
+def loop_declarations (stx : Syntax) : Array Syntax :=
   let children := stx.getArgs
   if children.isEmpty then
     #[]
@@ -1194,19 +1136,17 @@ private def loop_declarations
       (fun result child => collect_for_declarations child result)
       #[]
 
-private def positional_for_declaration
-            (declaration : Syntax)
-            : Bool :=
-
+private
+def positional_for_declaration (declaration : Syntax) : Bool :=
   (declaration.getArgs[3]?).any positional_loop_iterable
 
-private def report_positional_loop
-            (policy : Linting)
-            (depth : Nat)
-            (declaration : Syntax)
-            (found : Array Diagnostic)
-            : Array Diagnostic :=
-
+private
+def report_positional_loop
+    (policy : Linting)
+    (depth : Nat)
+    (declaration : Syntax)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   if !policy.requirePositionalLoopNames then
     found
   else
@@ -1231,13 +1171,13 @@ private def report_positional_loop
               message := s!"positional loop pattern should be the single binder `{expected}` at positional depth {depth}; found `{name}` with {identifiers.size} identifier(s)"
             }
 
-private partial def lint_positional_loops
-                    (policy : Linting)
-                    (stx : Syntax)
-                    (depth : Nat)
-                    (found : Array Diagnostic)
-                    : Array Diagnostic :=
-
+private partial
+def lint_positional_loops
+    (policy : Linting)
+    (stx : Syntax)
+    (depth : Nat)
+    (found : Array Diagnostic)
+    : Array Diagnostic :=
   let children := stx.getArgs
   let loopSyntax :=
     stx.getKind == ``Lean.Parser.Term.doFor || stx.getKind == ``Lean.Parser.Term.termFor
@@ -1263,11 +1203,7 @@ private partial def lint_positional_loops
     children.foldl (fun result child => lint_positional_loops policy child depth result) found
 
 /-- Flag short names at declaration and binding sites according to the style. -/
-def lint
-    (style : Style)
-    (stx : Syntax)
-    : Array Diagnostic :=
-
+def lint (style : Style) (stx : Syntax) : Array Diagnostic :=
   lint_positional_loops style.linting stx 0 (visit style.linting stx #[])
 
 end Lean4Fmt.Rules.Naming

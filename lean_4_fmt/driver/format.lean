@@ -18,13 +18,13 @@ namespace Lean4Fmt.Driver
 /-- Format one file, returning the gated output (never worse than input) and the
     lint diagnostics. Resolves the `--style` preset via `Style.byName?` (falling
     back to straylight) and overrides the line width from `--width`. -/
-unsafe def format_file
-           (path : String)
-           (width : Nat := 100)
-           (preset : String := "straylight")
-           (elabFallback : Bool := true)
-           : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
-
+unsafe
+def format_file
+    (path : String)
+    (width : Nat := 100)
+    (preset : String := "straylight")
+    (elabFallback : Bool := true)
+    : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   let contents ← IO.FS.readFile path
   let base := (Lean4Fmt.Style.by_name? preset).getD Lean4Fmt.Style.straylight
   let base := { base with layout := { base.layout with lineWidth := width } }

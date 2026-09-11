@@ -20,20 +20,13 @@ open Lean
 
 /-- Run an action with stdout redirected to a scratch buffer, so lenient parser
     diagnostics can never pollute our output. -/
-def quietly
-    {valueType}
-    (act : IO valueType)
-    : IO valueType := do
-
+def quietly {valueType} (act : IO valueType) : IO valueType := do
   let buf ← IO.mkRef { : IO.FS.Stream.Buffer }
   IO.withStdout (IO.FS.Stream.ofBuffer buf) act
 
 /-- Parse a module quietly; `none` if it does not parse cleanly in `env`. -/
-unsafe def parse_module?
-           (env : Environment)
-           (path contents : String)
-           : IO (Option Lean.Syntax) :=
-
+unsafe
+def parse_module? (env : Environment) (path contents : String) : IO (Option Lean.Syntax) :=
   quietly do
     try
       let stx ← Parser.testParseModule env path contents
@@ -41,10 +34,7 @@ unsafe def parse_module?
     catch _ => pure none
 
 /-- Import tokens of a module header (used to confirm imports stay at the top). -/
-def header_toks
-    (stx : Lean.Syntax)
-    : Array String :=
-
+def header_toks (stx : Lean.Syntax) : Array String :=
   match stx.getArgs[0]? with
   | some headSyntax => Lean4Fmt.Syntax.leaf_toks headSyntax
   | none            => #[]

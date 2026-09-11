@@ -51,17 +51,13 @@ def run
     (config : style_config)
     (modeValue : emitter_m valueType)
     : valueType × emitter_state :=
-
   StateT.run (ReaderT.run modeValue config) {}
 
 def get_config : emitter_m style_config := read
 def get_state : emitter_m emitter_state := get
 def modify_state (transform : emitter_state → emitter_state) : emitter_m Unit := modify transform
 
-def emit
-    (source : String)
-    : emitter_m Unit := do
-
+def emit (source : String) : emitter_m Unit := do
   if source.isEmpty then
     return
   let config ← get_config
@@ -79,9 +75,7 @@ def emit
     else col := col + 1
   set { state with output := out, column := col, pendingNewlines := 0, pendingSpace := false }
 
-def newline
-    : emitter_m Unit := do
-
+def newline : emitter_m Unit := do
   let state ← get_state
   if state.inlineMode then
     return -- suppress newlines in inline mode
@@ -94,22 +88,14 @@ def newline
 def blank_line : emitter_m Unit := do newline; newline
 def space : emitter_m Unit := modify_state fun state => { state with pendingSpace := true }
 
-def indent
-    : emitter_m Unit :=
-
+def indent : emitter_m Unit :=
   modify_state fun state => { state with indentLevel := state.indentLevel + 1 }
 
-def dedent
-    : emitter_m Unit :=
-
+def dedent : emitter_m Unit :=
   modify_state fun state => { state with indentLevel := state.indentLevel - 1 }
 
 /-- Run an action in inline mode (suppresses newlines) -/
-def with_inline
-    {valueType : Type}
-    (modeValue : emitter_m valueType)
-    : emitter_m valueType := do
-
+def with_inline {valueType : Type} (modeValue : emitter_m valueType) : emitter_m valueType := do
   let oldInline := (← get_state).inlineMode
   modify_state fun state => { state with inlineMode := true }
   let result ← modeValue
@@ -121,10 +107,7 @@ def with_inline
     internal relative indentation is preserved. This is what makes verbatim
     reproduction safe for indentation-sensitive constructs (tactic blocks,
     `let rec`, `where`) even when the surrounding signature has been reflowed. -/
-def emit_verbatim_str
-    (source : String)
-    : emitter_m Unit := do
-
+def emit_verbatim_str (source : String) : emitter_m Unit := do
   let nonblank (line : String) : Bool := line.any (· != ' ')
   -- split; drop leading/trailing blank lines
   let mut lines := source.splitOn "\n"
@@ -150,9 +133,8 @@ def emit_verbatim_str
         { state with pendingNewlines := state.pendingNewlines + 1, pendingSpace := false }
       emit ded
 
-private def emit_verbatim_source
-            (source : String)
-            : emitter_m Unit := do
+private
+def emit_verbatim_source (source : String) : emitter_m Unit := do
 
   -- Strip only trailing whitespace; KEEP the first line's leading indentation
   -- so `emitVerbatimStr`'s base-indent computation (and thus re-anchoring) is a
@@ -176,9 +158,7 @@ private def emit_verbatim_source
 /-- Reproduce a syntax node's original source text (never mangles unhandled
     constructs). Multi-line blocks start on a fresh, indented line and are
     re-anchored; single-line blocks are emitted inline. -/
-def emit_verbatim
-    (stx : Syntax)
-    : emitter_m Unit := do
+def emit_verbatim (stx : Syntax) : emitter_m Unit := do
 
   -- Prefer reprint; fall back to the exact original source slice (reliable even
   -- when reprint is unavailable, e.g. some nodes after `updateLeading`).
@@ -190,10 +170,7 @@ def emit_verbatim
   | some source => emit_verbatim_source source
   | none => pure ()
 
-def get_leading
-    (stx : Syntax)
-    : Option String :=
-
+def get_leading (stx : Syntax) : Option String :=
   match stx.getHeadInfo with
   | .original leading .. => some (Substring.Raw.toString leading)
   | _ => none
@@ -207,10 +184,7 @@ namespace Emitter
 
 open emitter_m
 
-def process_leading
-    (stx : Syntax)
-    : emitter_m Unit := do
-
+def process_leading (stx : Syntax) : emitter_m Unit := do
   if let some leading := get_leading stx then
     if leading.isEmpty then
       return
@@ -241,20 +215,15 @@ def process_leading
         else if newlines > 0 then newline
 
 /-- Check if a syntax kind is a binary operator (like «term_+_», «term_<_», etc.) -/
-def is_bin_op
-    (kind : SyntaxNodeKind)
-    : Bool :=
-
+def is_bin_op (kind : SyntaxNodeKind) : Bool :=
   let spelling := kind.toString
   spelling.startsWith "«term_" && (spelling.toList.filter (· == '_')).length >= 2
 
 /-- True if any token in the subtree carries a line comment (`-- …`) in its
     trivia. Such subtrees must never be inlined/flattened: the comment would
     swallow the rest of the line (e.g. an `else` branch or a match-arm body). -/
-partial def has_line_comment
-            (stx : Syntax)
-            : Bool :=
-
+partial
+def has_line_comment (stx : Syntax) : Bool :=
   let inTrivia (info : SourceInfo) : Bool :=
     match info with
     | .original leading _ trailing _ =>
@@ -269,10 +238,8 @@ partial def has_line_comment
   | .missing          => false
 
 /-- Check if a syntax should be emitted inline (simple expressions without control flow) -/
-partial def is_simple_expr
-            (stx : Syntax)
-            : Bool :=
-
+partial
+def is_simple_expr (stx : Syntax) : Bool :=
   if has_line_comment stx then
     false
   else
@@ -305,12 +272,14 @@ partial def is_simple_expr
       -- Other nodes are simple if all children are simple
       else args.all is_simple_expr
 
-private inductive NodeDispatch where
+private
+inductive NodeDispatch where
   | handled
   | unhandled
   deriving Inhabited
 
-private abbrev NodeHandler := Syntax → SyntaxNodeKind → Array Syntax → emitter_m NodeDispatch
+private
+abbrev NodeHandler := Syntax → SyntaxNodeKind → Array Syntax → emitter_m NodeDispatch
 
 mutual
 
@@ -1599,11 +1568,7 @@ end
 
 end Emitter
 
-def format
-    (stx : Syntax)
-    (config : style_config := {})
-    : String × Array Diagnostic :=
-
+def format (stx : Syntax) (config : style_config := {}) : String × Array Diagnostic :=
   let ((), state) := emitter_m.run Unit config (Emitter.emit_syntax stx)
   let output :=
     if config.trailingNewline && !state.output.endsWith "\n" then

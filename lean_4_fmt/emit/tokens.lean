@@ -21,11 +21,8 @@ import lean_4_fmt.syntax.kinds
 namespace Lean4Fmt.Emit
 
 /-- The leaf tokens of a subtree, in order (atoms + idents with source bytes). -/
-partial def leaf_tokens
-            (stx : Lean.Syntax)
-            (found : Array Lean.Syntax := #[])
-            : Array Lean.Syntax :=
-
+partial
+def leaf_tokens (stx : Lean.Syntax) (found : Array Lean.Syntax := #[]) : Array Lean.Syntax :=
   match stx with
   | .atom ..       => found.push stx
   | .ident ..      => found.push stx
@@ -34,10 +31,8 @@ partial def leaf_tokens
 
 /-- Any `choice` node in the subtree (ambiguous parse: children are ALL the
     alternatives — flattening would duplicate tokens). -/
-partial def has_choice
-            (stx : Lean.Syntax)
-            : Bool :=
-
+partial
+def has_choice (stx : Lean.Syntax) : Bool :=
   match stx with
   | .node _ kind args => kind == Lean.choiceKind || args.any has_choice
   | _                 => false
@@ -48,10 +43,8 @@ partial def has_choice
     adjacency, so forcing either spelling could change the tree (the gate
     would catch it as a per-file fallback — correctness holds, coverage pays).
     clang-format is the shape of the eventual full table. -/
-private def gap_rule
-            (prev next : String)
-            : Option Bool :=
-
+private
+def gap_rule (prev next : String) : Option Bool :=
   let identLike (textValue : String) :=
     textValue.toList.all fun char =>
       char.isAlphanum || char == '_' || char == '\'' || char == '.' || char.toNat > 127
@@ -65,19 +58,20 @@ private def gap_rule
     some true
   else if next == "(" && (identLike prev || prev == ")") then some true else none
 
-private structure token_join_state where
+private
+structure token_join_state where
   output     : String := ""
   previous   : Option Lean.Syntax := none
   skippedGap : String := ""
 
-private def append_token_after_previous?
-            (flatten : Bool)
-            (state : token_join_state)
-            (leaf : Lean.Syntax)
-            (token : String)
-            (previous : Lean.Syntax)
-            : Option token_join_state :=
-
+private
+def append_token_after_previous?
+    (flatten : Bool)
+    (state : token_join_state)
+    (leaf : Lean.Syntax)
+    (token : String)
+    (previous : Lean.Syntax)
+    : Option token_join_state :=
   Id.run do
     let trailing? := Lean4Fmt.Syntax.trailing? previous
     let leading? := Lean4Fmt.Syntax.leading? leaf
@@ -98,12 +92,12 @@ private def append_token_after_previous?
         skippedGap := ""
       }
 
-private def advance_token_join?
-            (flatten : Bool)
-            (state : token_join_state)
-            (leaf : Lean.Syntax)
-            : Option token_join_state :=
-
+private
+def advance_token_join?
+    (flatten : Bool)
+    (state : token_join_state)
+    (leaf : Lean.Syntax)
+    : Option token_join_state :=
   let token := bare_src leaf
   if token.isEmpty then
     some
@@ -121,11 +115,8 @@ private def advance_token_join?
     canonical gaps (pair-rule table, else ws-gap → one space / zero gap →
     glued). `none` when a token is multi-line, a gap carries non-whitespace
     (an inline block comment), or there are no tokens. -/
-private def token_join_impl?
-            (stx : Lean.Syntax)
-            (flatten : Bool)
-            : Option String :=
-
+private
+def token_join_impl? (stx : Lean.Syntax) (flatten : Bool) : Option String :=
   Id.run
     do
       if has_choice stx then
@@ -159,10 +150,8 @@ def token_join? (stx : Lean.Syntax) : Option String := token_join_impl? stx fals
     class, gate-caught on mathlib Divisors: a calc step's `:= by` + two
     tactics joined into an application). Single-line ones are safe: their
     interior is already one line and the join preserves it. -/
-partial def has_newline_semantic
-            (source : Lean.Syntax)
-            : Bool :=
-
+partial
+def has_newline_semantic (source : Lean.Syntax) : Bool :=
   (
     (
       source.getKind == ``Lean.Parser.Term.do || source.getKind == ``Lean.Parser.Term.byTactic
@@ -182,10 +171,7 @@ partial def has_newline_semantic
     newline-semantic construct (no one-line spelling EXISTS — see
     `hasNewlineSemantic`; the flatten-side head-ws law, enforced at the one
     owner instead of per call site). -/
-def token_join_flat?
-    (stx : Lean.Syntax)
-    : Option String :=
-
+def token_join_flat? (stx : Lean.Syntax) : Option String :=
   if has_newline_semantic stx then none else token_join_impl? stx true
 
 /-- Canonical single-line token text: tokenJoin? with a bareSrc fallback —
@@ -193,10 +179,7 @@ def token_join_flat?
     synthetic-info gaps) still ws-canonicalizes LEXICALLY (canonVerbatimWs):
     token bytes survive, interior space runs do not — so even the fallback is
     not an origin carrier. -/
-def canon_tok
-    (stx : Lean.Syntax)
-    : String :=
-
+def canon_tok (stx : Lean.Syntax) : String :=
   match token_join? stx with
   | some trailing => trailing
   | none =>

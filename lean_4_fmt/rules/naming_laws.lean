@@ -20,7 +20,6 @@ example : (binding_kind_inventory.map (·.1)).Nodup := by native_decide
 
 /-- Every manifest entry is recovered exactly by the public classifier. -/
 example : binding_kind_inventory.all (fun entry => role_of_kind entry.1 == some entry.2) = true := by
-
   native_decide
 
 example : role_of_kind ``Lean.Parser.Command.declId = some .declaration := by decide
@@ -61,27 +60,22 @@ example : traditional_instance_name "א₂" = true := by native_decide
 example : traditional_instance_name "inst" = false := by native_decide
 example : traditional_instance_name "αName" = false := by native_decide
 
-private def strict_style
-            : Style := { (default : Style) with
+private
+def strict_style : Style := { (default : Style) with
   linting.symbolMinChars := 20
   linting.allowGreekSymbols := false
   linting.allowHebrewSymbols := false
   linting.allowTraditionalInstances := false
 }
 
-private def symbol_length_count
-            (stx : Syntax)
-            : Nat :=
-
+private
+def symbol_length_count (stx : Syntax) : Nat :=
   (lint strict_style stx).foldl
     (fun count diagnostic => if diagnostic.rule == "symbol-length" then count + 1 else count)
     0
 
-private def role_count
-            (stx : Syntax)
-            (role : String)
-            : Nat :=
-
+private
+def role_count (stx : Syntax) (role : String) : Nat :=
   (lint strict_style stx).foldl
     (
       fun count diagnostic =>
@@ -89,15 +83,12 @@ private def role_count
     )
     0
 
-private def semantic_pattern_style
-            : Style :=
-
+private
+def semantic_pattern_style : Style :=
   { strict_style with linting.requireSemanticPatternBinders := true }
 
-private def semantic_pattern_rule_count
-            (stx : Syntax)
-            : Nat :=
-
+private
+def semantic_pattern_rule_count (stx : Syntax) : Nat :=
   (lint semantic_pattern_style stx).foldl
     (
       fun count diagnostic =>
@@ -105,16 +96,12 @@ private def semantic_pattern_rule_count
     )
     0
 
-private def semantic_recursive_helper_style
-            : Style :=
-
+private
+def semantic_recursive_helper_style : Style :=
   { strict_style with linting.requireSemanticRecursiveHelperNames := true }
 
-private def recursive_helper_rule_count
-            (style : Style)
-            (stx : Syntax)
-            : Nat :=
-
+private
+def recursive_helper_rule_count (style : Style) (stx : Syntax) : Nat :=
   (lint style stx).foldl
     (
       fun count diagnostic =>
@@ -122,11 +109,8 @@ private def recursive_helper_rule_count
     )
     0
 
-private def generic_recursive_helper_count
-            (style : Style)
-            (stx : Syntax)
-            : Nat :=
-
+private
+def generic_recursive_helper_count (style : Style) (stx : Syntax) : Nat :=
   (lint style stx).foldl
     (
       fun count diagnostic =>
@@ -137,30 +121,21 @@ private def generic_recursive_helper_count
     )
     0
 
-private def semantic_lambda_style
-            : Style :=
-
+private
+def semantic_lambda_style : Style :=
   { strict_style with linting.requireSemanticLambdaNames := true }
 
-private def semantic_let_style
-            : Style :=
+private
+def semantic_let_style : Style := { strict_style with linting.requireSemanticLetNames := true }
 
-  { strict_style with linting.requireSemanticLetNames := true }
-
-private def lambda_rule_count
-            (style : Style)
-            (stx : Syntax)
-            : Nat :=
-
+private
+def lambda_rule_count (style : Style) (stx : Syntax) : Nat :=
   (lint style stx).foldl
     (fun count diagnostic => if diagnostic.rule == "symbol-lambda" then count + 1 else count)
     0
 
-private def generic_lambda_count
-            (style : Style)
-            (stx : Syntax)
-            : Nat :=
-
+private
+def generic_lambda_count (style : Style) (stx : Syntax) : Nat :=
   (lint style stx).foldl
     (
       fun count diagnostic =>
@@ -171,20 +146,14 @@ private def generic_lambda_count
     )
     0
 
-private def let_rule_count
-            (style : Style)
-            (stx : Syntax)
-            : Nat :=
-
+private
+def let_rule_count (style : Style) (stx : Syntax) : Nat :=
   (lint style stx).foldl
     (fun count diagnostic => if diagnostic.rule == "symbol-let" then count + 1 else count)
     0
 
-private def generic_let_count
-            (style : Style)
-            (stx : Syntax)
-            : Nat :=
-
+private
+def generic_let_count (style : Style) (stx : Syntax) : Nat :=
   (lint style stx).foldl
     (
       fun count diagnostic =>
@@ -195,165 +164,127 @@ private def generic_let_count
     )
     0
 
-private def instance_style
-            : Style :=
+private
+def instance_style : Style := { strict_style with linting.requireTraditionalInstances := true }
 
-  { strict_style with linting.requireTraditionalInstances := true }
-
-private def instance_rule_count
-            (stx : Syntax)
-            : Nat :=
-
+private
+def instance_rule_count (stx : Syntax) : Nat :=
   (lint instance_style stx).foldl
     (fun count diagnostic => if diagnostic.rule == "symbol-instance" then count + 1 else count)
     0
 
-private def semantic_field_style
-            : Style :=
+private
+def semantic_field_style : Style := { strict_style with linting.requireSemanticFieldNames := true }
 
-  { strict_style with linting.requireSemanticFieldNames := true }
-
-private def semantic_field_rule_count
-            (style : Style)
-            (stx : Syntax)
-            : Nat :=
-
+private
+def semantic_field_rule_count (style : Style) (stx : Syntax) : Nat :=
   (lint style stx).foldl
     (fun count diagnostic => if diagnostic.rule == "symbol-field" then count + 1 else count)
     0
 
-private def packet_field_shape
-            : Syntax :=
+private
+def packet_field_shape : Syntax := Unhygienic.run `(command| structure Packet where api : Nat)
 
-  Unhygienic.run `(command| structure Packet where api : Nat)
+private
+def message_field_shape : Syntax := Unhygienic.run `(command| structure Message where api : Nat)
 
-private def message_field_shape
-            : Syntax :=
-
-  Unhygienic.run `(command| structure Message where api : Nat)
-
-private def semantic_field_allow_style
-            : Style :=
-
+private
+def semantic_field_allow_style : Style :=
   { semantic_field_style with linting.fieldAllow := [(3, ["Packet.api"])] }
 
-private def broad_field_allow_style
-            : Style :=
-
+private
+def broad_field_allow_style : Style :=
   { semantic_field_style with linting.fieldAllow := [(3, ["api"])] }
 
-private def namespace_qualified_field_allow_style
-            : Style :=
-
+private
+def namespace_qualified_field_allow_style : Style :=
   { semantic_field_style with linting.fieldAllow := [(3, ["Example.Protocol.Packet.api"])] }
 
 example : semantic_field_rule_count semantic_field_style packet_field_shape = 1 := by native_decide
 
 /-- An owner-qualified exception admits only that owner's exact field. -/
 example : semantic_field_rule_count semantic_field_allow_style packet_field_shape = 0 := by
-
   native_decide
 
 example : semantic_field_rule_count semantic_field_allow_style message_field_shape = 1 := by
-
   native_decide
 
 example : semantic_field_rule_count namespace_qualified_field_allow_style packet_field_shape = 0 := by
-
   native_decide
 
 /-- Bare entries remain explicit broad compatibility exceptions. -/
 example : semantic_field_rule_count broad_field_allow_style message_field_shape = 0 := by
-
   native_decide
 
-private def semantic_declaration_style
-            : Style :=
-
+private
+def semantic_declaration_style : Style :=
   { strict_style with linting.requireSemanticDeclarationNames := true }
 
-private def semantic_declaration_rule_count
-            (style : Style)
-            (stx : Syntax)
-            : Nat :=
-
+private
+def semantic_declaration_rule_count (style : Style) (stx : Syntax) : Nat :=
   (lint style stx).foldl
     (fun count diagnostic => if diagnostic.rule == "symbol-declaration" then count + 1 else count)
     0
 
-private def short_definition_shape : Syntax := Unhygienic.run `(command| def api : Nat := 0)
+private
+def short_definition_shape : Syntax := Unhygienic.run `(command| def api : Nat := 0)
 
-private def short_constructor_shape
-            : Syntax :=
-
+private
+def short_constructor_shape : Syntax :=
   Unhygienic.run `(command| inductive SemanticResultContainer where | api)
 
-private def other_short_constructor_shape
-            : Syntax :=
-
+private
+def other_short_constructor_shape : Syntax :=
   Unhygienic.run `(command| inductive SemanticMessageContainer where | api)
 
-private def qualified_definition_allow_style
-            : Style :=
-
+private
+def qualified_definition_allow_style : Style :=
   { semantic_declaration_style with linting.declarationAllow := [(3, ["Example.Protocol.api"])] }
 
-private def qualified_constructor_allow_style
-            : Style :=
-
+private
+def qualified_constructor_allow_style : Style :=
   { semantic_declaration_style with
     linting.declarationAllow := [(3, ["SemanticResultContainer.api"])] }
 
 example : semantic_declaration_rule_count semantic_declaration_style short_definition_shape = 1 := by
-
   native_decide
 
 example : semantic_declaration_rule_count qualified_definition_allow_style short_definition_shape = 0 := by
-
   native_decide
 
 example : semantic_declaration_rule_count semantic_declaration_style short_constructor_shape = 1 := by
-
   native_decide
 
 example : semantic_declaration_rule_count qualified_constructor_allow_style short_constructor_shape = 0 := by
-
   native_decide
 
 /-- A constructor exception is isolated to its syntactic owner. -/
 example : semantic_declaration_rule_count qualified_constructor_allow_style other_short_constructor_shape = 1 := by
-
   native_decide
 
-private def greek_instance_shape : Syntax := Unhygienic.run `(term| fun [β₂ : Target Ty] => β₂)
+private
+def greek_instance_shape : Syntax := Unhygienic.run `(term| fun [β₂ : Target Ty] => β₂)
 
 /-- The binder is harvested exactly once; its type constructor and argument are references. -/
 example : role_count greek_instance_shape "instance-binder" = 1 := by native_decide
 
 example : instance_rule_count greek_instance_shape = 0 := by native_decide
 
-private def positional_style
-            : Style :=
+private
+def positional_style : Style := { strict_style with linting.requirePositionalLoopNames := true }
 
-  { strict_style with linting.requirePositionalLoopNames := true }
-
-private def positional_rule_count
-            (stx : Syntax)
-            : Nat :=
-
+private
+def positional_rule_count (stx : Syntax) : Nat :=
   (lint positional_style stx).foldl
     (fun count diagnostic => if diagnostic.rule == "symbol-loop-index" then count + 1 else count)
     0
 
-private def collection_loop_style
-            : Style :=
-
+private
+def collection_loop_style : Style :=
   { strict_style with linting.requireSemanticCollectionLoopNames := true }
 
-private def collection_loop_rule_count
-            (stx : Syntax)
-            : Nat :=
-
+private
+def collection_loop_rule_count (stx : Syntax) : Nat :=
   (lint collection_loop_style stx).foldl
     (
       fun count diagnostic =>
@@ -361,29 +292,27 @@ private def collection_loop_rule_count
     )
     0
 
-private def nested_range_shape
-            : Syntax :=
-
+private
+def nested_range_shape : Syntax :=
   Unhygienic.run
     `(term| do
       for idx in [ 0 : rows ] do
         for jdx in [ 0 : columns ] do
           pure (idx, jdx))
 
-private def collection_loop_shape
-            : Syntax :=
-
+private
+def collection_loop_shape : Syntax :=
   Unhygienic.run
     `(term| do
       for semanticCollectionElement in events do
         pure semanticCollectionElement)
 
-private def short_collection_loop_shape
-            : Syntax :=
-
+private
+def short_collection_loop_shape : Syntax :=
   Unhygienic.run `(term| do for element in events do pure element)
 
-private partial def rewrite_identifier (source target : String) : Syntax → Syntax
+private partial
+def rewrite_identifier (source target : String) : Syntax → Syntax
   | .ident info raw value preResolved =>
     if raw.toString == source then
       .ident info target.toRawSubstring (Name.mkSimple target) preResolved
@@ -392,42 +321,36 @@ private partial def rewrite_identifier (source target : String) : Syntax → Syn
   | .node info kind children => .node info kind (children.map (rewrite_identifier source target))
   | otherSyntax => otherSyntax
 
-private def correct_range_shape
-            : Syntax :=
+private
+def correct_range_shape : Syntax := Unhygienic.run `(term| do for idx in [ 0 : count ] do pure idx)
 
-  Unhygienic.run `(term| do for idx in [ 0 : count ] do pure idx)
-
-private def positional_vocabulary_collection_shape
-            : Syntax :=
-
+private
+def positional_vocabulary_collection_shape : Syntax :=
   rewrite_identifier "semanticCollectionElement" "idx" collection_loop_shape
 
-private def wrong_range_shape : Syntax := rewrite_identifier "idx" "event" correct_range_shape
+private
+def wrong_range_shape : Syntax := rewrite_identifier "idx" "event" correct_range_shape
 
-private def destructured_collection_shape
-            : Syntax :=
-
+private
+def destructured_collection_shape : Syntax :=
   Unhygienic.run `(term| do for (entryKey, entryValue) in entries do pure (entryKey, entryValue))
 
-private def semantic_destructured_collection_shape
-            : Syntax :=
-
+private
+def semantic_destructured_collection_shape : Syntax :=
   Unhygienic.run
     `(term| do
       for (semanticCollectionKey, semanticCollectionValue) in entries do
         pure (semanticCollectionKey, semanticCollectionValue))
 
-private def parallel_range_shape
-            : Syntax :=
-
+private
+def parallel_range_shape : Syntax :=
   Unhygienic.run
     `(term| do
       for idx in [ 0 : rows ], jdx in [ 0 : columns ] do
         pure (idx, jdx))
 
-private def mixed_parallel_shape
-            : Syntax :=
-
+private
+def mixed_parallel_shape : Syntax :=
   Unhygienic.run
     `(term| do
       for semanticCollectionElement in events, idx in [ 0 : count ] do
@@ -439,11 +362,9 @@ example : positional_loop_name 2 = "kdx" := by decide
 example : positional_loop_name 7 = "kdx" := by decide
 
 example : positional_loop_iterable (Unhygienic.run `(term| [ 0 : count ])) = true := by
-
   native_decide
 
 example : positional_loop_iterable (Unhygienic.run `(term| [ 0 : 2 : count ])) = true := by
-
   native_decide
 
 example : positional_loop_iterable (Unhygienic.run `(term| [ : count ])) = true := by native_decide
@@ -451,7 +372,6 @@ example : positional_loop_iterable (Unhygienic.run `(term| [ : count ])) = true 
 example : positional_loop_iterable (Unhygienic.run `(term| events)) = false := by native_decide
 
 example : positional_loop_iterable (Unhygienic.run `(term| List.range count)) = false := by
-
   native_decide
 
 example : positional_rule_count nested_range_shape = 0 := by native_decide
@@ -474,158 +394,127 @@ example : collection_loop_rule_count parallel_range_shape = 0 := by native_decid
 example : positional_rule_count mixed_parallel_shape = 0 := by native_decide
 example : collection_loop_rule_count mixed_parallel_shape = 0 := by native_decide
 
-private def intro_shape
-            : Syntax :=
+private
+def intro_shape : Syntax := Unhygienic.run `(term| by intro introducedName; exact introducedName)
 
-  Unhygienic.run `(term| by intro introducedName; exact introducedName)
+private
+def rename_shape : Syntax := Unhygienic.run `(term| by rename_i renamedName; exact renamedName)
 
-private def rename_shape
-            : Syntax :=
-
-  Unhygienic.run `(term| by rename_i renamedName; exact renamedName)
-
-private def case_shape
-            : Syntax :=
-
+private
+def case_shape : Syntax :=
   Unhygienic.run `(term| by case constructorName branchValue => exact branchValue)
 
-private def next_shape
-            : Syntax :=
-
+private
+def next_shape : Syntax :=
   Unhygienic.run `(term| by next firstBranchValue secondBranchValue => exact firstBranchValue)
 
-private def injection_shape
-            : Syntax :=
+private
+def injection_shape : Syntax := Unhygienic.run `(term| by injection src with lhs _ rhs; exact lhs)
 
-  Unhygienic.run `(term| by injection src with lhs _ rhs; exact lhs)
+private
+def anonymous_injection_shape : Syntax := Unhygienic.run `(term| by injection src)
 
-private def anonymous_injection_shape : Syntax := Unhygienic.run `(term| by injection src)
-
-private def by_cases_shape
-            : Syntax :=
-
+private
+def by_cases_shape : Syntax :=
   Unhygienic.run `(term| by by_cases decisionProof : predicate; exact decisionProof)
 
-private def anonymous_by_cases_shape
-            : Syntax :=
+private
+def anonymous_by_cases_shape : Syntax := Unhygienic.run `(term| by by_cases predicate; assumption)
 
-  Unhygienic.run `(term| by by_cases predicate; assumption)
-
-private def suffices_shape
-            : Syntax :=
-
+private
+def suffices_shape : Syntax :=
   Unhygienic.run `(term| by suffices goalProof : predicate by exact goalProof)
 
-private def generalize_shape
-            : Syntax :=
-
+private
+def generalize_shape : Syntax :=
   Unhygienic.run
     `(term| by
       generalize equationProof : predicate = generalizedValue at h
       exact generalizedValue)
 
-private def cases_alternative_shape
-            : Syntax :=
-
+private
+def cases_alternative_shape : Syntax :=
   Unhygienic.run `(term| by cases predicate with | z branchValue => exact branchValue)
 
-private def induction_alternative_shape
-            : Syntax :=
-
+private
+def induction_alternative_shape : Syntax :=
   Unhygienic.run
     `(term| by
       induction predicate generalizing h with
       | z => exact h
       | source predecessor hypothesis => exact hypothesis)
 
-private def rcases_shape
-            : Syntax :=
-
+private
+def rcases_shape : Syntax :=
   Unhygienic.run
     `(term| by rcases predicate with ⟨leftValue, rfl, _, -, rightValue⟩; exact leftValue)
 
-private def rfl_prefix_shape
-            : Syntax :=
+private
+def rfl_prefix_shape : Syntax := Unhygienic.run `(term| by rcases predicate with rfl'; exact rfl')
 
-  Unhygienic.run `(term| by rcases predicate with rfl'; exact rfl')
-
-private def obtain_shape
-            : Syntax :=
-
+private
+def obtain_shape : Syntax :=
   Unhygienic.run `(term| by obtain ⟨firstValue, secondValue⟩ : q := predicate; exact firstValue)
 
-private def nested_obtain_shape
-            : Syntax :=
-
+private
+def nested_obtain_shape : Syntax :=
   Unhygienic.run `(term| by obtain ⟨fst, ⟨snd, thd⟩⟩ : typ := src; exact fst)
 
-private def sentinel_obtain_shape
-            : Syntax :=
-
+private
+def sentinel_obtain_shape : Syntax :=
   Unhygienic.run `(term| by obtain ⟨rfl, _, -⟩ := src; assumption)
 
-private def rintro_shape
-            : Syntax :=
-
+private
+def rintro_shape : Syntax :=
   Unhygienic.run `(term| by rintro (introducedValue : q); exact introducedValue)
 
-private def tactic_have_shape
-            : Syntax :=
-
+private
+def tactic_have_shape : Syntax :=
   Unhygienic.run `(term| by have proofName : q := predicate; exact proofName)
 
-private def tactic_let_shape
-            : Syntax :=
-
+private
+def tactic_let_shape : Syntax :=
   Unhygienic.run `(term| by let valueName : q := predicate; exact valueName)
 
-private def tactic_replace_shape
-            : Syntax :=
-
+private
+def tactic_replace_shape : Syntax :=
   Unhygienic.run `(term| by replace proofName : q := predicate; exact proofName)
 
-private def tactic_have_instance_shape
-            : Syntax :=
-
+private
+def tactic_have_instance_shape : Syntax :=
   Unhygienic.run `(term| by haveI instanceValue : q := predicate; exact predicate)
 
-private def tactic_let_instance_shape
-            : Syntax :=
-
+private
+def tactic_let_instance_shape : Syntax :=
   Unhygienic.run `(term| by letI instanceValue : q := predicate; exact predicate)
 
-private def tactic_pattern_shape
-            : Syntax :=
-
+private
+def tactic_pattern_shape : Syntax :=
   Unhygienic.run `(term| by have ⟨leftValue, rightValue⟩ := predicate; exact leftValue)
 
-private def tactic_equation_pattern_shape
-            : Syntax :=
-
+private
+def tactic_equation_pattern_shape : Syntax :=
   Unhygienic.run
     `(term| by
       have (eq := equationProof) ⟨leftValue, rightValue⟩ := predicate
       exact leftValue)
 
-private def tactic_rhs_shape
-            : Syntax :=
-
+private
+def tactic_rhs_shape : Syntax :=
   Unhygienic.run
     `(term| by
       have proofName : q := (let rhsValue := predicate; rhsValue)
       exact proofName)
 
-private def tactic_function_shape
-            : Syntax :=
-
+private
+def tactic_function_shape : Syntax :=
   Unhygienic.run
     `(term| by
       have proofFunction (inputValue : q) : q := inputValue
       exact proofFunction predicate)
 
-private def tactic_equations_shape
-            : Syntax :=
-
+private
+def tactic_equations_shape : Syntax :=
   Unhygienic.run
     `(term| by
       have proofFunction : Nat → Nat
@@ -633,104 +522,83 @@ private def tactic_equations_shape
         | remainingValue + 1 => proofFunction remainingValue
       exact proofFunction 0)
 
-private def anonymous_tactic_have_shape
-            : Syntax :=
-
+private
+def anonymous_tactic_have_shape : Syntax :=
   Unhygienic.run `(term| by have : q := predicate; exact this)
 
-private def term_let_shape
-            : Syntax :=
+private
+def term_let_shape : Syntax := Unhygienic.run `(term| let localValue := predicate; localValue)
 
-  Unhygienic.run `(term| let localValue := predicate; localValue)
+private
+def short_term_let_shape : Syntax := Unhygienic.run `(term| let inputValue := predicate; inputValue)
 
-private def short_term_let_shape
-            : Syntax :=
-
-  Unhygienic.run `(term| let inputValue := predicate; inputValue)
-
-private def short_do_let_shape
-            : Syntax :=
-
+private
+def short_do_let_shape : Syntax :=
   Unhygienic.run
     `(term| do
       let inputValue := predicate
       pure inputValue)
 
-private def short_mutable_let_shape
-            : Syntax :=
-
+private
+def short_mutable_let_shape : Syntax :=
   Unhygienic.run
     `(term| do
       let mut inputValue := 0
       inputValue := inputValue + 1
       pure inputValue)
 
-private def term_have_only_shape
-            : Syntax :=
+private
+def term_have_only_shape : Syntax := Unhygienic.run `(term| have inputValue : Nat := 0; inputValue)
 
-  Unhygienic.run `(term| have inputValue : Nat := 0; inputValue)
-
-private def quoted_let_only_shape
-            : Syntax :=
-
+private
+def quoted_let_only_shape : Syntax :=
   Unhygienic.run
     `(command| def quotedFixture : Syntax := Unhygienic.run `(term| let inputValue := predicate; inputValue))
 
-private def tactic_let_only_shape
-            : Syntax :=
-
+private
+def tactic_let_only_shape : Syntax :=
   Unhygienic.run `(term| by let inputValue := predicate; exact inputValue)
 
-private def tactic_letI_only_shape
-            : Syntax :=
-
+private
+def tactic_letI_only_shape : Syntax :=
   Unhygienic.run `(term| by letI inputValue : Inhabited Nat := inferInstance; exact 0)
 
-private def pattern_let_only_shape
-            : Syntax :=
-
+private
+def pattern_let_only_shape : Syntax :=
   Unhygienic.run `(term| let (inputValue, rightValue) := (predicate, predicate); inputValue)
 
-private def let_allow_style : Style := { semantic_let_style with linting.letAllow := [(1, ["x"])] }
+private
+def let_allow_style : Style := { semantic_let_style with linting.letAllow := [(1, ["x"])] }
 
-private def shared_allow_does_not_reach_let_style
-            : Style :=
-
+private
+def shared_allow_does_not_reach_let_style : Style :=
   { semantic_let_style with linting.symbolAllow := [(1, ["x"])] }
 
-private def parameter_binder_shape
-            : Syntax :=
-
+private
+def parameter_binder_shape : Syntax :=
   Unhygienic.run `(term| ∀ (inputValue : Nat), inputValue = inputValue)
 
-private def lambda_binder_shape
-            : Syntax :=
+private
+def lambda_binder_shape : Syntax := Unhygienic.run `(term| fun lambdaFixture => lambdaFixture)
 
-  Unhygienic.run `(term| fun lambdaFixture => lambdaFixture)
-
-private def lambda_allow_style
-            : Style :=
-
+private
+def lambda_allow_style : Style :=
   { semantic_lambda_style with linting.lambdaAllow := [(13, ["lambdaFixture"])] }
 
-private def shared_allow_does_not_reach_lambda_style
-            : Style :=
-
+private
+def shared_allow_does_not_reach_lambda_style : Style :=
   { semantic_lambda_style with linting.symbolAllow := [(13, ["lambdaFixture"])] }
 
-private def primed_have_shape
-            : Syntax :=
-
+private
+def primed_have_shape : Syntax :=
   Unhygienic.run `(term| by have' proofName : q := predicate; exact proofName)
 
-private def primed_let_shape
-            : Syntax :=
-
+private
+def primed_let_shape : Syntax :=
   Unhygienic.run `(term| by let' valueName : q := predicate; exact valueName)
 
-private def tactic_let_rec_shape
-            : Syntax :=
-
+private
+def tactic_let_rec_shape : Syntax :=
   Unhygienic.run
     `(term| by
       let rec recursiveFunction (inputValue : Nat) : Nat :=
@@ -738,18 +606,16 @@ private def tactic_let_rec_shape
         rhsValue
       exact recursiveFunction 0)
 
-private def tactic_mutual_let_rec_shape
-            : Syntax :=
-
+private
+def tactic_mutual_let_rec_shape : Syntax :=
   Unhygienic.run
     `(term| by
       let rec firstFunction (firstInput : Nat) : Nat := secondFunction firstInput,
         secondFunction (secondInput : Nat) : Nat := firstFunction secondInput
       exact firstFunction 0)
 
-private def tactic_equation_let_rec_shape
-            : Syntax :=
-
+private
+def tactic_equation_let_rec_shape : Syntax :=
   Unhygienic.run
     `(term| by
       let rec recursiveFunction : Nat → Nat
@@ -757,142 +623,118 @@ private def tactic_equation_let_rec_shape
         | remainingValue + 1 => recursiveFunction remainingValue
       exact recursiveFunction 0)
 
-private def term_let_rec_shape
-            : Syntax :=
-
+private
+def term_let_rec_shape : Syntax :=
   Unhygienic.run
     `(term| let rec recursiveFunction (inputValue : Nat) : Nat := inputValue; recursiveFunction 0)
 
-private def short_term_let_rec_shape
-            : Syntax :=
-
+private
+def short_term_let_rec_shape : Syntax :=
   Unhygienic.run
     `(term| let rec recursiveFixture (inputValue : Nat) : Nat := inputValue; recursiveFixture 0)
 
-private def short_equation_term_let_rec_shape
-            : Syntax :=
-
+private
+def short_equation_term_let_rec_shape : Syntax :=
   Unhygienic.run
     `(term| let rec recursiveFixture : Nat → Nat
         | 0 => 0
         | remainingValue + 1 => recursiveFixture remainingValue
       recursiveFixture 0)
 
-private def recursive_helper_allow_style
-            : Style :=
-
+private
+def recursive_helper_allow_style : Style :=
   { semantic_recursive_helper_style with
     linting.recursiveHelperAllow := [(16, ["recursiveFixture"])] }
 
-private def short_where_helper_shape
-            : Syntax :=
-
+private
+def short_where_helper_shape : Syntax :=
   Unhygienic.run
     `(command| partial def outerFunction (value : Nat) : Nat :=
         recursiveFixture value
         where
           recursiveFixture (inputValue : Nat) : Nat := inputValue)
 
-private def cases_equation_shape
-            : Syntax :=
-
+private
+def cases_equation_shape : Syntax :=
   Unhygienic.run
     `(term| by
       cases equationProof : predicate with
       | z introducedBranchValue => exact introducedBranchValue)
 
-private def anonymous_cases_target_shape
-            : Syntax :=
-
+private
+def anonymous_cases_target_shape : Syntax :=
   Unhygienic.run
     `(term| by
       cases predicate with
       | z introducedBranchValue => exact introducedBranchValue)
 
-private def rcases_equation_shape
-            : Syntax :=
-
+private
+def rcases_equation_shape : Syntax :=
   Unhygienic.run
     `(term| by
       rcases equationProof : predicate with ⟨introducedLeftPatternValue, introducedRightPatternValue⟩
       exact introducedLeftPatternValue)
 
-private def pattern_shape
-            : Syntax :=
-
+private
+def pattern_shape : Syntax :=
   Unhygienic.run `(term| let (leftValue, rightValue) := (1, 2); leftValue + rightValue)
 
-private def match_shape
-            : Syntax :=
-
+private
+def match_shape : Syntax :=
   Unhygienic.run `(term| match (1, 2) with | (firstValue, secondValue) => firstValue + secondValue)
 
-private def multiple_pattern_shape
-            : Syntax :=
-
+private
+def multiple_pattern_shape : Syntax :=
   Unhygienic.run
     `(term| match value with
       | .namespace_ _, .vm branchValue => branchValue
       | .vm _, .namespace_ otherValue => otherValue)
 
-private def grouped_constructor_shape
-            : Syntax :=
-
+private
+def grouped_constructor_shape : Syntax :=
   Unhygienic.run `(term| match value with | .none | .some itemValue => itemValue)
 
-private def qualified_constructor_shape
-            : Syntax :=
-
+private
+def qualified_constructor_shape : Syntax :=
   Unhygienic.run `(term| match value with | Option.some itemValue => itemValue)
 
-private def dotted_qualified_constructor_shape
-            : Syntax :=
-
+private
+def dotted_qualified_constructor_shape : Syntax :=
   Unhygienic.run `(term| match value with | .Foo.bar itemValue => itemValue)
 
-private def nullary_constructor_shape
-            : Syntax :=
+private
+def nullary_constructor_shape : Syntax := Unhygienic.run `(term| match value with | none => 0)
 
-  Unhygienic.run `(term| match value with | none => 0)
-
-private def qualified_nullary_constructor_shape
-            : Syntax :=
-
+private
+def qualified_nullary_constructor_shape : Syntax :=
   Unhygienic.run `(term| match value with | Option.none => 0)
 
-private def typed_pattern_shape
-            : Syntax :=
-
+private
+def typed_pattern_shape : Syntax :=
   Unhygienic.run `(term| match value with | (itemValue : Nat) => itemValue)
 
-private def typed_tuple_pattern_shape
-            : Syntax :=
-
+private
+def typed_tuple_pattern_shape : Syntax :=
   Unhygienic.run `(term| match value with | ((itemValue, otherValue) : Nat × Nat) => itemValue)
 
-private def named_pattern_shape
-            : Syntax :=
-
+private
+def named_pattern_shape : Syntax :=
   Unhygienic.run `(term| match value with | whole@some itemValue => itemValue)
 
-private def named_equation_pattern_shape
-            : Syntax :=
-
+private
+def named_equation_pattern_shape : Syntax :=
   Unhygienic.run `(term| match value with | whole@proof:some itemValue => itemValue)
 
-private def named_dotted_pattern_shape
-            : Syntax :=
-
+private
+def named_dotted_pattern_shape : Syntax :=
   Unhygienic.run `(term| match value with | whole@(.some itemValue) => itemValue)
 
-private def inaccessible_pattern_shape
-            : Syntax :=
-
+private
+def inaccessible_pattern_shape : Syntax :=
   Unhygienic.run `(term| match value with | .(knownValue) => 0)
 
-private def grouped_reference_pattern_shape
-            : Syntax :=
-
+private
+def grouped_reference_pattern_shape : Syntax :=
   Unhygienic.run `(term| match value with | some itemValue | none => 0)
 
 /-- Tactic binders are harvested from real parser shapes; references are not. -/
@@ -1011,7 +853,6 @@ example : generic_let_count semantic_let_style short_mutable_let_shape = 0 := by
 example : let_rule_count let_allow_style short_term_let_shape = 0 := by native_decide
 
 example : let_rule_count shared_allow_does_not_reach_let_style short_term_let_shape = 1 := by
-
   native_decide
 
 /-- Tactic lets, tactic instances, destructuring patterns, and recursive helper
@@ -1053,7 +894,6 @@ example : generic_lambda_count semantic_lambda_style lambda_binder_shape = 0 := 
 example : lambda_rule_count lambda_allow_style lambda_binder_shape = 0 := by native_decide
 
 example : lambda_rule_count shared_allow_does_not_reach_lambda_style lambda_binder_shape = 1 := by
-
   native_decide
 
 example : role_count term_let_shape "parameter-binder" = 0 := by native_decide
@@ -1095,17 +935,14 @@ example : role_count short_term_let_rec_shape "recursive-helper" = 1 := by nativ
 /-- Enabling the semantic helper gate replaces, rather than duplicates, the
     generic symbol-floor diagnostic. -/
 example : recursive_helper_rule_count semantic_recursive_helper_style short_term_let_rec_shape = 1 := by
-
   native_decide
 
 example :
     generic_recursive_helper_count semantic_recursive_helper_style short_term_let_rec_shape = 0 := by
-
   native_decide
 
 /-- An exact-length helper allowance admits only the dedicated helper finding. -/
 example : recursive_helper_rule_count recursive_helper_allow_style short_term_let_rec_shape = 0 := by
-
   native_decide
 
 /-- Equation-style term recursion closes the alternate parser-shape coverage
@@ -1114,27 +951,21 @@ example : role_count short_equation_term_let_rec_shape "recursive-helper" = 1 :=
 
 example :
     recursive_helper_rule_count semantic_recursive_helper_style short_equation_term_let_rec_shape
-        = 1 := by
-
-  native_decide
+        = 1 := by native_decide
 
 example :
     generic_recursive_helper_count semantic_recursive_helper_style short_equation_term_let_rec_shape
-        = 0 := by
-
-  native_decide
+        = 0 := by native_decide
 
 /-- Recursive `where` declarations share the helper role and single-report
     contract despite their distinct container syntax. -/
 example : role_count short_where_helper_shape "recursive-helper" = 1 := by native_decide
 
 example : recursive_helper_rule_count semantic_recursive_helper_style short_where_helper_shape = 1 := by
-
   native_decide
 
 example :
     generic_recursive_helper_count semantic_recursive_helper_style short_where_helper_shape = 0 := by
-
   native_decide
 
 /-- Elimination targets expose only their optional equation binder. -/

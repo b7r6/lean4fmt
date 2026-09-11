@@ -15,10 +15,7 @@ namespace Lean4Fmt.Rules.Trivia
 
 /-- Lint source-level whitespace hygiene. These are hazards rather than rewrites:
     the formatter normally removes them, while byte-exact policy regions may not. -/
-def lint
-    (src : String)
-    : Array Lean4Fmt.Rules.Diagnostic :=
-
+def lint (src : String) : Array Lean4Fmt.Rules.Diagnostic :=
   let (_, diagnostics) :=
     (src.splitOn "\n").foldl
       (

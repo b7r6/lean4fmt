@@ -31,9 +31,7 @@ structure style_patch where
 
 /-- Right-biased merge: the later patch wins per group. Named so the
     composition laws can unfold the operation directly. -/
-def style_patch.append
-    (leftValue rightValue : style_patch)
-    : style_patch := {
+def style_patch.append (leftValue rightValue : style_patch) : style_patch := {
   layout := rightValue.layout <|> leftValue.layout
   breaking := rightValue.breaking <|> leftValue.breaking
   alignment := rightValue.alignment <|> leftValue.alignment
@@ -48,10 +46,7 @@ def style_patch.append
 instance : Append style_patch := ⟨style_patch.append⟩
 
 /-- Apply a patch to a base style (patch wins where present). -/
-def Style.apply
-    (base : Style)
-    (predicate : style_patch)
-    : Style := {
+def Style.apply (base : Style) (predicate : style_patch) : Style := {
   layout := predicate.layout.getD base.layout
   breaking := predicate.breaking.getD base.breaking
   alignment := predicate.alignment.getD base.alignment
@@ -76,11 +71,7 @@ abbrev override_tree := List tree_override
 
 /-- Does this override's root contain `path`? Matching is component-wise, so
     `["Core"]` matches `["Core", "Codec"]` but not `["CoreCodec"]`. -/
-def tree_override.matches
-    (override : tree_override)
-    (path : List String)
-    : Bool :=
-
+def tree_override.matches (override : tree_override) (path : List String) : Bool :=
   override.root.isPrefixOf path
 
 /-- Resolve all overrides matching `path`, in list order. Non-matching entries
@@ -102,20 +93,12 @@ abbrev Tightening := Style → Style → Prop
 
 /-- A patch is monotone for a tightening relation when applying it to both
     sides preserves that relation. -/
-def style_patch.preserves_tightening
-    (tightens : Tightening)
-    (patch : style_patch)
-    : Prop :=
-
+def style_patch.preserves_tightening (tightens : Tightening) (patch : style_patch) : Prop :=
   ∀ lowerStyle upperStyle,
       tightens lowerStyle upperStyle → tightens (lowerStyle.apply patch) (upperStyle.apply patch)
 
 /-- Every patch in the tree preserves the selected tightening relation. -/
-def override_tree.preserves_tightening
-    (tightens : Tightening)
-    (tree : override_tree)
-    : Prop :=
-
+def override_tree.preserves_tightening (tightens : Tightening) (tree : override_tree) : Prop :=
   ∀ override, override ∈ tree → override.patch.preserves_tightening tightens
 
 end Lean4Fmt.Style

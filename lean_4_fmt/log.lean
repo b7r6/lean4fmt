@@ -48,11 +48,7 @@ initialize levelRef : IO.Ref level ← IO.mkRef .warn
 
 def set_level (lineValue : level) : IO Unit := levelRef.set lineValue
 
-def log
-    (lineValue : level)
-    (msg : String)
-    : IO Unit := do
-
+def log (lineValue : level) (msg : String) : IO Unit := do
   if lineValue.rank ≥ (← levelRef.get).rank then
     (← IO.getStderr).putStrLn
       s!

@@ -149,7 +149,8 @@ end
     group containing a multi-line verbatim cannot flatten, so its separators
     genuinely break — which is what makes `.line → true` sound here); visible
     text clears it. Returns (hazardFound, atLineStartAfter). -/
-partial def midline_reanchor_aux : Doc → Bool → Bool × Bool
+partial
+def midline_reanchor_aux : Doc → Bool → Bool × Bool
   | .nil, atLS => (false, atLS)
   | .verbatim textValue _, atLS =>
     if textValue.any (· == '\n') then
@@ -250,12 +251,7 @@ structure rst where
 /-- Emit single-line visible text at break-indent `indent`, flushing pending
     newlines (with indentation) first. `writeResult` never writes the indent without
     content after it (the hygiene law in Proofs). -/
-def writeResult
-    (state : rst)
-    (indent : Nat)
-    (source : String)
-    : rst :=
-
+def writeResult (state : rst) (indent : Nat) (source : String) : rst :=
   let state :=
     if state.pend > 0 then
       { out := state.out ++ newlines state.pend ++ spaces indent, col := indent, pend := 0 }
@@ -283,22 +279,13 @@ def is_blank_line (lineValue : List Char) : Bool := lineValue.all (· == ' ')
     just the leading spaces — dropping `base` chars unconditionally would eat
     CONTENT on such lines (latent until the content-preservation theorem in
     Proofs demanded it be impossible). Lines dedented to empty stay pending. -/
-def dedent
-    (base : Nat)
-    (lineValue : List Char)
-    : List Char :=
-
+def dedent (base : Nat) (lineValue : List Char) : List Char :=
   if lineValue.length ≥ base && (lineValue.take base).all (· == ' ') then
     lineValue.drop base
   else
     lineValue.dropWhile (· == ' ')
 
-def wr_line
-    (state : rst)
-    (indent base : Nat)
-    (lineValue : List Char)
-    : rst :=
-
+def wr_line (state : rst) (indent base : Nat) (lineValue : List Char) : rst :=
   if (dedent base lineValue).isEmpty then
     { state with pend := state.pend + 1 }
   else
@@ -308,28 +295,28 @@ def wr_lines (indent base : Nat) : List (List Char) → rst → rst
   | [], state                 => state
   | leading :: lsValue, state => wr_lines indent base lsValue (wr_line state indent base leading)
 
-private structure string_mask_context where
+private
+structure string_mask_context where
   chars : Array Char
   size  : Nat
 
-private structure string_mask_state where
+private
+structure string_mask_state where
   mode  : Nat := 0
   depth : Nat := 0
   prev  : Char := ' '
   mask  : Array Bool := #[false]
   idx   : Nat := 0
 
-private def is_identifier_char
-            (char : Char)
-            : Bool :=
-
+private
+def is_identifier_char (char : Char) : Bool :=
   char.isAlphanum || char == '_' || char == '\'' || char == '!' || char == '?' || char.val > 127
 
-private def scan_raw_delimiter
-            (context : string_mask_context)
-            (state : string_mask_state)
-            : string_mask_state :=
-
+private
+def scan_raw_delimiter
+    (context : string_mask_context)
+    (state : string_mask_state)
+    : string_mask_state :=
   Id.run do
     let mut delimiterIdx := state.idx + 1
     let mut hashes := 0
@@ -340,13 +327,13 @@ private def scan_raw_delimiter
       return { state with mode := 4, depth := hashes, idx := delimiterIdx }
     return state
 
-private def scan_code_char
-            (context : string_mask_context)
-            (state : string_mask_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : string_mask_state :=
-
+private
+def scan_code_char
+    (context : string_mask_context)
+    (state : string_mask_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : string_mask_state :=
   if char == '-' && nextChar == some '-' then
     { state with mode := 1, idx := state.idx + 1 }
   else if char == '/' && nextChar == some '-' then
@@ -358,12 +345,12 @@ private def scan_code_char
     scan_raw_delimiter context state
   else if char == '\'' && !is_identifier_char state.prev then { state with mode := 5 } else state
 
-private def scan_block_comment_char
-            (state : string_mask_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : string_mask_state :=
-
+private
+def scan_block_comment_char
+    (state : string_mask_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : string_mask_state :=
   if char == '/' && nextChar == some '-' then
     { state with depth := state.depth + 1, idx := state.idx + 1 }
   else if char == '-' && nextChar == some '/' then
@@ -372,12 +359,12 @@ private def scan_block_comment_char
   else
     state
 
-private def scan_string_char
-            (state : string_mask_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : string_mask_state :=
-
+private
+def scan_string_char
+    (state : string_mask_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : string_mask_state :=
   if char == '\\' then
     { state with
       mask := if nextChar == some '\n' then state.mask.push true else state.mask
@@ -385,12 +372,12 @@ private def scan_string_char
     }
   else if char == '"' then { state with mode := 0 } else state
 
-private def scan_raw_string_char
-            (context : string_mask_context)
-            (state : string_mask_state)
-            (char : Char)
-            : string_mask_state :=
-
+private
+def scan_raw_string_char
+    (context : string_mask_context)
+    (state : string_mask_state)
+    (char : Char)
+    : string_mask_state :=
   if char != '"' then
     state
   else
@@ -405,12 +392,12 @@ private def scan_raw_string_char
         return { state with mode := 0, idx := delimiterIdx - 1 }
       return state
 
-private def scan_char_literal
-            (state : string_mask_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : string_mask_state :=
-
+private
+def scan_char_literal
+    (state : string_mask_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : string_mask_state :=
   if char == '\\' then
     { state with
       mask := if nextChar == some '\n' then state.mask.push false else state.mask
@@ -418,11 +405,11 @@ private def scan_char_literal
     }
   else if char == '\'' then { state with mode := 0 } else state
 
-private def scan_mask_char
-            (context : string_mask_context)
-            (state : string_mask_state)
-            : string_mask_state :=
-
+private
+def scan_mask_char
+    (context : string_mask_context)
+    (state : string_mask_state)
+    : string_mask_state :=
   let char := context.chars[state.idx]!
   let nextChar := context.chars[state.idx + 1]?
   let state :=
@@ -446,10 +433,7 @@ private def scan_mask_char
     re-anchoring must emit them at their ORIGINAL absolute column. One Bool
     per `splitLines` line, first line `false` (a verbatim starts at a token
     boundary). Mirrors the `stripTrailingWs` mode machine. -/
-def in_string_line_mask
-    (chars : List Char)
-    : List Bool :=
-
+def in_string_line_mask (chars : List Char) : List Bool :=
   Id.run do
     let context : string_mask_context := { chars := chars.toArray, size := chars.length }
     let mut state : string_mask_state := {}
@@ -476,13 +460,7 @@ def wr_lines_m (indent base : Nat) : List (List Char) → List Bool → rst → 
     `indent` (§0.3) — EXCEPT lines inside a multi-line string token, which keep
     their absolute column byte-exact (`wrLinesM`). Trailing whitespace is trimmed
     (so trailing blank lines cannot exist); leading blank lines are dropped. -/
-def wr_block
-    (state : rst)
-    (indent : Nat)
-    (base : Nat)
-    (raw : String)
-    : rst :=
-
+def wr_block (state : rst) (indent : Nat) (base : Nat) (raw : String) : rst :=
   let chars := trim_end_ws raw.toList
   let lines := split_lines chars
   let leadingCount := (lines.takeWhile is_blank_line).length
@@ -516,7 +494,6 @@ def emit_table
     (strRows : List (List String))
     (state : rst)
     : rst :=
-
   (
     strRows.foldl
       (
@@ -532,13 +509,7 @@ def emit_table
   ).1
 
 @[simp]
-def go_basic?
-    (maxPend indent : Nat)
-    (doc : Doc)
-    (flat : Bool)
-    (state : rst)
-    : Option rst :=
-
+def go_basic? (maxPend indent : Nat) (doc : Doc) (flat : Bool) (state : rst) : Option rst :=
   match doc with
   | .nil => some state
   | .text text => some (writeResult state indent text)
@@ -706,21 +677,19 @@ def goCells (width maxPend : Nat) : List Doc → Nat → List String
 end
 
 /-- Consume the character following a string/character escape, if present. -/
-private def consume_escape
-            (out : Array Char)
-            (idx : Nat)
-            (next? : Option Char)
-            : Array Char × Nat :=
-
+private
+def consume_escape (out : Array Char) (idx : Nat) (next? : Option Char) : Array Char × Nat :=
   match next? with
   | some next => (out.push next, idx + 1)
   | none      => (out, idx)
 
-private structure trailing_context where
+private
+structure trailing_context where
   chars : Array Char
   size  : Nat
 
-private structure trailing_state where
+private
+structure trailing_state where
   mode       : Nat := 0
   depth      : Nat := 0
   docComment : Bool := false
@@ -728,30 +697,24 @@ private structure trailing_state where
   out        : Array Char := #[]
   idx        : Nat := 0
 
-private partial def strip_array_end
-                    (chars : Array Char)
-                    : Array Char :=
-
+private partial
+def strip_array_end (chars : Array Char) : Array Char :=
   if let some char := chars.back? then
     if char == ' ' || char == '\t' then strip_array_end chars.pop else chars
   else
     chars
 
-private def push_range
-            (source : Array Char)
-            (first past : Nat)
-            (target : Array Char)
-            : Array Char :=
-
+private
+def push_range (source : Array Char) (first past : Nat) (target : Array Char) : Array Char :=
   (List.range' first (past - first)).foldl (fun result idx => result.push source[idx]!) target
 
-private def trailing_code_step
-            (context : trailing_context)
-            (state : trailing_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : trailing_state :=
-
+private
+def trailing_code_step
+    (context : trailing_context)
+    (state : trailing_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : trailing_state :=
   if char == '\n' then
     { state with out := (strip_array_end state.out).push char }
   else if char == '-' && nextChar == some '-' then
@@ -787,12 +750,12 @@ private def trailing_code_step
   else
     { state with out := state.out.push char }
 
-private def trailing_block_step
-            (state : trailing_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : trailing_state :=
-
+private
+def trailing_block_step
+    (state : trailing_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : trailing_state :=
   if char == '\n' then
     { state with
       out := (if state.docComment then state.out else strip_array_end state.out).push char }
@@ -813,24 +776,24 @@ private def trailing_block_step
   else
     { state with out := state.out.push char }
 
-private def trailing_string_step
-            (state : trailing_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : trailing_state :=
-
+private
+def trailing_string_step
+    (state : trailing_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : trailing_state :=
   if char == '\\' then
     let escaped := consume_escape (state.out.push char) state.idx nextChar
     { state with out := escaped.1, idx := escaped.2 }
   else
     { state with mode := if char == '"' then 0 else state.mode, out := state.out.push char }
 
-private def trailing_raw_step
-            (context : trailing_context)
-            (state : trailing_state)
-            (char : Char)
-            : trailing_state :=
-
+private
+def trailing_raw_step
+    (context : trailing_context)
+    (state : trailing_state)
+    (char : Char)
+    : trailing_state :=
   if char != '"' then
     { state with out := state.out.push char }
   else
@@ -848,12 +811,12 @@ private def trailing_raw_step
     else
       { state with out := state.out.push char }
 
-private def trailing_char_step
-            (state : trailing_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : trailing_state :=
-
+private
+def trailing_char_step
+    (state : trailing_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : trailing_state :=
   if char == '\\' then
     let escaped := consume_escape (state.out.push char) state.idx nextChar
     { state with out := escaped.1, idx := escaped.2 }
@@ -862,11 +825,8 @@ private def trailing_char_step
     let out := if char == '\n' then (strip_array_end state.out).push char else state.out.push char
     { state with mode, out }
 
-private def trailing_step
-            (context : trailing_context)
-            (state : trailing_state)
-            : trailing_state :=
-
+private
+def trailing_step (context : trailing_context) (state : trailing_state) : trailing_state :=
   let char := context.chars[state.idx]!
   let nextChar := context.chars[state.idx + 1]?
   let state :=
@@ -883,18 +843,12 @@ private def trailing_step
     | _ => trailing_char_step state char nextChar
   { state with prev := state.out.back?.getD ' ', idx := state.idx + 1 }
 
-private partial def scan_trailing
-                    (context : trailing_context)
-                    (state : trailing_state)
-                    : trailing_state :=
-
+private partial
+def scan_trailing (context : trailing_context) (state : trailing_state) : trailing_state :=
   if state.idx < context.size then scan_trailing context (trailing_step context state) else state
 
 /-- Erase whitespace from a string, retaining its semantic character stream. -/
-def whitespace_erased
-    (source : String)
-    : List Char :=
-
+def whitespace_erased (source : String) : List Char :=
   source.toList.filter fun character => !character.isWhitespace
 
 /-- STRING-AWARE trailing-whitespace strip: drop spaces/tabs at every line end
@@ -909,10 +863,7 @@ def whitespace_erased
     `s!"…{element}…"` the quote-toggle treats interpolation code as string — the
     conservative direction (never strips string content; at worst leaves a space
     inside interpolation code, which the gate would catch anyway). -/
-def strip_trailing_ws
-    (source : String)
-    : String :=
-
+def strip_trailing_ws (source : String) : String :=
   let chars := source.toList.toArray
   let state := scan_trailing { chars, size := chars.size } { out := Array.mkEmpty chars.size }
   let candidate := String.ofList (strip_array_end state.out).toList
@@ -922,29 +873,30 @@ def strip_trailing_ws
 theorem whitespace_erased_strip_trailing_ws
         (source : String)
         : whitespace_erased (strip_trailing_ws source) = whitespace_erased source := by
-
   simp only [strip_trailing_ws]
   split
   · next candidateAccepted => exact beq_iff_eq.mp candidateAccepted
   · rfl
 
-private structure canonical_state where
+private
+structure canonical_state where
   mode  : Nat := 0
   depth : Nat := 0
   prev  : Char := ' '
   out   : Array Char := #[]
   idx   : Nat := 0
 
-private structure newline_scan where
+private
+structure newline_scan where
   idx   : Nat
   count : Nat := 0
   last  : Nat
 
-private def canonical_newline_run
-            (context : trailing_context)
-            (state : canonical_state)
-            : canonical_state :=
-
+private
+def canonical_newline_run
+    (context : trailing_context)
+    (state : canonical_state)
+    : canonical_state :=
   Id.run do
     let mut scan : newline_scan := { idx := state.idx, last := state.idx }
     while scan.idx < context.size
@@ -957,11 +909,8 @@ private def canonical_newline_run
     let out := if scan.count ≥ 2 then (state.out.push '\n').push '\n' else state.out.push '\n'
     return { state with out, idx := scan.last }
 
-private def canonical_space_run
-            (context : trailing_context)
-            (state : canonical_state)
-            : canonical_state :=
-
+private
+def canonical_space_run (context : trailing_context) (state : canonical_state) : canonical_state :=
   Id.run do
     let lineStart := state.out.isEmpty || state.out.back! == '\n'
     let mut scanIdx := state.idx
@@ -980,11 +929,8 @@ private def canonical_space_run
         state.out
     return { state with out, idx := scanIdx - 1 }
 
-private def canonical_dsl_step
-            (context : trailing_context)
-            (state : canonical_state)
-            : canonical_state :=
-
+private
+def canonical_dsl_step (context : trailing_context) (state : canonical_state) : canonical_state :=
   Id.run do
     let mut scanIdx := state.idx + 1
     while scanIdx < context.size
@@ -1004,13 +950,13 @@ private def canonical_dsl_step
       }
     return { state with out := state.out.push '[' }
 
-private def canonical_code_step
-            (context : trailing_context)
-            (state : canonical_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : canonical_state :=
-
+private
+def canonical_code_step
+    (context : trailing_context)
+    (state : canonical_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : canonical_state :=
   if char == '\n' then
     canonical_newline_run context state
   else if char == ' ' then
@@ -1047,12 +993,12 @@ private def canonical_code_step
   else
     { state with out := state.out.push char }
 
-private def canonical_block_step
-            (state : canonical_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : canonical_state :=
-
+private
+def canonical_block_step
+    (state : canonical_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : canonical_state :=
   if char == '/' && nextChar == some '-' then
     { state with
       depth := state.depth + 1
@@ -1070,24 +1016,24 @@ private def canonical_block_step
   else
     { state with out := state.out.push char }
 
-private def canonical_string_step
-            (state : canonical_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : canonical_state :=
-
+private
+def canonical_string_step
+    (state : canonical_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : canonical_state :=
   if char == '\\' then
     let escaped := consume_escape (state.out.push char) state.idx nextChar
     { state with out := escaped.1, idx := escaped.2 }
   else
     { state with mode := if char == '"' then 0 else state.mode, out := state.out.push char }
 
-private def canonical_raw_step
-            (context : trailing_context)
-            (state : canonical_state)
-            (char : Char)
-            : canonical_state :=
-
+private
+def canonical_raw_step
+    (context : trailing_context)
+    (state : canonical_state)
+    (char : Char)
+    : canonical_state :=
   if char != '"' then
     { state with out := state.out.push char }
   else
@@ -1105,12 +1051,12 @@ private def canonical_raw_step
     else
       { state with out := state.out.push char }
 
-private def canonical_char_step
-            (state : canonical_state)
-            (char : Char)
-            (nextChar : Option Char)
-            : canonical_state :=
-
+private
+def canonical_char_step
+    (state : canonical_state)
+    (char : Char)
+    (nextChar : Option Char)
+    : canonical_state :=
   if char == '\\' then
     let escaped := consume_escape (state.out.push char) state.idx nextChar
     { state with out := escaped.1, idx := escaped.2 }
@@ -1120,11 +1066,8 @@ private def canonical_char_step
       out := state.out.push char
     }
 
-private def canonical_step
-            (context : trailing_context)
-            (state : canonical_state)
-            : canonical_state :=
-
+private
+def canonical_step (context : trailing_context) (state : canonical_state) : canonical_state :=
   let char := context.chars[state.idx]!
   let nextChar := context.chars[state.idx + 1]?
   let state :=
@@ -1141,11 +1084,8 @@ private def canonical_step
     | _ => canonical_char_step state char nextChar
   { state with prev := state.out.back?.getD ' ', idx := state.idx + 1 }
 
-private partial def scan_canonical
-                    (context : trailing_context)
-                    (state : canonical_state)
-                    : canonical_state :=
-
+private partial
+def scan_canonical (context : trailing_context) (state : canonical_state) : canonical_state :=
   if state.idx < context.size then scan_canonical context (canonical_step context state) else state
 
 /-- Canonical whitespace for OPAQUE (verbatim) block content — the zero-
@@ -1295,20 +1235,13 @@ def canon_verbatim_ws_legacy (s : String) : String :=
       return String.ofList out.toList
 -/
 
-def canon_verbatim_ws
-    (text : String)
-    : String :=
-
+def canon_verbatim_ws (text : String) : String :=
   let chars := text.toList.toArray
   let state := scan_canonical { chars, size := chars.size } { out := Array.mkEmpty chars.size }
   String.ofList state.out.toList
 
 /-- Render a `Doc` to a string under `style`. -/
-def render
-    (style : Style)
-    (doc : Doc)
-    : String :=
-
+def render (style : Style) (doc : Doc) : String :=
   let state :=
     renderLoop style.layout.lineWidth (style.blankLines.maxConsecutive + 1) doc 0 false {}
   -- trailing whitespace is trivia everywhere outside string literals — the

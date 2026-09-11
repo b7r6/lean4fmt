@@ -18,10 +18,5 @@ import lean_4_fmt.rules.house
 namespace Lean4Fmt.Rules
 
 /-- Run every diagnostic-only lint rule over a source module. -/
-def lint
-    (style : Lean4Fmt.Style.Style)
-    (stx : Lean.Syntax)
-    (src : String)
-    : Array Diagnostic :=
-
+def lint (style : Lean4Fmt.Style.Style) (stx : Lean.Syntax) (src : String) : Array Diagnostic :=
   Naming.lint style stx ++ Trivia.lint src ++ House.lint style stx

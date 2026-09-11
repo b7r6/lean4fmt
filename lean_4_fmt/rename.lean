@@ -29,10 +29,7 @@ open Lean4Fmt.Casing
 def last_comp (source : String) : String := (source.splitOn ".").getLastD source
 
 /-- Is `s` a suffix of `n`? (No `String.isSuffixOf` in this Lean core.) -/
-def is_suffix
-    (source count : String)
-    : Bool :=
-
+def is_suffix (source count : String) : Bool :=
   source.length ≤ count.length && count.drop (count.length - source.length) == source
 
 /-- Which naming AXIS a declaration falls on — the map from decl kind to the
@@ -52,9 +49,7 @@ def axis_case (count : Lean4Fmt.Style.Naming) : axis → Case
 
 /-- Lean keywords a target must not become (leave the name, report). Not
     exhaustive — the build is the backstop; this catches the common snake hits. -/
-def keywords
-    : List String :=
-
+def keywords : List String :=
   ["case", "def", "theorem", "match", "let", "fun", "do", "if", "then", "else", "by", "with",
     "where", "end", "open", "section", "namespace", "structure", "inductive", "class", "instance",
     "example", "mutual", "deriving", "abbrev", "opaque", "axiom", "variable", "universe", "in",
@@ -102,20 +97,15 @@ def build_plan
     moves (the caller leaves the token byte-exact). This runs over every `.ident`
     leaf on the apply path — matching ANY dotted component catches use-sites
     regardless of qualification; the build is the floor for the rare over-match. -/
-def ident_replacement
-    (map : List (String × String))
-    (name : String)
-    : Option String :=
-
+def ident_replacement (map : List (String × String)) (name : String) : Option String :=
   let parts := (name.splitOn ".").map (fun part => ((map.find? (·.1 == part)).map (·.2)).getD part)
   let joined := String.intercalate "." parts
   if joined == name then none else some joined
 
 -- ── #guard-locked: the plan's exclusions + the ident rewrite ──────────────────
 
-private def snake_all
-            : Lean4Fmt.Style.Naming :=
-
+private
+def snake_all : Lean4Fmt.Style.Naming :=
   { namespaces := .upperCamel, types := .snake, theorems := .snake, terms := .snake }
 
 -- clean case: distinct camel terms → distinct snake targets, all applied
@@ -151,11 +141,7 @@ private def snake_all
     full-name → new-last-component). `A.Foo.bar` under `{A.Foo↦foo, A.Foo.bar↦
     baz}` → `A.foo.baz`. Namespace-only components (not decls, absent from `map`)
     are kept — which is why import/open module paths ride untouched. -/
-def rename_full
-    (map : List (String × String))
-    (full : String)
-    : String :=
-
+def rename_full (map : List (String × String)) (full : String) : String :=
   let step :=
     fun (result : String × List String) (component : String) =>
       let pfx := if result.1.isEmpty then component else result.1 ++ "." ++ component
@@ -167,10 +153,7 @@ def rename_full
     resolving to a decl NOT in the map — a same-spelled name in another package —
     is left byte-exact). The token's qualification level is preserved: keep the
     last k components of the renamed full name, where k = the token's own. -/
-def resolved_rewrite
-    (map : List (String × String))
-    (tokenText full : String)
-    : Option String :=
+def resolved_rewrite (map : List (String × String)) (tokenText full : String) : Option String :=
 
   -- SANITY: the token must actually SPELL the resolved decl's last component.
   -- The InfoTree attributes some source tokens to GENERATED consts — a `deriving
@@ -197,7 +180,6 @@ def plan_resolved
     (character : Case)
     (decls : List String)
     : List (String × String) × List (String × String) :=
-
   let rows : List (String × String × String × String) :=
     decls.eraseDups.map
       (
@@ -227,14 +209,14 @@ def plan_resolved
 
 /-- Collect the unambiguous source declarations that the hybrid planner may
     rename, pairing each simple spelling with its identity and converted target. -/
-private def hybrid_candidates
-            (targetCase : Case)
-            (modules : List String)
-            (occs : List (String × String))
-            (defs : List String)
-            (protect : List String)
-            : List (String × String × String) :=
-
+private
+def hybrid_candidates
+    (targetCase : Case)
+    (modules : List String)
+    (occs : List (String × String))
+    (defs : List String)
+    (protect : List String)
+    : List (String × String × String) :=
   let defSet := defs.eraseDups
   let protSet := protect.eraseDups
   let simples := (occs.map (·.1)).eraseDups
@@ -282,7 +264,6 @@ def plan_hybrid
     (exists_ : List String)
     (protect : List String)
     : List (String × String) × List (String × String) :=
-
   let defSet := defs.eraseDups
   let existSet := exists_.eraseDups
   -- unambiguous (one full name) AND authorized (a real source decl) AND not a

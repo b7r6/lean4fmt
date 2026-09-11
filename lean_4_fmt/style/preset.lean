@@ -18,13 +18,14 @@ import lean_4_fmt.style.options
 namespace Lean4Fmt.Style
 
 /-- Straylight house style (§6). -/
-def straylight
-    : Style :=
-
+def straylight : Style :=
   {
     layout := { lineWidth := 100, indent := 2, continuationIndent := 4 }
-    breaking := { colon := .breakBefore, binders := .onePerLine, attributesOwnLine := true,
-                    bodyOwnLine := true, compactDo := true, guardIfOwnLine := true,
+    -- the exemplar pins (G-L4/G-L5): visibility on its own line, adaptive
+    -- signatures through the solver, no imposed body blank.
+    breaking := { colon := .breakBefore, binders := .adaptive, attributesOwnLine := true,
+                    visibilityOwnLine := true, bodyOwnLine := false, solveDefs := true,
+                    compactDo := true, guardIfOwnLine := true,
                     glueFun := true, listFill := true }
     alignment := { structFields := .whenShort, matchArms := .whenShort,
                     trailingComments := .whenShort, maxDelta := 16 }
@@ -55,12 +56,11 @@ def straylight
 
 /-- Placeholder — tuned to minimize mathlib4 churn (§9). Currently = Straylight
     with the mathlib-ish binder fill (pack + wrap) and blank preservation. -/
-def mathlib
-    : Style :=
-
+def mathlib : Style :=
   { straylight with
     layout := { straylight.layout with bodyFitWidth := 70 }
-    breaking := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := true, bodyOwnLine := false, glueFun := true, opBreak := .trailing, listFill := true }
+    -- pinned to the census-measured behavior: no straylight exemplar inherits.
+    breaking := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := true, visibilityOwnLine := false, bodyOwnLine := false, solveDefs := false, glueFun := true, opBreak := .trailing, listFill := true }
     alignment := { structFields := .never, matchArms := .never, recordFields := .never, trailingComments := .never }
     blankLines := { straylight.blankLines with policy := .preserve }
     linting := {}
@@ -70,9 +70,7 @@ def mathlib
     point per parse, origin-agnostic. Inline signatures, break-after colon,
     normalized binder spacing (the repo's own 70/30 majority), no body blank,
     no alignment grids. -/
-def aniva
-    : Style :=
-
+def aniva : Style :=
   {
     layout := { lineWidth := 120, indent := 2, continuationIndent := 4 }
     breaking := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,
@@ -84,9 +82,7 @@ def aniva
 
 /-- The `purtell` style (lithe-derived), PRESCRIPTIVE: inline signatures,
     attributes on the declaration line, inline-when-fits bodies, no grids. -/
-def purtell
-    : Style :=
-
+def purtell : Style :=
   {
     layout := { lineWidth := 120, indent := 2, continuationIndent := 4 }
     breaking := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,
