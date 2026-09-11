@@ -43,7 +43,6 @@
                 "lean-toolchain"
                 "lean_4_fmt.lean"
                 "main.lean"
-                "dag.py"
               ];
           };
         in
@@ -55,16 +54,12 @@
             pkgs.rsync
             pkgs.lean.lean-all
             pkgs.makeWrapper
-            pkgs.python3
           ];
           installArtifacts = false;
           postInstall = ''
             mkdir -p $out/bin
             cp .lake/build/bin/lean4fmt $out/bin/
-            cp dag.py $out/bin/lean4fmt-dag
-            chmod +x $out/bin/lean4fmt-dag
             wrapProgram $out/bin/lean4fmt --prefix PATH : ${pkgs.lean.lean-all}/bin
-            wrapProgram $out/bin/lean4fmt-dag --prefix PATH : ${pkgs.python3}/bin
           '';
           meta = {
             description = "Trustworthy, multi-style source formatter for Lean 4";
@@ -91,7 +86,6 @@
               || builtins.elem relative [
                 "ARCHITECTURE.md"
                 "CAMPAIGN.md"
-                "DAG.md"
                 "DESIGN.md"
                 "DESIGN_V2.md"
                 "DISTRIBUTED_GATE.md"

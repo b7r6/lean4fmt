@@ -32,7 +32,7 @@ This document is the design of record. It describes the system as it exists,
 the laws that constrain its evolution, and the procedure by which new syntax is
 admitted. Historical measurements and the sequence of discoveries live in
 `CAMPAIGN.md`; the source-level map lives in `ARCHITECTURE.md`; naming migration
-details live in `DAG.md` and `RENAME.md`.
+details live in `RENAME.md`.
 
 ## 1. The object being built
 
@@ -464,8 +464,8 @@ The standing production lock over Mathlib currently records:
 - 81.8% active code bytes overall;
 - 91.9% shipped active bytes of the portable surface.
 
-`mathlib-full-gate.sh` makes these monotone bounds executable. The local corpus
-gate independently formats twice and requires zero drift and zero errors.
+The development gate harness makes these monotone bounds executable. The local
+corpus gate independently formats twice and requires zero drift and zero errors.
 
 ## 13. How the frontier moves
 

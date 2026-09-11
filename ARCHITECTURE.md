@@ -225,17 +225,22 @@ bytes or diagnostics.
 
 ## 10. Verification surfaces
 
-The repository carries independent gates because no single check covers every
+Development runs independent gates because no single check covers every
 failure class:
 
 - `lake build` checks the implementation and its compile-time laws;
-- `corpus-gate.sh` formats the home corpus twice and requires zero drift;
+- a corpus gate formats the home corpus twice and requires zero drift;
 - comment-diff checks catch ownership mistakes invisible to token comparison;
 - perturbation fuzzing measures independence from irrelevant source trivia;
 - focused witnesses isolate syntax-family decisions;
 - Mathlib samples expose breadth cheaply;
-- `mathlib-full-gate.sh` locks the complete 8,245-file production census;
+- the full-census lock covers the complete 8,245-file production run;
 - project builds are the floor for token-changing rename transactions.
+
+The gate harness lives with the development tree; this repository ships the
+formatter, its compile-time laws, and the evidence record. The standing local
+check is the tree itself: every file here is at the fixed point of the binary
+built from it.
 
 ## 11. Change protocol
 

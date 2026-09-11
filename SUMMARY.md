@@ -15,7 +15,6 @@
 # III. Whole-Tree Change
 
 - [Identity-Aware Renaming](RENAME.md)
-- [Dependency-Ordered Casing](DAG.md)
 - [The Distributed Trust Gate](DISTRIBUTED_GATE.md)
 
 # IV. Evidence
