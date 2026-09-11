@@ -3,40 +3,41 @@
 #                                                  // LEAN4FMT // CORE FUZZ
 # ─────────────────────────────────────────────────────────────────────────────
 #
-#   The zero-passthrough guard, self-contained on the SHIPPING exe (the /tmp
-#   harness era is over): for every file in fuzz/core-set.txt × seeds 1..3,
-#   assert format(perturbed) == format(original). Perturbations are
-#   parse-preserving trivia mutations (perturb.py, with the content pins);
-#   a seed whose mutation breaks the parse is filtered (the exe reports a
-#   parse warning and ships identity — not a divergence).
+#   The zero-passthrough guard on the SHIPPING exe: for every file in
+#   fuzz/core-set.txt × seeds 1..3, assert format(perturbed) ==
+#   format(original). Perturbations are parse-preserving trivia mutations
+#   (perturb.py, with the content pins); a seed whose mutation breaks the
+#   parse is filtered (the exe reports a parse warning and ships identity —
+#   not a divergence).
 #
-#   Usage:  src/lean4fmt/fuzz/fuzz-core.sh          # from repo root
+#   The corpus is this repository's own source tree: the formatter fuzzes
+#   itself. Env: LEAN4FMT_EXE overrides the exe (default: ./result/bin, then
+#   .lake/build/bin).
+#
+#   Usage:  fuzz/fuzz-core.sh          # from anywhere
 #   Exits nonzero if divergences exceed the pinned baseline in
 #   fuzz/core-baseline.txt (missing baseline = 0).
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
-repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo"
-exe="src/lean4fmt/.lake/build/bin/lean4fmt"
-[ -x "$exe" ] || { echo "build lean4fmt first (make lean4fmt)"; exit 2; }
+exe="${LEAN4FMT_EXE:-}"
+if [ -z "$exe" ]; then
+  for candidate in result/bin/lean4fmt .lake/build/bin/lean4fmt; do
+    [ -x "$candidate" ] && { exe="$candidate"; break; }
+  done
+fi
+[ -n "$exe" ] && [ -x "$exe" ] || { echo "build lean4fmt first (nix build / lake build)"; exit 2; }
 
-fmt_lib="$repo/src/lean4fmt/.lake/build/lib/lean"
-core_lib="$(lean --print-libdir)"
-farm="$(mktemp -d)"; trap 'rm -rf "$farm"' EXIT
-for d in $(find "$repo/src" -type d -path '*/.lake/build/lib/lean'); do
-  cp -rsn "$d/." "$farm/" 2>/dev/null || true
-done
-export LEAN_PATH="$fmt_lib:$farm:$core_lib"
-
-list="src/lean4fmt/fuzz/core-set.txt"
-baseline=$(cat src/lean4fmt/fuzz/core-baseline.txt 2>/dev/null || echo 0)
+list="fuzz/core-set.txt"
+baseline=$(cat fuzz/core-baseline.txt 2>/dev/null || echo 0)
 div=0 runs=0 filtered=0
 tmp="$(mktemp -u).lean"
 while IFS= read -r f; do
   [ -f "$f" ] || { echo "missing: $f" >&2; continue; }
   orig="$("$exe" --lake off "$f" 2>/dev/null)"
   for seed in 1 2 3; do
-    python3 src/lean4fmt/fuzz/perturb.py "$f" "$seed" > "$tmp" 2>/dev/null || continue
+    python3 fuzz/perturb.py "$f" "$seed" > "$tmp" 2>/dev/null || continue
     err="$("$exe" --lake off "$tmp" 2>&1 >/dev/null)"
     if echo "$err" | grep -q 'warning \[parse\]'; then filtered=$((filtered+1)); continue; fi
     pert="$("$exe" --lake off "$tmp" 2>/dev/null)"

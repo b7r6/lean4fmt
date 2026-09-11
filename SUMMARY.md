@@ -21,4 +21,4 @@
 # IV. Evidence
 
 - [The Mathlib Campaign](CAMPAIGN.md)
-- [The Layout-Solver Campaign](Lean4Fmt/Solve/CAMPAIGN.md)
+- [The Layout-Solver Campaign](SOLVE_CAMPAIGN.md)

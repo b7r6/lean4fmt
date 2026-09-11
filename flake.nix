@@ -68,7 +68,7 @@
           '';
           meta = {
             description = "Trustworthy, multi-style source formatter for Lean 4";
-            homepage = "https://git.s4.gl/continuity/continuity";
+            homepage = "https://git.s4.gl/straylight/straylight-lean4fmt";
             mainProgram = "lean4fmt";
             platforms = import systems;
           };
@@ -88,9 +88,6 @@
               in
               relative == ""
               || top == "theme"
-              || relative == "Lean4Fmt"
-              || relative == "Lean4Fmt/Solve"
-              || relative == "Lean4Fmt/Solve/CAMPAIGN.md"
               || builtins.elem relative [
                 "ARCHITECTURE.md"
                 "CAMPAIGN.md"
@@ -101,6 +98,7 @@
                 "LINT.md"
                 "README.md"
                 "RENAME.md"
+                "SOLVE_CAMPAIGN.md"
                 "SUMMARY.md"
                 "book.toml"
               ];

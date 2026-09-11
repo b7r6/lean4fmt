@@ -87,10 +87,15 @@ for.
 lean_4_fmt/        production library
 main.lean          command-line driver
 fmt.lean           project policy
-corpus-gate.sh     local fixed-point gate
+dag.py             dependency-ordered casing planner (ships as lean4fmt-dag)
 mathlib-*.{sh,py}  full-tree census and production lock
-fuzz/              origin-independence probes
+fuzz/              origin-independence gate over this repository's own tree
+clearances.json    the lint ratchet
 ```
+
+The tree is self-hosting: every `.lean` file in this repository is at the
+fixed point of the binary built from it, under the `straylight` preset.
+`fuzz/fuzz-core.sh` holds that claim against trivia perturbation.
 
 The source is the authority. The book states the reasons. The gates decide what
 may ship.
