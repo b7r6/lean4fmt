@@ -31,8 +31,8 @@ lean4fmt is built around a stricter proposition:
 This document is the design of record. It describes the system as it exists,
 the laws that constrain its evolution, and the procedure by which new syntax is
 admitted. Historical measurements and the sequence of discoveries live in
-`CAMPAIGN.md`; the source-level map lives in `ARCHITECTURE.md`; naming migration
-details live in `RENAME.md`.
+[the campaign](campaign.md); the source-level map lives in [the architecture](architecture.md); naming migration
+details live in [the renaming chapter](renaming.md).
 
 ## 1. The object being built
 

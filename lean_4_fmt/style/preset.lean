@@ -3,10 +3,10 @@
                                                      // LEAN4FMT // STYLE // PRESET
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Named presets (DESIGN_V2 §6). A preset is just a `Style` value. Their
+    Named presets (doc/design.md §6). A preset is just a `Style` value. Their
     coexistence under one knob set is the ontology's acceptance test (goal #2).
 
-    Straylight is the house style (seeded from DESIGN.md — dense, break-after
+    Straylight is the house style (seeded from doc/style.md — dense, break-after
     colon, align short runs). Mathlib and Aniva are placeholders (= Straylight)
     until their rules are pinned down (§14.1–2); they exist so the surface is
     real and the flexibility test is wired.

@@ -3,7 +3,7 @@
                                                        // LEAN4FMT // FRONTEND // ENV
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    The batch environment (DESIGN_V2 §4/§11, superset-env strategy): ONE import per
+    The batch environment (doc/design.md §4/§11, superset-env strategy): ONE import per
     invocation, shared by every job. Imported olean regions are compacted and
     persistent — immutable by construction — so the env is freeze-free and (later)
     thread-share-safe; per-file syntax extensions layer on top functionally
@@ -146,7 +146,7 @@ unsafe def make_olean_farm
   Lean4Fmt.Log.log .debug s!"olean farm: {farm} ({dirs.length} lib dirs merged)"
   return some farm
 
-/-- Coverage stats for one file under `env` (DESIGN_V2 §12): the
+/-- Coverage stats for one file under `env` (doc/design.md §12): the
     active/verbatim/trivia byte attribution of its produced doc plus the
     CONTENT-BY-POLICY bytes (moduleDoc/header/quotation commands — permanently
     verbatim, so `verbatim - policy` is the honest porting tail), or `none`

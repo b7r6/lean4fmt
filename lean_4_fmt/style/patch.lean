@@ -3,7 +3,7 @@
                                                       // LEAN4FMT // STYLE // PATCH
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    `StylePatch` — overrides/config deltas (DESIGN_V2 §7.1). Every field Optional;
+    `StylePatch` — overrides/config deltas (doc/design.md §7.1). Every field Optional;
     `Append` merges with the right operand winning on `some`. CLI flags, project
     config, and per-dir config are all patches merged in precedence order.
 

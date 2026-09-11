@@ -3,7 +3,7 @@
                                                       // LEAN4FMT // DOC // RENDER
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Width-aware layout: `Style → Doc → String` (DESIGN_V2 §5). A pragmatic
+    Width-aware layout: `Style → Doc → String` (doc/design.md §5). A pragmatic
     Wadler/Leijen renderer: `group` picks flat-or-break by fit; `nest`/`align`
     set the break indent COMPOSITIONALLY (§0.2); `verbatim` re-anchors an opaque
     block to the current indent (§0.3, §4.1); `blank` is clamped by policy (§8).
@@ -176,7 +176,7 @@ def has_midline_reanchor (document : Doc) : Bool := (midline_reanchor_aux docume
 
 mutual
 
-  /-- Coverage accounting (DESIGN_V2 §12): (active, verbatim, trivia) bytes. -/
+  /-- Coverage accounting (doc/design.md §12): (active, verbatim, trivia) bytes. -/
   def stats : Doc → (Nat × Nat × Nat)
     | .text textValue => (textValue.utf8ByteSize, 0, 0)
     | .verbatim textValue _ => (0, textValue.utf8ByteSize, 0)

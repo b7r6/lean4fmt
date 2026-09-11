@@ -93,8 +93,9 @@ Only after these checks does the root aggregate diagnostics.
 
 ## 5. Monotone clearances
 
-[`clearances.json`](clearances.json) is a checked-in ratchet. Every governed rule
-has an independent maximum no greater than the last trusted census.
+The clearance ledger is a ratchet checked in beside the coordinator. Every
+governed rule has an independent maximum no greater than the last trusted
+census.
 
 This decomposition matters:
 

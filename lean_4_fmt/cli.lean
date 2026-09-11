@@ -3,7 +3,7 @@
                                                               // LEAN4FMT // CLI
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Command-line surface (DESIGN_V2 §11). Hand-rolled for now; the schema-as-data
+    Command-line surface (doc/design.md §11). Hand-rolled for now; the schema-as-data
     version on `StdlibEx.CLI` is §11.1 stage 1 (a `require` edge, added when we
     wire lean4fmt into the StdlibEx-bearing tree).
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

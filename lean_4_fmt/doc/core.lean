@@ -3,7 +3,7 @@
                                                         // LEAN4FMT // DOC // CORE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    The document IR (DESIGN_V2 §5): a Wadler/Leijen algebra extended with
+    The document IR (doc/design.md §5): a Wadler/Leijen algebra extended with
     alignment tables (§7), blank-line requests (§8), and opaque verbatim
     reproduction (§5.2). The walker (`Emit`) produces `Doc` — intent only; the
     renderer (`Doc/Render`) turns it into text under a `Style`.

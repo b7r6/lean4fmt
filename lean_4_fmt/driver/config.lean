@@ -3,7 +3,7 @@
                                                     // LEAN4FMT // DRIVER // CONFIG
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    fmt.lean discovery (DESIGN_V2 §5): walk from the file's directory to the
+    fmt.lean discovery (doc/design.md §5): walk from the file's directory to the
     filesystem root, collect every `fmt.lean`, and apply them ROOT → LEAF onto
     the CLI base style (nearest file wins field-wise; `preset` resets). A
     malformed fmt.lean is thrown as an IO error — runJob converts it into a

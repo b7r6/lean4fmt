@@ -3,7 +3,7 @@
                                                                   // LEAN4FMT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Library barrel. The v2 module tree (DESIGN_V2 §11):
+    Library barrel. The v2 module tree (doc/design.md §11):
 
         Syntax/   trivia, kinds, queries        (L0)
         Doc/      the document IR + renderer     (L0/L1 core)

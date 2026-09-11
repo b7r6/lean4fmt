@@ -3,7 +3,7 @@ title = "Custody of Source"
 authors = ["b7r6", "OpenAI Codex"]
 description = "The design and engineering of a trustworthy Lean 4 formatter"
 language = "en"
-src = "."
+src = "doc"
 
 [build]
 build-dir = ".book"

@@ -3,7 +3,7 @@
                                                     // LEAN4FMT // STYLE // OPTIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    The fully-resolved `Style` the renderer reads (DESIGN_V2 §7), grouped into
+    The fully-resolved `Style` the renderer reads (doc/design.md §7), grouped into
     sub-records so --help / docs / presets stay navigable. Choice-knobs are enums
     with FromString so config parse and `--set group.key=value` are mechanical.
 

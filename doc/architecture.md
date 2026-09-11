@@ -2,8 +2,8 @@
 
 This chapter maps the design laws onto the production tree. It is descriptive:
 when this chapter and the implementation disagree, fix the chapter or the code
-in the same change. Rationale belongs in [the design](DESIGN_V2.md); historical
-measurements belong in [the campaign](CAMPAIGN.md).
+in the same change. Rationale belongs in [the design](design.md); historical
+measurements belong in [the campaign](campaign.md).
 
 ## 1. System boundary
 

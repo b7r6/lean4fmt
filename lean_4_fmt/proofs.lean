@@ -3,7 +3,7 @@
                                                             // LEAN4FMT // PROOFS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    The laws of the extended Wadler/Leijen core (DESIGN_V2 §5), stated about
+    The laws of the extended Wadler/Leijen core (doc/design.md §5), stated about
     the SHIPPED render functions. Two-tier verification: everything below the
     parser boundary is proved here; everything whose statement needs the parser
     (idempotence, whole-pipeline token preservation) is the runtime gate's job

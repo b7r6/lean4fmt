@@ -3,7 +3,7 @@
                                                       // LEAN4FMT // CONFIG // LOAD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Elaborate a `.lean4fmt.lean` config to a `StylePatch` (DESIGN_V2 §7). Config
+    Elaborate a `.lean4fmt.lean` config to a `StylePatch` (doc/design.md §7). Config
     is Lean source that evaluates to a `StylePatch`, so there is no config parser.
     SCAFFOLD: returns the empty patch until the config elaboration path lands.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

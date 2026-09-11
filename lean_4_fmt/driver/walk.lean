@@ -3,7 +3,7 @@
                                                        // LEAN4FMT // DRIVER // WALK
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Tree discovery: find `.lean` files under a root. DESIGN_V2 §11 will replace
+    Tree discovery: find `.lean` files under a root. doc/design.md §11 will replace
     this plain walk with `StdlibEx.Linux.Fanotify.scanTree` (§11.1 stage 2) for
     (path, mtime, size) + an mtime skip-cache. Plain recursion for now.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -3,7 +3,7 @@
                                                      // LEAN4FMT // FRONTEND // GATE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    The runtime safety gate (DESIGN_V2 §8): format, then keep the result only
+    The runtime safety gate (doc/design.md §8): format, then keep the result only
     if it reparses, preserves the token stream, keeps imports in the header, and
     is a fixed point — otherwise emit the original unchanged. Never worse than
     input, on any file.

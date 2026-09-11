@@ -757,7 +757,7 @@ discarded; it does not count as a clearance.
 G52 closes over all 8,245 Mathlib files: zero missing statistics and zero
 unclassified safety-gate rejects. The production lock ships 81.8% of all code
 bytes and 91.9% of the portable surface. Its remaining 113 failed candidates
-are named by exact path in `mathlib-identity-clearances.txt`; each returns the
+are named by exact path in the identity-clearance ledger; each returns the
 original source and counts as zero shipped-active bytes. The clearance files
 compose by set union (associative, commutative, and idempotent), are consulted
 only after semantic validation fails, and cannot authorize a changed result.

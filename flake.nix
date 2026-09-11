@@ -83,19 +83,8 @@
               in
               relative == ""
               || top == "theme"
-              || builtins.elem relative [
-                "ARCHITECTURE.md"
-                "CAMPAIGN.md"
-                "DESIGN.md"
-                "DESIGN_V2.md"
-                "DISTRIBUTED_GATE.md"
-                "LINT.md"
-                "README.md"
-                "RENAME.md"
-                "SOLVE_CAMPAIGN.md"
-                "SUMMARY.md"
-                "book.toml"
-              ];
+              || top == "doc"
+              || relative == "book.toml";
           };
         in
         pkgs.stdenvNoCC.mkDerivation {

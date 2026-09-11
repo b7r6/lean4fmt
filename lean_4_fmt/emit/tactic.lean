@@ -3,7 +3,7 @@
                                                      // LEAN4FMT // EMIT // Tactic
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Open-recursion emitter for the Tactic category (DESIGN_V2 §6): the `by`
+    Open-recursion emitter for the Tactic category (doc/design.md §6): the `by`
     block as a statement sequence — one tactic per line at +2, inter-tactic
     comment/blank lines placed structurally, same-line trailing comments
     re-appended (the same seam loop as do-blocks — `DoNotation.seqLinesDoc?`).

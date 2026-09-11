@@ -10,5 +10,5 @@
 import Lean
 
 namespace Lean4Fmt.Driver.Io
--- SCAFFOLD: see the StdlibEx adoption staging in DESIGN_V2 §11.1.
+-- SCAFFOLD: see the StdlibEx adoption staging in doc/design.md §11.1.
 end Lean4Fmt.Driver.Io

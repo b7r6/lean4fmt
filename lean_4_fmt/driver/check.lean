@@ -3,7 +3,7 @@
                                                       // LEAN4FMT // DRIVER // CHECK
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    --check: is the file already formatted? (DESIGN_V2 §11). First-difference
+    --check: is the file already formatted? (doc/design.md §11). First-difference
     reporting will use `StdlibEx.Bytes.memmem` (§11.1 stage 1); for now a plain
     equality check.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

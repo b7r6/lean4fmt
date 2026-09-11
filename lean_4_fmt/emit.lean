@@ -3,7 +3,7 @@
                                                              // LEAN4FMT // EMIT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    The walker: `Syntax → Doc` (DESIGN_V2 §3/§6). `walk` is the single recursive
+    The walker: `Syntax → Doc` (doc/design.md §3/§6). `walk` is the single recursive
     function; it dispatches on syntax kind to the per-category open-recursion
     emitters (`Emit/Module`, `Emit/Term`, …), passing itself so they can recurse.
 
