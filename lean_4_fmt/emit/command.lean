@@ -24,15 +24,16 @@ open Lean Lean4Fmt.Doc Lean4Fmt.Emit
 
 /-- Accumulated constructor signature while its binders and result type are
     classified for flat or fill layout. -/
-private
-structure ctor_state where
+private structure ctor_state where
   parts    : Array String := #[]
   fillDocs : Array Doc := #[]
   needFill : Bool := false
   tyDoc?   : Option Doc := none
 
-private
-def ctor_binders? (binders : Array Lean.Syntax) : Option ctor_state :=
+private def ctor_binders?
+            (binders : Array Lean.Syntax)
+            : Option ctor_state :=
+
   Id.run do
     let mut state : ctor_state := {}
     for binder in binders do
@@ -51,13 +52,13 @@ def ctor_binders? (binders : Array Lean.Syntax) : Option ctor_state :=
         }
     return some state
 
-private
-def ctor_type?
-    (walk : Lean4Fmt.Emit.Walk)
-    (typeSlot : Array Lean.Syntax)
-    (prefixLength : Nat)
-    (state : ctor_state)
-    : Lean4Fmt.Emit.emit_m (Option (ctor_state × Option String)) := do
+private def ctor_type?
+            (walk : Lean4Fmt.Emit.Walk)
+            (typeSlot : Array Lean.Syntax)
+            (prefixLength : Nat)
+            (state : ctor_state)
+            : Lean4Fmt.Emit.emit_m (Option (ctor_state × Option String)) := do
+
   if typeSlot.isEmpty then
     return some (state, none)
   let [typeSpec] := typeSlot.toList | return none
@@ -80,14 +81,14 @@ def ctor_type?
     return none
   return some ({ state with tyDoc? := some doc }, none)
 
-private
-def ctor_line_doc?
-    (state : ctor_state)
-    (modifiers name : String)
-    (typeText? : Option String)
-    (joined : String)
-    (width : Nat)
-    : Option Doc :=
+private def ctor_line_doc?
+            (state : ctor_state)
+            (modifiers name : String)
+            (typeText? : Option String)
+            (joined : String)
+            (width : Nat)
+            : Option Doc :=
+
   match state.tyDoc? with
   | some typeDoc =>
     let armHead := "| " ++ (if modifiers.isEmpty then "" else modifiers ++ " ") ++ name
@@ -95,19 +96,27 @@ def ctor_line_doc?
       some (.text (armHead ++ " :") ++ .group (.nest 4 (.line ++ typeDoc)))
     else
       some
-        (.text (armHead ++ " ")
-            ++ .nest
-              6
-              (Doc.fillSep state.fillDocs.toList ++ .text " :"
-                  ++ .group (.nest 4 (.line ++ typeDoc))))
+        (
+          .text (armHead ++ " ")
+              ++ .nest
+                6
+                (
+                  Doc.fillSep state.fillDocs.toList ++ .text " :"
+                      ++ .group (.nest 4 (.line ++ typeDoc))
+                )
+        )
   | none =>
     if (state.needFill || joined.length + 4 > width) && !state.fillDocs.isEmpty then
       some
-        (.text ("| " ++ (if modifiers.isEmpty then "" else modifiers ++ " ") ++ name ++ " ")
-            ++ .nest
-              6
-              (Doc.fillSep state.fillDocs.toList
-                  ++ (typeText?.map (fun text => Doc.text (" : " ++ text))).getD .nil))
+        (
+          .text ("| " ++ (if modifiers.isEmpty then "" else modifiers ++ " ") ++ name ++ " ")
+              ++ .nest
+                6
+                (
+                  Doc.fillSep state.fillDocs.toList
+                      ++ (typeText?.map (fun text => Doc.text (" : " ++ text))).getD .nil
+                )
+        )
     else
       none
 
@@ -115,12 +124,12 @@ def ctor_line_doc?
     single line (the doc comment on its own line above). `none` on a multi-line
     piece or a structural surprise — the caller reproduces the whole
     declaration. -/
-private
-def ctor_doc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (character : Lean.Syntax)
-    (preserve : Bool)
-    : Lean4Fmt.Emit.emit_m (Option (Doc × String × Option Doc)) := do
+private def ctor_doc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (character : Lean.Syntax)
+            (preserve : Bool)
+            : Lean4Fmt.Emit.emit_m (Option (Doc × String × Option Doc)) := do
+
   if character.getKind != ``Lean.Parser.Command.ctor then
     return none
   let args := character.getArgs
@@ -153,8 +162,7 @@ def ctor_doc?
     already placed), whether that separator is a plain single newline, its
     prefix (doc comment lines), the single-line content, and its trailing
     comment (empty when none / not owned). -/
-private
-structure item where
+private structure item where
   sep       : Doc
   plainSep  : Bool
   prefixDoc : Doc
@@ -171,29 +179,28 @@ structure item where
   deriving Inhabited
 
 /-- Output and pending alignment run threaded through body-item assembly. -/
-private
-structure assemble_state where
+private structure assemble_state where
   out : Doc := .nil
   run : Array item := #[]
 
 /-- Pieces accumulated while a structure field is classified. -/
-private
-structure field_state where
+private structure field_state where
   modifiers   : String := ""
   binders     : Array String := #[]
   typeDoc?    : Option Doc := none
   defaultDoc? : Option Doc := none
 
-private
-structure field_parts where
+private structure field_parts where
   prefixDoc : Doc
   name      : String
   rest      : String
   line      : String
   lineDoc?  : Option Doc
 
-private
-def field_modifiers? (node : Lean.Syntax) : Option (String × String) :=
+private def field_modifiers?
+            (node : Lean.Syntax)
+            : Option (String × String) :=
+
   Id.run do
     let arguments := node.getArgs
     let docText := ((arguments[0]?.map bare_src).getD "").trimAscii.toString
@@ -205,13 +212,13 @@ def field_modifiers? (node : Lean.Syntax) : Option (String × String) :=
       if !text.isEmpty then modifiers := modifiers ++ text ++ " "
     return some (docText, modifiers)
 
-private
-def field_type?
-    (walk : Lean4Fmt.Emit.Walk)
-    (typeSlot : Array Lean.Syntax)
-    (prefixLength : Nat)
-    (state : field_state)
-    : Lean4Fmt.Emit.emit_m (Option (field_state × Option String)) := do
+private def field_type?
+            (walk : Lean4Fmt.Emit.Walk)
+            (typeSlot : Array Lean.Syntax)
+            (prefixLength : Nat)
+            (state : field_state)
+            : Lean4Fmt.Emit.emit_m (Option (field_state × Option String)) := do
+
   if typeSlot.isEmpty then
     return some (state, none)
   let [typeSpec] := typeSlot.toList | return none
@@ -231,28 +238,36 @@ def field_type?
     return none
   return some ({ state with typeDoc? := some doc }, none)
 
-private
-def field_line_doc
-    (state : field_state)
-    (nameSegment : String)
-    (typeText? : Option String)
-    : Option Doc :=
+private def field_line_doc
+            (state : field_state)
+            (nameSegment : String)
+            (typeText? : Option String)
+            : Option Doc :=
+
   match state.typeDoc?, state.defaultDoc? with
-  | some typeDoc, some defaultDoc =>
-    some (Doc.text (nameSegment ++ " : ") ++ typeDoc ++ defaultDoc)
+  | some typeDoc, some defaultDoc => some (Doc.text (nameSegment ++ " : ") ++ typeDoc ++ defaultDoc)
   | some typeDoc, none => some (Doc.text (nameSegment ++ " : ") ++ typeDoc)
   | none, some defaultDoc =>
     some
-      (Doc.text
-        (nameSegment
-            ++ (match typeText? with
-            | some text => " : " ++ text
-            | none      => ""))
-          ++ defaultDoc)
+      (
+        Doc.text
+          (
+            nameSegment
+                ++ (
+                  match typeText? with
+                  | some text => " : " ++ text
+                  | none      => ""
+                )
+          )
+            ++ defaultDoc
+      )
   | none, none => none
 
-private
-def field_prefix_doc? (field : Lean.Syntax) (docText modifiers : String) : Option Doc :=
+private def field_prefix_doc?
+            (field : Lean.Syntax)
+            (docText modifiers : String)
+            : Option Doc :=
+
   Id.run do
     let nameLead :=
       if docText.isEmpty && modifiers.isEmpty then
@@ -270,29 +285,41 @@ def field_prefix_doc? (field : Lean.Syntax) (docText modifiers : String) : Optio
     return some doc
 
 /-- Emit one unaligned body item, including its owned separator and comment. -/
-private
-def emit_plain_item (output : Doc) (current : item) : Doc :=
+private def emit_plain_item
+            (output : Doc)
+            (current : item)
+            : Doc :=
+
   output ++ current.sep ++ current.prefixDoc
-      ++ (match current.lineDoc with
-      | some doc => doc
-      | none     => .text current.line)
+      ++ (
+        match current.lineDoc with
+        | some doc => doc
+        | none     => .text current.line
+      )
       ++ (if current.trailT.isEmpty then Doc.nil else .text (" " ++ current.trailT))
 
 /-- Flush one maximal alignment run, preserving its plain fallback exactly. -/
-private
-def flush_item_run (columnsEnabled : Bool) (cap : Nat) (output : Doc) (run : Array item) : Doc :=
+private def flush_item_run
+            (columnsEnabled : Bool)
+            (cap : Nat)
+            (output : Doc)
+            (run : Array item)
+            : Doc :=
+
   Id.run do
     if run.size < 2 then
       return run.foldl emit_plain_item output
     let fallback :=
       (List.range run.size).foldl
-        (fun document idx =>
-          let current := run[idx]!
-          if idx == 0 then
-            document ++ current.prefixDoc ++ .text current.line
-                ++ (if current.trailT.isEmpty then Doc.nil else .text (" " ++ current.trailT))
-          else
-            emit_plain_item document current)
+        (
+          fun document idx =>
+            let current := run[idx]!
+            if idx == 0 then
+              document ++ current.prefixDoc ++ .text current.line
+                  ++ (if current.trailT.isEmpty then Doc.nil else .text (" " ++ current.trailT))
+            else
+              emit_plain_item document current
+        )
         .nil
     let rows :=
       run.toList.map fun current =>
@@ -315,13 +342,13 @@ def flush_item_run (columnsEnabled : Bool) (cap : Nat) (output : Doc) (run : Arr
     `.always` ignores the delta cap; `.whenShort` passes it to the renderer
     (which opts the whole run out rather than padding raggedly); `.never`
     emits everything plain. -/
-private
-def assemble
-    (trailMode : Lean4Fmt.Style.align_mode)
-    (colMode : Lean4Fmt.Style.align_mode)
-    (maxDelta : Nat)
-    (items : Array item)
-    : Doc :=
+private def assemble
+            (trailMode : Lean4Fmt.Style.align_mode)
+            (colMode : Lean4Fmt.Style.align_mode)
+            (maxDelta : Nat)
+            (items : Array item)
+            : Doc :=
+
   Id.run
     do
       let trailOn := trailMode != Lean4Fmt.Style.align_mode.never
@@ -346,15 +373,17 @@ def assemble
               run := #[] }
       return flush_item_run colOn cap state.out state.run
 
-private
-structure inductive_layout where
+private structure inductive_layout where
   head         : String
   constructors : Array Lean.Syntax
   derivingText : String
   derivingSep  : Doc
 
-private
-def append_inductive_type? (head : String) (typeSlot : Array Lean.Syntax) : Option String :=
+private def append_inductive_type?
+            (head : String)
+            (typeSlot : Array Lean.Syntax)
+            : Option String :=
+
   match typeSlot.toList with
   | [typeSpec] =>
     let token := Lean4Fmt.Emit.canon_tok ((typeSpec.getArgs[1]?).getD .missing)
@@ -362,8 +391,10 @@ def append_inductive_type? (head : String) (typeSlot : Array Lean.Syntax) : Opti
   | [] => some head
   | _ => none
 
-private
-def inductive_layout? (defn : Lean.Syntax) : Option inductive_layout := do
+private def inductive_layout?
+            (defn : Lean.Syntax)
+            : Option inductive_layout := do
+
   let args := defn.getArgs
   if args.size != 7 then none
   let ident := (bare_src args[1]!).trimAscii.toString
@@ -397,12 +428,12 @@ def inductive_layout? (defn : Lean.Syntax) : Option inductive_layout := do
   else leading_sep? ((Lean4Fmt.Syntax.leading? args[6]!).getD "")
   return { head, constructors, derivingText, derivingSep }
 
-private
-def constructor_items?
-    (walk : Lean4Fmt.Emit.Walk)
-    (constructors : Array Lean.Syntax)
-    (hasDeriving preserve : Bool)
-    : Lean4Fmt.Emit.emit_m (Option (Array item)) := do
+private def constructor_items?
+            (walk : Lean4Fmt.Emit.Walk)
+            (constructors : Array Lean.Syntax)
+            (hasDeriving preserve : Bool)
+            : Lean4Fmt.Emit.emit_m (Option (Array item)) := do
+
   let mut items : Array item := #[]
   for h : idx in [0:constructors.size] do
     let ctor := constructors[idx]
@@ -413,24 +444,24 @@ def constructor_items?
     let leading := (Lean4Fmt.Syntax.leading? ctor).getD ""
     let some separator := leading_sep? leading | return none
     let plainSeparator := ((leading.splitOn "\n").drop 1).dropLast.isEmpty
-    let rendered ←
-      if Lean4Fmt.Syntax.interior_has_line_comment ctor then pure none
-      else ctor_doc? walk ctor preserve
+    let rendered ← if Lean4Fmt.Syntax.interior_has_line_comment ctor then pure none
+    else ctor_doc? walk ctor preserve
     let (doc, line, lineDoc?) ← match rendered with
-      | some rendered => pure rendered
-      | none =>
-        let args := ctor.getArgs
-        if ctor.getKind == ``Lean.Parser.Command.ctor && args.size == 5 then
-          let docText := (bare_src args[0]!).trimAscii.toString
-          if !docText.isEmpty then
-            let tail := Lean.mkNullNode (args.extract 1 args.size)
-            pure
-              (.textRaw docText ++ .hardline, "",
-                some (← Lean4Fmt.Emit.verbatim tail "inductive-constructor-tail-piece"))
-          else
-            pure (.nil, "", some (← Lean4Fmt.Emit.verbatim ctor "inductive-constructor-piece"))
-        else
-          pure (.nil, "", some (← Lean4Fmt.Emit.verbatim ctor "inductive-constructor-piece"))
+    | some rendered => pure rendered
+    | none =>
+      let args := ctor.getArgs
+      if ctor.getKind == ``Lean.Parser.Command.ctor && args.size == 5 then
+        let docText := (bare_src args[0]!).trimAscii.toString
+        if !docText.isEmpty then
+          let tail := Lean.mkNullNode (args.extract 1 args.size)
+          pure
+            (
+              .textRaw docText ++ .hardline,
+              "",
+              some (← Lean4Fmt.Emit.verbatim tail "inductive-constructor-tail-piece")
+            )
+        else pure (.nil, "", some (← Lean4Fmt.Emit.verbatim ctor "inductive-constructor-piece"))
+      else pure (.nil, "", some (← Lean4Fmt.Emit.verbatim ctor "inductive-constructor-piece"))
     let rawTrail := (((Lean4Fmt.Syntax.trailing? ctor).getD "").trimAsciiEnd).toString
     let (line, trail) :=
       if preserve && owned && !trail.isEmpty && !rawTrail.any (· == '\n') then
@@ -453,6 +484,7 @@ def inductive_doc?
     (alignDelta : Nat)
     (preserve : Bool := false)
     : Lean4Fmt.Emit.emit_m (Option Doc) := do
+
   let some layout := inductive_layout? defn | return none
   let hasDeriving := !layout.derivingText.isEmpty
   let some items ← constructor_items? walk layout.constructors hasDeriving preserve | return none
@@ -471,7 +503,10 @@ def inductive_doc?
   return some (.text layout.head ++ .nest 2 (body ++ derivingDoc))
 
 /-- Name the unsupported inductive layer after `inductive_doc?` declines it. -/
-def inductive_failure_reason (defn : Lean.Syntax) : String :=
+def inductive_failure_reason
+    (defn : Lean.Syntax)
+    : String :=
+
   if (inductive_layout? defn).isSome then "inductive-constructors" else "inductive-head"
 
 /-- One structure field `(/-- doc -/)? (modifiers)? name (binders)* : τ (:= v)?`,
@@ -479,8 +514,11 @@ def inductive_failure_reason (defn : Lean.Syntax) : String :=
     the field's declModifiers, unlike a ctor's). `none` on a multi-line piece,
     a parenthesized field group (`structExplicitBinder`), or a structural
     surprise. -/
-private
-def field_binders? (signature : Array Lean.Syntax) (state : field_state) : Option field_state :=
+private def field_binders?
+            (signature : Array Lean.Syntax)
+            (state : field_state)
+            : Option field_state :=
+
   Id.run do
     let mut next := state
     for binder in ((signature[0]?).map (·.getArgs)).getD #[] do
@@ -490,30 +528,31 @@ def field_binders? (signature : Array Lean.Syntax) (state : field_state) : Optio
       next := { next with binders := next.binders.push token }
     return some next
 
-private
-def field_default
-    (walk : Lean4Fmt.Emit.Walk)
-    (defaultNode : Lean.Syntax)
-    (defaultText : String)
-    (state : field_state)
-    : Lean4Fmt.Emit.emit_m field_state := do
+private def field_default
+            (walk : Lean4Fmt.Emit.Walk)
+            (defaultNode : Lean.Syntax)
+            (defaultText : String)
+            (state : field_state)
+            : Lean4Fmt.Emit.emit_m field_state := do
+
   if !defaultText.any (· == '\n') then
     return state
   let document ← walk defaultNode
   return { state with defaultDoc? := some (.nest 2 (.hardline ++ document)) }
 
-private
-def field_doc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (transform : Lean.Syntax)
-    (preserve : Bool)
-    : Lean4Fmt.Emit.emit_m (Option field_parts) := do
+private def field_doc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (transform : Lean.Syntax)
+            (preserve : Bool)
+            : Lean4Fmt.Emit.emit_m (Option field_parts) := do
+
   if transform.getKind == ``Lean.Parser.Command.structInstBinder
       || transform.getKind == ``Lean.Parser.Command.structImplicitBinder
       || transform.getKind == ``Lean.Parser.Command.structExplicitBinder then
     let some line := Lean4Fmt.Emit.token_join_flat? transform | return none
     return some { prefixDoc := .nil, name := line, rest := "", line, lineDoc? := none }
-  if transform.getKind != ``Lean.Parser.Command.structSimpleBinder then return none
+  if transform.getKind != ``Lean.Parser.Command.structSimpleBinder then
+    return none
   let args := transform.getArgs
   if args.size != 4 then
     return none
@@ -567,20 +606,28 @@ def field_doc?
   let some docD := field_prefix_doc? transform docT state.modifiers | return none
   return some { prefixDoc := docD, name := nameSeg, rest := restSeg, line, lineDoc? }
 
-private
-def append_structure_type? (head : String) (typeSlot : Array Lean.Syntax) : Option String :=
+private def append_structure_type?
+            (head : String)
+            (typeSlot : Array Lean.Syntax)
+            : Option String :=
+
   match typeSlot.toList with
   | [typeSpec] =>
     let typeSyntax := (typeSpec.getArgs[1]?).getD .missing
     let token := Lean4Fmt.Emit.canon_tok typeSyntax
     let token :=
-      if token.any (· == '\n') then Lean4Fmt.Emit.token_join_flat? typeSyntax |>.getD token else token
+      if token.any (· == '\n') then
+        Lean4Fmt.Emit.token_join_flat? typeSyntax |>.getD token
+      else
+        token
     if token.isEmpty || token.any (· == '\n') then none else some (head ++ " : " ++ token)
   | [] => some head
   | _ => none
 
-private
-def structure_head? (arguments : Array Lean.Syntax) : Option String :=
+private def structure_head?
+            (arguments : Array Lean.Syntax)
+            : Option String :=
+
   Id.run do
     let keyword := (bare_src arguments[0]!).trimAscii.toString
     let identifier := (bare_src arguments[1]!).trimAscii.toString
@@ -610,40 +657,53 @@ def structure_head? (arguments : Array Lean.Syntax) : Option String :=
     if !extendsText.isEmpty then head := head ++ " " ++ extendsText
     return some head
 
-private
-def has_item_prefix : Doc → Bool
+private def has_item_prefix : Doc → Bool
   | .nil => false
   | _    => true
 
-private
-def field_trail_available (trailText rawTrail : String) : Bool :=
+private def field_trail_available
+            (trailText rawTrail : String)
+            : Bool :=
+
   (trailText.isEmpty, rawTrail.contains '\n') == (false, false)
 
-private
-def owned_field_trail (owned : Bool) (trailText rawTrail : String) : Bool :=
+private def owned_field_trail
+            (owned : Bool)
+            (trailText rawTrail : String)
+            : Bool :=
+
   (owned, field_trail_available trailText rawTrail) == (true, true)
 
-private
-def should_preserve_field_trail (preserve owned : Bool) (trailText rawTrail : String) : Bool :=
+private def should_preserve_field_trail
+            (preserve owned : Bool)
+            (trailText rawTrail : String)
+            : Bool :=
+
   (preserve, owned_field_trail owned trailText rawTrail) == (true, true)
 
-private
-def field_source_line (preserveTrail : Bool) (sourceLine rawTrail : String) : String :=
+private def field_source_line
+            (preserveTrail : Bool)
+            (sourceLine rawTrail : String)
+            : String :=
+
   if preserveTrail then sourceLine ++ rawTrail else sourceLine
 
-private
-def field_trail_text (owned preserveTrail : Bool) (trailText : String) : String :=
+private def field_trail_text
+            (owned preserveTrail : Bool)
+            (trailText : String)
+            : String :=
+
   if owned && !preserveTrail then trailText else ""
 
-private
-def finish_field_item_parts
-    (separator : Doc)
-    (plainSeparator owned preserve : Bool)
-    (doc : Doc)
-    (nameSegment restSegment sourceLine : String)
-    (lineDoc? : Option Doc)
-    (trailText rawTrail : String)
-    : item :=
+private def finish_field_item_parts
+            (separator : Doc)
+            (plainSeparator owned preserve : Bool)
+            (doc : Doc)
+            (nameSegment restSegment sourceLine : String)
+            (lineDoc? : Option Doc)
+            (trailText rawTrail : String)
+            : item :=
+
   let preserveTrail := should_preserve_field_trail preserve owned trailText rawTrail
   { sep := separator, plainSep := plainSeparator, prefixDoc := doc
     hasPrefix := has_item_prefix doc
@@ -651,13 +711,13 @@ def finish_field_item_parts
     lineDoc := lineDoc?, nameSeg := nameSegment, restSeg := restSegment
     trailT := field_trail_text owned preserveTrail trailText }
 
-private
-def finish_field_item
-    (separator : Doc)
-    (plainSeparator owned preserve : Bool)
-    (parsed : field_parts)
-    (trailText rawTrail : String)
-    : item :=
+private def finish_field_item
+            (separator : Doc)
+            (plainSeparator owned preserve : Bool)
+            (parsed : field_parts)
+            (trailText rawTrail : String)
+            : item :=
+
   finish_field_item_parts
     separator
     plainSeparator
@@ -671,61 +731,69 @@ def finish_field_item
     trailText
     rawTrail
 
-private
-def structure_field_tail?
-    (walk : Lean4Fmt.Emit.Walk)
-    (field : Lean.Syntax)
-    (separator : Doc)
-    (leading trailText : String)
-    (owned preserve : Bool)
-    : Lean4Fmt.Emit.emit_m (Option item) := do
+private def structure_field_tail?
+            (walk : Lean4Fmt.Emit.Walk)
+            (field : Lean.Syntax)
+            (separator : Doc)
+            (leading trailText : String)
+            (owned preserve : Bool)
+            : Lean4Fmt.Emit.emit_m (Option item) := do
+
   let plainSeparator := ((leading.splitOn "\n").drop 1).dropLast.isEmpty
   let rawTrail := (((Lean4Fmt.Syntax.trailing? field).getD "").trimAsciiEnd).toString
   let parsed ← match ← field_doc? walk field preserve with
-    | some parsed => pure parsed
-    | none =>
-      let args := field.getArgs
-      if field.getKind == ``Lean.Parser.Command.structSimpleBinder && args.size == 4 then
-        match field_modifiers? args[0]! with
-        | some (docText, modifiers) =>
-          if modifiers.isEmpty then
-            let some prefixDoc := field_prefix_doc? field docText modifiers | return none
-            let tail := Lean.mkNullNode (args.extract 1 args.size)
-            pure
-              { prefixDoc
-                name := ""
-                rest := ""
-                line := ""
-                lineDoc? := some (← Lean4Fmt.Emit.verbatim tail "structure-field-tail-piece") }
-          else
-            pure
-              { prefixDoc := .nil
-                name := ""
-                rest := ""
-                line := ""
-                lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece") }
-        | none =>
+  | some parsed => pure parsed
+  | none =>
+    let args := field.getArgs
+    if field.getKind == ``Lean.Parser.Command.structSimpleBinder && args.size == 4 then
+      match field_modifiers? args[0]! with
+      | some (docText, modifiers) =>
+        if modifiers.isEmpty then
+          let some prefixDoc := field_prefix_doc? field docText modifiers | return none
+          let tail := Lean.mkNullNode (args.extract 1 args.size)
           pure
-            { prefixDoc := .nil
+            {
+              prefixDoc
               name := ""
               rest := ""
               line := ""
-              lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece") }
-      else
+              lineDoc? := some (← Lean4Fmt.Emit.verbatim tail "structure-field-tail-piece")
+            }
+        else
+          pure
+            {
+              prefixDoc := .nil
+              name := ""
+              rest := ""
+              line := ""
+              lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece")
+            }
+      | none =>
         pure
-          { prefixDoc := .nil
+          {
+            prefixDoc := .nil
             name := ""
             rest := ""
             line := ""
-            lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece") }
+            lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece")
+          }
+    else
+      pure
+        {
+          prefixDoc := .nil
+          name := ""
+          rest := ""
+          line := ""
+          lineDoc? := some (← Lean4Fmt.Emit.verbatim field "structure-field-piece")
+        }
   return some (finish_field_item separator plainSeparator owned preserve parsed trailText rawTrail)
 
-private
-def structure_field_item?
-    (walk : Lean4Fmt.Emit.Walk)
-    (field : Lean.Syntax)
-    (owned preserve : Bool)
-    : Lean4Fmt.Emit.emit_m (Option item) := do
+private def structure_field_item?
+            (walk : Lean4Fmt.Emit.Walk)
+            (field : Lean.Syntax)
+            (owned preserve : Bool)
+            : Lean4Fmt.Emit.emit_m (Option item) := do
+
   let trailText := ((Lean4Fmt.Syntax.trailing? field).getD "").trimAscii.toString
   if owned && trailText.any (· == '\n') then
     return none
@@ -733,12 +801,12 @@ def structure_field_item?
   let some separator := leading_sep? leading | return none
   return ← structure_field_tail? walk field separator leading trailText owned preserve
 
-private
-def structure_field_items?
-    (walk : Lean4Fmt.Emit.Walk)
-    (fields : Array Lean.Syntax)
-    (hasDeriving preserve : Bool)
-    : Lean4Fmt.Emit.emit_m (Option (Array item)) := do
+private def structure_field_items?
+            (walk : Lean4Fmt.Emit.Walk)
+            (fields : Array Lean.Syntax)
+            (hasDeriving preserve : Bool)
+            : Lean4Fmt.Emit.emit_m (Option (Array item)) := do
+
   let mut items := #[]
   for idx in [0:fields.size] do
     let owned := idx + 1 != fields.size || hasDeriving
@@ -760,6 +828,7 @@ def structure_doc?
     (alignDelta : Nat)
     (preserve : Bool := false)
     : Lean4Fmt.Emit.emit_m (Option Doc) := do
+
   let args := defn.getArgs
   if args.size != 6 then
     return none
@@ -786,13 +855,13 @@ def structure_doc?
     return none
   let head := head ++ " where"
   let constructorDoc ← match wargs[1]!.getArgs.toList with
-    | [] => pure Doc.nil
-    | [constructor] => do
-      let some constructorText := Lean4Fmt.Emit.token_join_flat? constructor | return none
-      let some separator := leading_sep? ((Lean4Fmt.Syntax.leading? constructor).getD "")
+  | [] => pure Doc.nil
+  | [constructor] => do
+    let some constructorText := Lean4Fmt.Emit.token_join_flat? constructor | return none
+    let some separator := leading_sep? ((Lean4Fmt.Syntax.leading? constructor).getD "")
         | return none
-      pure (separator ++ .text constructorText)
-    | _ => return none
+    pure (separator ++ .text constructorText)
+  | _ => return none
   let fields := ((wargs[2]?.bind (·.getArgs[0]?)).map (·.getArgs)).getD #[]
   if fields.isEmpty then
     if Lean4Fmt.Syntax.count_subtree_line_comments wargs[2]! > 0
@@ -808,7 +877,10 @@ def structure_doc?
   return some (.text head ++ .nest 2 (body ++ derD))
 
 /-- Name the unsupported structure layer after `structure_doc?` declines it. -/
-def structure_failure_reason (defn : Lean.Syntax) : String :=
+def structure_failure_reason
+    (defn : Lean.Syntax)
+    : String :=
+
   let args := defn.getArgs
   if args.size != 6 || (structure_head? args).isNone then
     "structure-head"
@@ -829,8 +901,10 @@ def structure_failure_reason (defn : Lean.Syntax) : String :=
         if fields.isEmpty then "structure-empty-body" else "structure-fields"
 
 /-- Format Batteries' declaration-shaped deprecated alias command. -/
-private
-def emit_alias (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_alias
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   if args.size != 5 || Lean4Fmt.Syntax.interior_has_line_comment stx then
     return (← Lean4Fmt.Emit.verbatim stx)
@@ -857,26 +931,33 @@ def emit_alias (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
   let assignment := if assignment.isEmpty then ":=" else assignment
   return modDoc
       ++ .group
-        (.text (prelude ++ keyword ++ " " ++ name ++ " " ++ assignment)
-            ++ .nest 2 (.line ++ .text target))
+        (
+          .text (prelude ++ keyword ++ " " ++ name ++ " " ++ assignment)
+              ++ .nest 2 (.line ++ .text target)
+        )
 
-private
-structure elab_prefix where
+private structure elab_prefix where
   bodyIndex : Nat
   pieces    : Array (Doc × String)
 
-private
-def is_elab_doc (stx : Lean.Syntax) : Bool :=
+private def is_elab_doc
+            (stx : Lean.Syntax)
+            : Bool :=
+
   stx.getKind == ``Lean.Parser.Command.docComment
       || (stx.getArgs[0]?.map (·.getKind == ``Lean.Parser.Command.docComment)).getD false
 
-private
-def is_elab_attr (stx : Lean.Syntax) : Bool :=
+private def is_elab_attr
+            (stx : Lean.Syntax)
+            : Bool :=
+
   stx.getKind == `Lean.Parser.Term.attributes
       || (stx.getArgs[0]?.map (·.getKind == `Lean.Parser.Term.attributes)).getD false
 
-private
-def collect_elab_prefix (args : Array Lean.Syntax) : Option elab_prefix :=
+private def collect_elab_prefix
+            (args : Array Lean.Syntax)
+            : Option elab_prefix :=
+
   Id.run do
     let mut bodyIndex := 0
     let mut pieces : Array (Doc × String) := #[]
@@ -894,20 +975,29 @@ def collect_elab_prefix (args : Array Lean.Syntax) : Option elab_prefix :=
       else break
     return some { bodyIndex, pieces }
 
-private
-def elab_has_comment (leading : String) : Bool :=
+private def elab_has_comment
+            (leading : String)
+            : Bool :=
+
   Lean4Fmt.Syntax.has_line_comment leading || (leading.splitOn "/-").length > 1
 
-private
-def elab_separator? (leading : String) : Option Doc :=
+private def elab_separator?
+            (leading : String)
+            : Option Doc :=
+
   if elab_has_comment leading then Lean4Fmt.Emit.leading_sep? leading else some .hardline
 
-private
-def elab_prefix_doc? (args : Array Lean.Syntax) (elabPrefix : elab_prefix) : Option Doc :=
+private def elab_prefix_doc?
+            (args : Array Lean.Syntax)
+            (elabPrefix : elab_prefix)
+            : Option Doc :=
+
   Id.run do
     let headLeading :=
-      (Lean4Fmt.Syntax.leading?
-        (Lean.mkNullNode (args.extract elabPrefix.bodyIndex (args.size - 1)))).getD
+      (
+        Lean4Fmt.Syntax.leading?
+          (Lean.mkNullNode (args.extract elabPrefix.bodyIndex (args.size - 1)))
+      ).getD
         ""
     for h : idx in [1:elabPrefix.pieces.size] do
       if (elab_separator? elabPrefix.pieces[idx].2).isNone then
@@ -925,11 +1015,11 @@ def elab_prefix_doc? (args : Array Lean.Syntax) (elabPrefix : elab_prefix) : Opt
       document := document ++ separator
     return some document
 
-private
-def elab_head_body?
-    (args : Array Lean.Syntax)
-    (bodyIndex : Nat)
-    : Option (String × Lean.Syntax) := do
+private def elab_head_body?
+            (args : Array Lean.Syntax)
+            (bodyIndex : Nat)
+            : Option (String × Lean.Syntax) := do
+
   let mut body := args[args.size - 1]!
   let mut tailHead := ""
   if body.getKind == ``Lean.Parser.Command.elabTail then
@@ -944,8 +1034,11 @@ def elab_head_body?
   if head.isEmpty || head.any (· == '\n') then none
   return (head, body)
 
-private
-def emit_elab (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_elab
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   if args.size < 3 then
     return ← Lean4Fmt.Emit.verbatim stx
@@ -965,8 +1058,11 @@ def emit_elab (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.em
     return prefixDoc ++ .text (head ++ " ") ++ bodyDoc
   return prefixDoc ++ .text head ++ .group (.nest 2 (.line ++ bodyDoc))
 
-private
-def emit_variable (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_variable
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   -- `variable <binders>`: a MULTI-LINE binder list packs BINDER-WISE as a
   -- fillSep at the continuation (each binder one item — a token fill
   -- would wrap inside brackets); single-line lists fit on the line the
@@ -987,13 +1083,15 @@ def emit_variable (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emi
   let cont := (← read).layout.continuationIndent
   return .text "variable " ++ .nest cont (Doc.fillSep items.toList)
 
-private
-structure open_pack_state where
+private structure open_pack_state where
   items   : Array String := #[]
   pending : String := ""
 
-private
-def push_open_token (state : open_pack_state) (token : String) : open_pack_state :=
+private def push_open_token
+            (state : open_pack_state)
+            (token : String)
+            : open_pack_state :=
+
   if token == "(" then
     { state with pending := state.pending ++ "(" }
   else if token == ")" then
@@ -1005,13 +1103,17 @@ def push_open_token (state : open_pack_state) (token : String) : open_pack_state
   else
     { items := state.items.push (state.pending ++ token), pending := "" }
 
-private
-def open_items (tokens : List String) : Array String :=
+private def open_items
+            (tokens : List String)
+            : Array String :=
+
   let state := tokens.foldl push_open_token {}
   if state.pending.isEmpty then state.items else state.items.push state.pending
 
-private
-def emit_open_tokens (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_open_tokens
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let tokens :=
     (Lean4Fmt.Emit.leaf_tokens stx).map (fun leaf => (bare_src leaf).trimAscii.toString)
       |>.filter (fun token => !token.isEmpty)
@@ -1022,8 +1124,10 @@ def emit_open_tokens (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
   return .text (keyword ++ " ")
       ++ .nest continuation (Doc.fillSep ((open_items rest).toList.map Doc.text))
 
-private
-def simple_line? (stx : Lean.Syntax) : Option String :=
+private def simple_line?
+            (stx : Lean.Syntax)
+            : Option String :=
+
   Id.run do
     let mut line := ""
     for child in stx.getArgs do
@@ -1034,8 +1138,10 @@ def simple_line? (stx : Lean.Syntax) : Option String :=
     if line.isEmpty then none
     else some line
 
-private
-def emit_simple (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_simple
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let kind := stx.getKind
   -- trivial one-line commands, token-for-token; a MULTI-LINE command
   -- (an `open Ns (long ident list)`) reflows its tokens as a fillSep pool
@@ -1046,8 +1152,11 @@ def emit_simple (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
   let some line := simple_line? stx | return ← Lean4Fmt.Emit.verbatim stx
   return .text line
 
-private
-def emit_in (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_in
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   -- `open X in\n<command>` — prefix command token-for-token, the trailed
   -- command walked (usually a declaration; Decl does the real work)
   let args := stx.getArgs
@@ -1062,8 +1171,11 @@ def emit_in (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit
       | return (← Lean4Fmt.Emit.verbatim stx)
   return .text (preT ++ " in") ++ sep ++ (← walk args[2]!)
 
-private
-def emit_mutual (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_mutual
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   if args.size != 3 then
     return (← Lean4Fmt.Emit.verbatim stx)
@@ -1096,8 +1208,10 @@ def emit_mutual (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.
       | return (← Lean4Fmt.Emit.verbatim stx)
   return .text "mutual" ++ .nest 2 body ++ endSep ++ .text "end"
 
-private
-def is_simple_command (kind : Lean.SyntaxNodeKind) : Bool :=
+private def is_simple_command
+            (kind : Lean.SyntaxNodeKind)
+            : Bool :=
+
   kind == ``Lean.Parser.Command.open || kind == ``Lean.Parser.Command.namespace
       || kind == ``Lean.Parser.Command.end
       || kind == ``Lean.Parser.Command.section
@@ -1106,7 +1220,11 @@ def is_simple_command (kind : Lean.SyntaxNodeKind) : Bool :=
 
 /-- Emit the Command construct rooted at `stx`, recursing via `walk`.
     Ordered command-family routing leaves unsupported syntax source-exact. -/
-def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+def emit
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Doc := do
+
   let kind := stx.getKind
   if kind == `Batteries.Tactic.Alias.alias then
     return ← emit_alias stx

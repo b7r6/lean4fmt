@@ -16,22 +16,30 @@ namespace Lean4Fmt.Syntax
 open Lean
 
 /-- Leading trivia string of a syntax's head token, if original. -/
-def leading? (stx : Lean.Syntax) : Option String :=
+def leading?
+    (stx : Lean.Syntax)
+    : Option String :=
+
   match stx.getHeadInfo with
   | .original leading .. => some (Substring.Raw.toString leading)
   | _ => none
 
 /-- Trailing trivia string of a syntax's tail token, if original. Together with
     the next form's leading this partitions the inter-form gap exactly. -/
-def trailing? (stx : Lean.Syntax) : Option String :=
+def trailing?
+    (stx : Lean.Syntax)
+    : Option String :=
+
   match stx.getTailInfo with
   | .original _ _ trailing _ => some (Substring.Raw.toString trailing)
   | _ => none
 
 /-- The trailing trivia of the LAST token in the subtree (robust against
     trailing empty null slots, which defeat `getTailInfo`). -/
-partial
-def last_token_trailing? (stx : Lean.Syntax) : Option String :=
+partial def last_token_trailing?
+            (stx : Lean.Syntax)
+            : Option String :=
+
   match trailing? stx with
   | some trailing => some trailing
   | none          => stx.getArgs.reverse.findSome? last_token_trailing?
@@ -47,8 +55,10 @@ def has_block_comment (source : String) : Bool := (source.splitOn "/-").length >
 
 /-- True if any token in the subtree carries a line comment in its trivia. Such
     a subtree must never be inlined/flattened (§0.4). -/
-partial
-def subtree_has_line_comment (stx : Lean.Syntax) : Bool :=
+partial def subtree_has_line_comment
+            (stx : Lean.Syntax)
+            : Bool :=
+
   let inTrivia (info : SourceInfo) : Bool :=
     match info with
     | .original leading _ trailing _ =>
@@ -62,8 +72,10 @@ def subtree_has_line_comment (stx : Lean.Syntax) : Bool :=
   | .missing          => false
 
 /-- True if any token in the subtree carries a block comment in its trivia. -/
-partial
-def subtree_has_block_comment (stx : Lean.Syntax) : Bool :=
+partial def subtree_has_block_comment
+            (stx : Lean.Syntax)
+            : Bool :=
+
   let inTrivia (info : SourceInfo) : Bool :=
     match info with
     | .original leading _ trailing _ =>
@@ -85,8 +97,10 @@ def count_line_comments (source : String) : Nat := (source.splitOn "--").length 
     specific zone (e.g. the tail token's trailing, which the enclosing seam
     places byte-exact) by subtracting its count; a boolean can't express that,
     since a comment in an exempt zone would mask one in the interior. -/
-partial
-def count_subtree_line_comments (stx : Lean.Syntax) : Nat :=
+partial def count_subtree_line_comments
+            (stx : Lean.Syntax)
+            : Nat :=
+
   let inInfo (info : SourceInfo) : Nat :=
     match info with
     | .original leading _ trailing _ =>
@@ -106,13 +120,18 @@ def count_subtree_line_comments (stx : Lean.Syntax) : Nat :=
     statement loop for statements). The counting arithmetic is what makes the
     exemption sound — a boolean check would let a trailing comment mask an
     interior one. -/
-def has_owned_line_comment (stx : Lean.Syntax) : Bool :=
+def has_owned_line_comment
+    (stx : Lean.Syntax)
+    : Bool :=
+
   count_subtree_line_comments stx > count_line_comments ((trailing? stx).getD "")
 
 /-- Line comment strictly INTERIOR to a form: between its first and last token.
     Both the head token's leading and the tail token's trailing are exempt — for
     a do-statement the loop places both zones itself. -/
-def interior_has_line_comment (stx : Lean.Syntax) : Bool :=
+def interior_has_line_comment
+    (stx : Lean.Syntax)
+    : Bool :=
 
   -- the trailing exemption must reach the LAST TOKEN's trailing: getTailInfo
   -- is defeated by trailing empty null slots (a match arm ends in one), which
@@ -124,7 +143,10 @@ def interior_has_line_comment (stx : Lean.Syntax) : Bool :=
 /-- Exact original source text for a node (leading trivia in, trailing out):
     reprint, falling back to the source slice when reprint is unavailable
     (§0.3 — reprint can be `none` for some nodes after `updateLeading`). -/
-def verbatim_src? (stx : Lean.Syntax) : Option String :=
+def verbatim_src?
+    (stx : Lean.Syntax)
+    : Option String :=
+
   match stx.reprint with
   | some textValue => some textValue
   | none           => (stx.getSubstring? true false).map (·.toString)

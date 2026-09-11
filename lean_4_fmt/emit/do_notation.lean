@@ -26,8 +26,11 @@ namespace Lean4Fmt.Emit.DoNotation
 
 open Lean Lean4Fmt.Doc
 
-private partial
-def syntax_kind_tree (syntaxNode : Lean.Syntax) (fuel : Nat := 3) : String :=
+private partial def syntax_kind_tree
+                    (syntaxNode : Lean.Syntax)
+                    (fuel : Nat := 3)
+                    : String :=
+
   let name := syntaxNode.getKind.toString
   if fuel == 0 || syntaxNode.getArgs.isEmpty then
     name
@@ -35,8 +38,10 @@ def syntax_kind_tree (syntaxNode : Lean.Syntax) (fuel : Nat := 3) : String :=
     let children := syntaxNode.getArgs.toList.map (syntax_kind_tree · (fuel - 1))
     name ++ "[" ++ String.intercalate ", " children ++ "]"
 
-private
-def id_decl_head? (document : Lean.Syntax) : Option String :=
+private def id_decl_head?
+            (document : Lean.Syntax)
+            : Option String :=
+
   Id.run do
     let args := document.getArgs
     if document.getKind == ``Lean.Parser.Term.doIdDecl then
@@ -56,8 +61,10 @@ def id_decl_head? (document : Lean.Syntax) : Option String :=
     let typeToken := Lean4Fmt.Emit.canon_tok args[1]!
     return String.intercalate " " ([nameToken, typeToken].filter (fun text => !text.isEmpty))
 
-private
-def id_decl_value? (expression : Lean.Syntax) : Option Lean.Syntax :=
+private def id_decl_value?
+            (expression : Lean.Syntax)
+            : Option Lean.Syntax :=
+
   if expression.getKind == ``Lean.Parser.Term.doExpr then
     expression.getArgs[0]?
   else if expression.getKind == ``Lean.Parser.Term.doIf
@@ -73,11 +80,11 @@ def id_decl_value? (expression : Lean.Syntax) : Option Lean.Syntax :=
     else on the next line at +2. A `do` value glues to the arrow (its body brings
     its own hardline). `none` on any structural surprise or a value carrying a
     multi-line opaque block — the caller reproduces the whole statement verbatim. -/
-private
-def id_decl_doc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (document : Lean.Syntax)
-    : Lean4Fmt.Emit.emit_m (Option Doc) := do
+private def id_decl_doc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (document : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m (Option Doc) := do
+
   let args := document.getArgs
   -- doIdDecl = [id, type?, "←", doExpr]; doPatDecl = [pat, type?, "←",
   -- doExpr, else?] — same arrow/expr slots; the pattern joins flat and the
@@ -125,8 +132,10 @@ def id_decl_doc?
 /-- The statements of a plain `doSeqIndent`, provided no item carries an explicit
     `;` terminator (walking only the statement would lose that token). `none` on
     the bracketed `{ … }` shape or any structural surprise. -/
-private
-def stmts? (seq : Lean.Syntax) : Option (Array Lean.Syntax) :=
+private def stmts?
+            (seq : Lean.Syntax)
+            : Option (Array Lean.Syntax) :=
+
   Id.run do
     if seq.getKind != ``Lean.Parser.Term.doSeqIndent then
       return none
@@ -156,6 +165,7 @@ def seq_lines_doc?
     (strings : Array Lean.Syntax)
     (lastOwned : Bool)
     : Lean4Fmt.Emit.emit_m (Option Doc) := do
+
   let mut body : Doc := .nil
   for h : idx in [0:strings.size] do
     let stmt := strings[idx]
@@ -185,13 +195,13 @@ def seq_lines_doc?
     comment, flattenable) becomes a width-aware `group` — inline when it fits
     (`if c then return 1`), else on its own line at +2; anything else goes one
     statement per line at +2. `none` when the sequence has no safe layout. -/
-private
-def branch_doc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (seq : Lean.Syntax)
-    (lastOwned : Bool)
-    (guardBreak : Bool := false)
-    : Lean4Fmt.Emit.emit_m (Option Doc) := do
+private def branch_doc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (seq : Lean.Syntax)
+            (lastOwned : Bool)
+            (guardBreak : Bool := false)
+            : Lean4Fmt.Emit.emit_m (Option Doc) := do
+
   let some strings := stmts? seq | return none
   if strings.size == 1 then
     let lead := (Lean4Fmt.Syntax.leading? strings[0]!).getD ""
@@ -229,8 +239,11 @@ def branch_doc?
     the binding statements (see module header). Only the plain `doSeqIndent` shape
     of `do` is handled; the bracketed `{ … }` shape and any structural surprise
     fall back to verbatim so no token (or comment) is dropped. -/
-private
-def emit_let (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_let
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- `let (mut)? (config)? decl` = [let, mut?, letConfig, decl] where decl is a
   -- letDecl (`:=`, walked — Term handles the 5-slot shape), a doIdDecl (`←`),
@@ -259,13 +272,14 @@ def emit_let (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emi
     | some document => return headD ++ document
     | none => return (← Lean4Fmt.Emit.verbatim stx)
 
-private
-def is_verbatim_doc : Doc → Bool
+private def is_verbatim_doc : Doc → Bool
   | .verbatim _ _ => true
   | _             => false
 
-private
-def let_else_head? (args : Array Lean.Syntax) : Option String := do
+private def let_else_head?
+            (args : Array Lean.Syntax)
+            : Option String := do
+
   if args.size != 9 then none
   let mutToken := (Lean4Fmt.Emit.bare_src args[1]!).trimAscii.toString
   let configToken := (Lean4Fmt.Emit.bare_src args[2]!).trimAscii.toString
@@ -279,19 +293,23 @@ def let_else_head? (args : Array Lean.Syntax) : Option String := do
       ++ " "
       ++ assignToken
 
-private
-def let_else_continuation?
-    (walk : Lean4Fmt.Emit.Walk)
-    (tail : Lean.Syntax)
-    : Lean4Fmt.Emit.emit_m (Option Doc) := do
+private def let_else_continuation?
+            (walk : Lean4Fmt.Emit.Walk)
+            (tail : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m (Option Doc) := do
+
   let some sequence := tail.getArgs[0]? | return some .nil
   if (Lean4Fmt.Emit.bare_src sequence).trimAscii.toString.isEmpty then
     return some .nil
   let some statements := stmts? sequence | return none
   seq_lines_doc? walk statements true
 
-private
-def let_else_layout (head : String) (valueDoc elseDoc continuation : Doc) (width : Nat) : Doc :=
+private def let_else_layout
+            (head : String)
+            (valueDoc elseDoc continuation : Doc)
+            (width : Nat)
+            : Doc :=
+
   let valuePart :=
     if (Lean4Fmt.Doc.flat_width valueDoc).isNone then
       .text (head ++ " ") ++ valueDoc
@@ -305,8 +323,11 @@ def let_else_layout (head : String) (valueDoc elseDoc continuation : Doc) (width
       valuePart ++ .nest 4 (.hardline ++ .text "| " ++ elseDoc) ++ continuation
   | _, _ => valuePart ++ .nest 4 (.hardline ++ .text "| " ++ elseDoc) ++ continuation
 
-private
-def emit_let_else (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_let_else
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- `let pat := v | fallback` — [let, mut?, letConfig, pat, ":="/"←", v,
   -- "|", doSeq, tail?]: head flat, the value width-aware (the idDeclDoc?
@@ -345,8 +366,11 @@ def emit_let_else (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emi
     return (← Lean4Fmt.Emit.verbatim stx "do-let-else-reanchor")
   return layout
 
-private
-def emit_let_rec (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_let_rec
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- `let rec <decl>` = [group[let,rec], letRecDecls, null] — single, plain,
   -- suffix-free binding rides the letDecl machinery (mirrors Term.letrec,
@@ -381,8 +405,11 @@ def emit_let_rec (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit
     return (← Lean4Fmt.Emit.verbatim stx)
   return .text (kwT ++ " ") ++ declDoc
 
-private
-def emit_reassign (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_reassign
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- bare `x := v` = [letIdDeclNoBinders] — the inner decl IS the statement
   if Lean4Fmt.Syntax.interior_has_line_comment stx then
@@ -393,11 +420,11 @@ def emit_reassign (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emi
     return (← Lean4Fmt.Emit.verbatim stx)
   return dDoc
 
-private
-def emit_reassign_arrow
-    (walk : Lean4Fmt.Emit.Walk)
-    (stx : Lean.Syntax)
-    : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_reassign_arrow
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- bare `x ← v` = [doIdDecl]
   if Lean4Fmt.Syntax.interior_has_line_comment stx then
@@ -407,18 +434,21 @@ def emit_reassign_arrow
   | some document => return document
   | none => return (← Lean4Fmt.Emit.verbatim stx)
 
-private
-def emit_return_value
-    (walk : Lean4Fmt.Emit.Walk)
-    (stx value : Lean.Syntax)
-    : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_return_value
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx value : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let valueDoc ← walk value
   if Lean4Fmt.Doc.hasMultilineVerbatim valueDoc then
     return (← Lean4Fmt.Emit.verbatim stx)
   return .text "return " ++ valueDoc
 
-private
-def emit_return (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_return
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- `return` or `return v` = ["return", null(term?)] — the value GLUES to
   -- the keyword line: the argument is OPTIONAL, so a break after `return`
@@ -431,16 +461,22 @@ def emit_return (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.
   | none => return (Doc.text "return")
   | some value => emit_return_value walk stx value
 
-private
-def emit_expr (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_expr
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- a plain expression statement: the term IS the statement
   match args[0]? with
   | some trailing => return (← walk trailing)
   | none => return (← Lean4Fmt.Emit.verbatim stx)
 
-private
-def emit_if (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_if
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- [if, cond, then, seq, (else-if group)*, else?]. Conditions (doIfProp /
   -- if-let, with an optional `h :` binder) are reproduced token-for-token,
@@ -487,8 +523,10 @@ def emit_if (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit
       document ++ (if idx == 0 then Doc.nil else .hardline) ++ .text keyword ++ branchDoc
   return document
 
-private
-def match_alts? (container : Lean.Syntax) : Option (Array Lean.Syntax) :=
+private def match_alts?
+            (container : Lean.Syntax)
+            : Option (Array Lean.Syntax) :=
+
   Id.run do
     let mut alternatives := #[]
     for group in container.getArgs do
@@ -501,37 +539,45 @@ def match_alts? (container : Lean.Syntax) : Option (Array Lean.Syntax) :=
         return none
     return some alternatives
 
-private
-def match_comments_owned (stx : Lean.Syntax) (alternatives : Array Lean.Syntax) : Bool :=
+private def match_comments_owned
+            (stx : Lean.Syntax)
+            (alternatives : Array Lean.Syntax)
+            : Bool :=
+
   let sequenceComments :=
     alternatives.foldl
-      (fun count alternative =>
-        count + Lean4Fmt.Syntax.count_subtree_line_comments (alternative.getArgs[3]!))
+      (
+        fun count alternative =>
+          count + Lean4Fmt.Syntax.count_subtree_line_comments (alternative.getArgs[3]!)
+      )
       0
   let leadingComments :=
     alternatives.foldl
-      (fun count alternative =>
-        count + Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? alternative).getD ""))
+      (
+        fun count alternative =>
+          count
+              + Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? alternative).getD "")
+      )
       0
   let ownLeading := Lean4Fmt.Syntax.count_line_comments ((Lean4Fmt.Syntax.leading? stx).getD "")
   Lean4Fmt.Syntax.count_subtree_line_comments stx == sequenceComments + leadingComments + ownLeading
 
-private
-def match_pattern_doc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (pattern : Lean.Syntax)
-    : Lean4Fmt.Emit.emit_m (Option (Doc × Bool)) := do
+private def match_pattern_doc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (pattern : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m (Option (Doc × Bool)) := do
+
   let patternDoc ← walk pattern
   if !Lean4Fmt.Doc.hasMultilineVerbatim patternDoc then
     return some (patternDoc, false)
   Lean4Fmt.Emit.alt_pattern_stack? pattern Lean4Fmt.Emit.token_join_flat?
 
-private
-def match_arm_doc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (alternative : Lean.Syntax)
-    (last : Bool)
-    : Lean4Fmt.Emit.emit_m (Option Doc) := do
+private def match_arm_doc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (alternative : Lean.Syntax)
+            (last : Bool)
+            : Lean4Fmt.Emit.emit_m (Option Doc) := do
+
   let args := alternative.getArgs
   let some (patternDoc, patternBroken) ← match_pattern_doc? walk args[1]! | return none
   let some bodyDoc ← branch_doc? walk args[3]! last | return none
@@ -549,12 +595,12 @@ def match_arm_doc?
     | return none
   return some (separator ++ armDoc)
 
-private
-def match_body_doc?
-    (walk : Lean4Fmt.Emit.Walk)
-    (head : String)
-    (alternatives : Array Lean.Syntax)
-    : Lean4Fmt.Emit.emit_m (Option Doc) := do
+private def match_body_doc?
+            (walk : Lean4Fmt.Emit.Walk)
+            (head : String)
+            (alternatives : Array Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m (Option Doc) := do
+
   let mut output := .text head
   for h : idx in [0:alternatives.size] do
     let some armDoc ← match_arm_doc? walk alternatives[idx] (idx + 1 == alternatives.size)
@@ -562,8 +608,11 @@ def match_body_doc?
     output := output ++ armDoc
   return some output
 
-private
-def emit_match (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_match
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- [match, generalizing?, motive?, ?, discrs, "with", matchAlts] — the head
   -- `match <discrs> with` reproduced token-for-token, single-line; each arm
@@ -587,8 +636,11 @@ def emit_match (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.e
     | return (← Lean4Fmt.Emit.verbatim stx)
   return body
 
-private
-def emit_loop (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_loop
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- `for x in xs do` / `while c do` / `unless c do` — head tokens
   -- single-line (canonically respaced), the body sequence one statement
@@ -618,8 +670,11 @@ def emit_loop (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.em
   | some body => return .text head ++ .nest 2 body
   | none => return (← Lean4Fmt.Emit.verbatim stx)
 
-private
-def emit_do (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+private def emit_do
+            (walk : Lean4Fmt.Emit.Walk)
+            (stx : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m Doc := do
+
   let args := stx.getArgs
   -- A comment on the `do` line itself has no home in the layout.
   let doKwTrail := ((Lean4Fmt.Syntax.trailing? (args[0]?.getD .missing)).getD "").trimAscii.toString
@@ -637,7 +692,11 @@ def emit_do (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit
   | none => return (← Lean4Fmt.Emit.verbatim stx)
 
 /-- Emit through ordered syntax-family routing. -/
-def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+def emit
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Doc := do
+
   -- preserveLineBreaks: a single-line do-statement is byte-exact (the
   -- author's `let x: T ← …` spacing survives); the do BLOCK itself and
   -- multi-line statements stay structural

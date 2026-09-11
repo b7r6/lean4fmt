@@ -51,8 +51,11 @@ inductive elab_depth
     (skip proofs) is the planned optimization; the thread pool (Driver.Pool) is the
     planned throughput lever (§12). The env must already be built (imports loaded)
     ONCE per process — re-importing per call is what breaks in-process reuse. -/
-unsafe
-def parse_module? (env : Environment) (path contents : String) : IO (Option Lean.Syntax) := do
+unsafe def parse_module?
+           (env : Environment)
+           (path contents : String)
+           : IO (Option Lean.Syntax) := do
+
   let ictx := Parser.mkInputContext contents path
   let (hdr, mps, msgs) ← Parser.parseHeader ictx
   -- the tablesOnly depth (§14.7), shipped: `debug.byAsSorry` stubs every
@@ -70,31 +73,28 @@ def parse_module? (env : Environment) (path contents : String) : IO (Option Lean
     catch _ => pure none
 
 /-- Flatten every `Info` node of a tree in document order. -/
-partial
-def collect_infos : Lean.Elab.InfoTree → Array Lean.Elab.Info → Array Lean.Elab.Info
+partial def collect_infos : Lean.Elab.InfoTree → Array Lean.Elab.Info → Array Lean.Elab.Info
   | .context _ tree, infos => collect_infos tree infos
   | .node info children, infos =>
     children.foldl (fun found child => collect_infos child found) (infos.push info)
   | .hole _, infos => infos
 
 /-- First ident leaf of a subtree — the declId's NAME, dropping any `.{univs}`. -/
-partial
-def first_ident : Lean.Syntax → Option Lean.Syntax
+partial def first_ident : Lean.Syntax → Option Lean.Syntax
   | stx@(.ident ..) => some stx
   | .node _ _ args  => args.findSome? first_ident
   | _               => none
 
-private
-structure resolution_state where
+private structure resolution_state where
   resolutions : Array (Nat × Nat × Name × Bool) := #[]
   binders     : Lean.NameSet := {}
   locals      : Array Name := #[]
 
-private
-def record_term_info
-    (state : resolution_state)
-    (term_info : Lean.Elab.TermInfo)
-    : resolution_state :=
+private def record_term_info
+            (state : resolution_state)
+            (term_info : Lean.Elab.TermInfo)
+            : resolution_state :=
+
   let state :=
     if term_info.stx.getKind == `Lean.Parser.Command.declId then
       -- Record the defined constant at the declaration identifier.
@@ -117,20 +117,22 @@ def record_term_info
       | _, _ => state
   -- Add local binders to the collision set, but never to the rename set.
   term_info.lctx.decls.foldl
-    (fun state declaration => match declaration with
-      | some local_decl =>
-        if local_decl.userName.isInternal || local_decl.userName.hasMacroScopes then
-          state
-        else
-          { state with binders := state.binders.insert local_decl.userName }
-      | none => state)
+    (
+      fun state declaration => match declaration with
+        | some local_decl =>
+          if local_decl.userName.isInternal || local_decl.userName.hasMacroScopes then
+            state
+          else
+            { state with binders := state.binders.insert local_decl.userName }
+        | none => state
+    )
     state
 
-private
-def record_field_info
-    (state : resolution_state)
-    (field_info : Lean.Elab.FieldInfo)
-    : resolution_state :=
+private def record_field_info
+            (state : resolution_state)
+            (field_info : Lean.Elab.FieldInfo)
+            : resolution_state :=
+
   match field_info.stx.getRange? with
   | some range =>
     { state with
@@ -146,11 +148,11 @@ def record_field_info
     it disambiguates two decls that share a spelling across packages (`core/
     build`'s `isPure` vs `core/trust`'s `DischargeProof.isPure`), and it sees
     inside expanded macro/quotation bodies. -/
-unsafe
-def resolve_idents
-    (env : Environment)
-    (path contents : String)
-    : IO (Array (Nat × Nat × Name × Bool) × Array Name) := do
+unsafe def resolve_idents
+           (env : Environment)
+           (path contents : String)
+           : IO (Array (Nat × Nat × Name × Bool) × Array Name) := do
+
   let ictx := Parser.mkInputContext contents path
   let (_, mps, msgs) ← Parser.parseHeader ictx
   let st0 := Lean.Elab.Command.mkState env msgs Options.empty

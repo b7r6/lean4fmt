@@ -75,7 +75,10 @@ structure Options where
   deriving Repr, Inhabited
 
 /-- Parse argv into `Options`. -/
-def parse (args : List String) : Options :=
+def parse
+    (args : List String)
+    : Options :=
+
   parseArgs {} args
   where
     parseArgs (options : Options) : List String → Options
@@ -108,7 +111,9 @@ def parse (args : List String) : Options :=
       | file :: rest => parseArgs { options with files := options.files ++ [file] } rest
       | [] => options
 
-def usage : String :=
+def usage
+    : String :=
+
   "Usage: lean4fmt [--check | --write | --stats | --lint] [--json] [--width N] [--style NAME] [--rename-case snake|camel|upperCamel|preserve] [--elab auto|off] [--lake auto|off] <file...>\n\n"
       ++ "Multiple files in one invocation are supported (each is parsed against its own\n"
       ++ "imports). If a file's syntax-extension initializers ever conflict in-process,\n"

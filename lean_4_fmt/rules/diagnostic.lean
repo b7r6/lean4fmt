@@ -25,7 +25,10 @@ structure Diagnostic where
   message  : String
   deriving Repr, Inhabited
 
-def Diagnostic.render (document : Diagnostic) : String :=
+def Diagnostic.render
+    (document : Diagnostic)
+    : String :=
+
   let sev :=
     match document.severity with
     | .debug   => "debug"

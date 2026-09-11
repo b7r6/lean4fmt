@@ -48,24 +48,28 @@ theorem non_ws_l_nil : non_ws_l [] = [] := rfl
 theorem non_ws_l_append
         (proofLeft proofRight : List Char)
         : non_ws_l (proofLeft ++ proofRight) = non_ws_l proofLeft ++ non_ws_l proofRight := by
+
   simp [non_ws_l, List.filter_append]
 
 @[simp]
 theorem non_ws_append
         (proofLeft proofRight : String)
         : non_ws (proofLeft ++ proofRight) = non_ws proofLeft ++ non_ws proofRight := by
+
   simp [non_ws, String.toList_append]
 
 @[simp]
 theorem non_ws_of_list
         (proofList : List Char)
         : non_ws (String.ofList proofList) = non_ws_l proofList := by
+
   simp [non_ws, String.toList_ofList]
 
 @[simp]
 theorem of_list_length
         (proofList : List Char)
         : (String.ofList proofList).length = proofList.length := by
+
   have listLengthEquality := congrArg List.length (String.toList_ofList (l := proofList))
   simpa [String.length_toList] using listLengthEquality
 
@@ -73,14 +77,20 @@ theorem of_list_length
 theorem space_length : (" " : String).length = 1 := rfl
 
 @[simp]
-theorem non_ws_spaces (proofCount : Nat) : non_ws (spaces proofCount) = [] := by
+theorem non_ws_spaces
+        (proofCount : Nat)
+        : non_ws (spaces proofCount) = [] := by
+
   simp only [spaces, non_ws_of_list, non_ws_l]
   induction proofCount with
   | zero => rfl
   | succ predecessor inductionHypothesis => simpa [List.replicate_succ] using inductionHypothesis
 
 @[simp]
-theorem non_ws_newlines (proofCount : Nat) : non_ws (newlines proofCount) = [] := by
+theorem non_ws_newlines
+        (proofCount : Nat)
+        : non_ws (newlines proofCount) = [] := by
+
   simp only [newlines, non_ws_of_list, non_ws_l]
   induction proofCount with
   | zero => rfl
@@ -99,6 +109,7 @@ theorem non_ws_l_nil_of_spaces
         (proofChars : List Char)
         (allSpaces : proofChars.all (· == ' '))
         : non_ws_l proofChars = [] := by
+
   simp only [non_ws_l, List.filter_eq_nil_iff]
   intro char charMem
   have : char = ' ' := by simpa using List.all_eq_true.mp allSpaces char charMem
@@ -108,6 +119,7 @@ theorem non_ws_l_nil_of_spaces
 theorem non_ws_l_drop_while_space
         (proofChars : List Char)
         : non_ws_l (proofChars.dropWhile (· == ' ')) = non_ws_l proofChars := by
+
   induction proofChars with
   | nil => rfl
   | cons head tail inductionHypothesis =>
@@ -120,6 +132,7 @@ theorem non_ws_l_drop_while_space
 theorem non_ws_l_drop_while_ws
         (proofChars : List Char)
         : non_ws_l (proofChars.dropWhile Char.isWhitespace) = non_ws_l proofChars := by
+
   induction proofChars with
   | nil => rfl
   | cons head tail inductionHypothesis =>
@@ -130,17 +143,22 @@ theorem non_ws_l_drop_while_ws
 theorem non_ws_l_reverse
         (proofChars : List Char)
         : non_ws_l proofChars.reverse = (non_ws_l proofChars).reverse := by
+
   simp [non_ws_l, List.filter_reverse]
 
 theorem non_ws_l_trim_end_ws
         (proofChars : List Char)
         : non_ws_l (trim_end_ws proofChars) = non_ws_l proofChars := by
+
   unfold trim_end_ws
   rw [non_ws_l_reverse, non_ws_l_drop_while_ws, non_ws_l_reverse, List.reverse_reverse]
 
 -- ── splitLines / wrBlock plumbing ─────────────────────────────────────────────
 
-theorem split_lines_ne_nil (proofChars : List Char) : split_lines proofChars ≠ [] := by
+theorem split_lines_ne_nil
+        (proofChars : List Char)
+        : split_lines proofChars ≠ [] := by
+
   cases proofChars with
   | nil => simp [split_lines]
   | cons head tail =>
@@ -152,6 +170,7 @@ theorem split_lines_ne_nil (proofChars : List Char) : split_lines proofChars ≠
 theorem split_lines_non_ws
         (proofChars : List Char)
         : ((split_lines proofChars).map non_ws_l).flatten = non_ws_l proofChars := by
+
   induction proofChars with
   | nil => simp [split_lines]
   | cons head tail inductionHypothesis =>
@@ -182,6 +201,7 @@ theorem flatten_map_drop_blank
         (proofLines : List (List Char))
         : (((proofLines.dropWhile is_blank_line).map non_ws_l)).flatten
             = (proofLines.map non_ws_l).flatten := by
+
   induction proofLines with
   | nil => rfl
   | cons line lines inductionHypothesis =>
@@ -201,6 +221,7 @@ theorem wr_out
         (proofText : String)
         : non_ws (writeResult proofState indent proofText).out
             = non_ws proofState.out ++ non_ws proofText := by
+
   unfold writeResult
   by_cases has_pending_lines : proofState.pend > 0 <;> simp [has_pending_lines]
 
@@ -210,6 +231,7 @@ theorem non_ws_l_dedent
         (base : Nat)
         (proofList : List Char)
         : non_ws_l (dedent base proofList) = non_ws_l proofList := by
+
   unfold dedent
   split
   · next dedentCondition =>
@@ -225,6 +247,7 @@ theorem wr_line_out
         (proofList : List Char)
         : non_ws (wr_line proofState indent base proofList).out
             = non_ws proofState.out ++ non_ws_l proofList := by
+
   unfold wr_line
   split
   · next dedentIsEmpty =>
@@ -241,6 +264,7 @@ theorem wr_lines_out
         (proofState : rst)
         : non_ws (wr_lines indent base proofLines proofState).out
             = non_ws proofState.out ++ (proofLines.map non_ws_l).flatten := by
+
   induction proofLines generalizing proofState with
   | nil => simp [wr_lines]
   | cons line lines inductionHypothesis =>
@@ -255,6 +279,7 @@ theorem wr_lines_m_out
         (proofState : rst)
         : non_ws (wr_lines_m indent base proofLines mask proofState).out
             = non_ws proofState.out ++ (proofLines.map non_ws_l).flatten := by
+
   induction proofLines generalizing mask proofState with
   | nil => simp [wr_lines_m]
   | cons line lines inductionHypothesis =>
@@ -269,6 +294,7 @@ theorem drop_take_while_length
         (predicate : List Char → Bool)
         (proofLines : List (List Char))
         : proofLines.drop (proofLines.takeWhile predicate).length = proofLines.dropWhile predicate := by
+
   induction proofLines with
   | nil => rfl
   | cons line lines inductionHypothesis =>
@@ -284,6 +310,7 @@ theorem wr_block_out
         (indent base : Nat)
         (raw : String)
         : non_ws (wr_block proofState indent base raw).out = non_ws proofState.out ++ non_ws raw := by
+
   have contentChain :
       (((split_lines (trim_end_ws raw.toList)).dropWhile is_blank_line).map non_ws_l).flatten
           = non_ws_l raw.toList := by
@@ -314,6 +341,7 @@ theorem emit_table_content
         : non_ws (emit_table maxPend indent sep widths strRows proofState).out
             = non_ws proofState.out
                 ++ ((strRows.map fun row => non_ws (render_row_str sep widths row)).flatten) := by
+
   suffices table_content : ∀ (first : Bool) (proofState : rst),
       non_ws ((strRows.foldl (fun (progress : rst × Bool) row =>
         let state :=
@@ -458,6 +486,7 @@ end
 theorem non_ws_strip_trailing_ws
         (source : String)
         : non_ws (strip_trailing_ws source) = non_ws source := by
+
   simpa [non_ws, non_ws_l, whitespace_erased] using
     whitespace_erased_strip_trailing_ws source
 
@@ -467,6 +496,7 @@ theorem render_content
         (style : Lean4Fmt.Style.Style)
         (proofDocument : Doc)
         : non_ws (render style proofDocument) = content proofDocument := by
+
   unfold render
   let proofState :=
     renderLoop style.layout.lineWidth (style.blankLines.maxConsecutive + 1) proofDocument 0 false {}
@@ -518,6 +548,7 @@ mutual
           (proofCount : Nat)
           (hardWidth : flat_width proofDocument = some proofCount)
           : (flatRender proofDocument).length = proofCount := by
+
     match proofDocument with
     | .nil => simp_all [flat_width, flatRender]
     | .pad _ => simp_all [flat_width, flatRender]
@@ -573,6 +604,7 @@ mutual
           (proofCount : Nat)
           (hardWidth : flatWidthSep proofIndents = some proofCount)
           : (flatRenderSep proofIndents).length = proofCount := by
+
     match proofIndents with
     | [] => simp_all [flatWidthSep, flatRenderSep]
     | item :: items =>
@@ -593,6 +625,7 @@ theorem split_lines_no_nl
         (proofChars : List Char)
         (noNewline : '\n' ∉ proofChars)
         : split_lines proofChars = [proofChars] := by
+
   induction proofChars with
   | nil => rfl
   | cons head tail inductionHypothesis =>
@@ -608,6 +641,7 @@ theorem mem_trim_end_ws
         {proofChars : List Char}
         (trimmedMembership : proofCharacter ∈ trim_end_ws proofChars)
         : proofCharacter ∈ proofChars := by
+
   unfold trim_end_ws at trimmedMembership
   rw [List.mem_reverse] at trimmedMembership
   have :=
@@ -622,6 +656,7 @@ theorem drop_while_head_not
         {proofTail : List Char}
         (dropEquation : proofList.dropWhile proofPredicate = proofHead :: proofTail)
         : proofPredicate proofHead = false := by
+
   induction proofList with
   | nil => simp [List.dropWhile] at dropEquation
   | cons head tail inductionHypothesis =>
@@ -638,6 +673,7 @@ theorem trim_end_ws_not_blank
         (proofChars : List Char)
         (hne : trim_end_ws proofChars ≠ [])
         : is_blank_line (trim_end_ws proofChars) = false := by
+
   unfold trim_end_ws at hne ⊢
   cases reversedTailEquation : proofChars.reverse.dropWhile Char.isWhitespace with
   | nil => simp [reversedTailEquation] at hne
@@ -663,6 +699,7 @@ theorem flat_verbatim
         (positiveProof : proofState.pend = 0)
         : renderLoop width maxPend (.verbatim raw base) indent true proofState
             = ⟨proofState.out ++ flatRender (.verbatim raw base), proofState.col + proofCount, 0⟩ := by
+
   simp only [flat_width] at hardWidth
   split at hardWidth
   · exact absurd hardWidth (by simp)
@@ -704,6 +741,7 @@ theorem go_flat_pad
         (positiveProof : proofState.pend = 0)
         : renderLoop width maxPend (.pad padCount) indent true proofState
             = ⟨proofState.out ++ flatRender (.pad padCount), proofState.col + proofCount, 0⟩ := by
+
   simp only [flat_width, Option.some.injEq] at hardWidth
   obtain ⟨output, column, pending⟩ := proofState
   subst positiveProof
@@ -718,6 +756,7 @@ theorem flat_text_raw
         (positiveProof : proofState.pend = 0)
         : renderLoop width maxPend (.textRaw textValue) indent true proofState
             = ⟨proofState.out ++ flatRender (.textRaw textValue), proofState.col + proofCount, 0⟩ := by
+
   simp only [flat_width] at hardWidth
   split at hardWidth
   · exact absurd hardWidth (by simp)
@@ -735,6 +774,7 @@ theorem flat_nil
         (positiveProof : proofState.pend = 0)
         : renderLoop width maxPend .nil indent true proofState
             = ⟨proofState.out ++ flatRender .nil, proofState.col + proofCount, 0⟩ := by
+
   simp only [flat_width, Option.some.injEq] at hardWidth
   obtain ⟨output, column, pending⟩ := proofState
   subst positiveProof
@@ -749,6 +789,7 @@ theorem flat_text
         (positiveProof : proofState.pend = 0)
         : renderLoop width maxPend (.text textValue) indent true proofState
             = ⟨proofState.out ++ flatRender (.text textValue), proofState.col + proofCount, 0⟩ := by
+
   simp only [flat_width, Option.some.injEq] at hardWidth
   obtain ⟨output, column, pending⟩ := proofState
   subst positiveProof
@@ -766,6 +807,7 @@ mutual
           (positiveProof : proofState.pend = 0)
           : renderLoop width maxPend proofDocument indent true proofState
               = ⟨proofState.out ++ flatRender proofDocument, proofState.col + proofCount, 0⟩ := by
+
     match proofDocument with
     | .nil => exact flat_nil width maxPend indent proofCount proofState hardWidth positiveProof
     | .text textValue =>
@@ -830,6 +872,7 @@ mutual
           (positiveProof : proofState.pend = 0)
           : goFill width maxPend proofIndents indent true false proofState
               = ⟨proofState.out ++ flatRenderSep proofIndents, proofState.col + proofCount, 0⟩ := by
+
     match proofIndents with
     | [] =>
       simp only [flatWidthSep, Option.some.injEq] at hardWidth
@@ -888,6 +931,7 @@ mutual
           (wellFormed : WF proofDocument)
           (hardWidth : flat_width proofDocument = some proofCount)
           : '\n' ∉ (flatRender proofDocument).toList := by
+
     match proofDocument with
     | .nil | .softline | .pad _ => simp [flatRender]
     | .hardline | .blank _ | .alignTable _ _ => simp [flat_width] at hardWidth
@@ -948,6 +992,7 @@ mutual
           (wellFormed : WFList proofIndents)
           (hardWidth : flatWidthSep proofIndents = some proofCount)
           : '\n' ∉ (flatRenderSep proofIndents).toList := by
+
     match proofIndents with
     | [] => simp [flatRenderSep]
     | item :: items =>
@@ -981,6 +1026,7 @@ theorem go_flat_exact
                 = ⟨proofState.out ++ proofText, proofState.col + proofCount, 0⟩
                 ∧ proofText.length = proofCount
                 ∧ '\n' ∉ proofText.toList :=
+
   ⟨
     flatRender proofDocument,
     go_flat width maxPend indent proofCount proofDocument proofState hardWidth positiveProof,
@@ -994,12 +1040,14 @@ theorem go_flat_exact
 theorem content_append
         (proofLeft proofRight : Doc)
         : content (proofLeft ++ proofRight) = content proofLeft ++ content proofRight :=
+
   rfl
 
 theorem non_ws_l_nil_of_ws_line
         (proofList : List Char)
         (whitespaceLine : ws_line proofList)
         : non_ws_l proofList = [] := by
+
   simp only [non_ws_l, List.filter_eq_nil_iff]
   intro char charMem
   have := List.all_eq_true.mp whitespaceLine char charMem
@@ -1007,7 +1055,10 @@ theorem non_ws_l_nil_of_ws_line
   rcases this with rfl | rfl <;> decide
 
 @[simp]
-theorem content_seam_sep (proofRight : Nat) : content (seam_sep proofRight) = [] := by
+theorem content_seam_sep
+        (proofRight : Nat)
+        : content (seam_sep proofRight) = [] := by
+
   unfold seam_sep; split <;> simp [content]
 
 /-- The seam's interior emission carries exactly the lines' content: blank
@@ -1018,6 +1069,7 @@ theorem seam_lines_content
         (blanks : Nat)
         (proofLines : List (List Char))
         : content (seam_lines base blanks proofLines) = (proofLines.map non_ws_l).flatten := by
+
   induction proofLines generalizing blanks with
   | nil => simp [seam_lines]
   | cons line lines inductionHypothesis =>
@@ -1035,6 +1087,7 @@ theorem flatten_map_drop_last
         : (proofTail.map proofTransform).flatten
             = (proofTail.dropLast.map proofTransform).flatten
                 ++ proofTransform (proofTail.getLast rightProof) := by
+
   calc (proofTail.map proofTransform).flatten
       = (((proofTail.dropLast ++ [proofTail.getLast rightProof]).map proofTransform)).flatten := by
         rw [List.dropLast_concat_getLast rightProof]
@@ -1053,6 +1106,7 @@ theorem leading_sep?_content
         (proofDocument : Doc)
         (separatorEquation : leading_sep? lead = some proofDocument)
         : content proofDocument = non_ws lead := by
+
   unfold leading_sep? at separatorEquation
   split at separatorEquation
   · exact absurd separatorEquation (by simp)

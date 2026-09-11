@@ -22,8 +22,10 @@ open Lean
 /-- The imports of one file's header (`#[]` when the file is unreadable or the
     header doesn't parse — the caller's job will diagnose). Header parsing is
     cheap text work; no environment is needed. -/
-unsafe
-def file_imports (path : System.FilePath) : IO (Array Import) := do
+unsafe def file_imports
+           (path : System.FilePath)
+           : IO (Array Import) := do
+
   try
     let contents ← IO.FS.readFile path
     let ictx := Parser.mkInputContext contents path.toString
@@ -37,8 +39,10 @@ def file_imports (path : System.FilePath) : IO (Array Import) := do
     (notation/macros) — without it nothing nontrivial parses; `leakEnv` skips
     end-of-process teardown of a region that lives for the whole invocation
     anyway. -/
-unsafe
-def imports_env (imports : Array Import) : IO Environment := do
+unsafe def imports_env
+           (imports : Array Import)
+           : IO Environment := do
+
   let mut seen : NameSet := {}
   let mut resolved : Array Import := #[]
   for imp in imports do
@@ -53,11 +57,17 @@ def imports_env (imports : Array Import) : IO Environment := do
   importModules resolved {} (trustLevel := 1024) (leakEnv := true) (loadExts := true)
 
 /-- A stable cache key for an import set (sorted, deduped module names). -/
-def imports_key (imports : Array Import) : String :=
+def imports_key
+    (imports : Array Import)
+    : String :=
+
   String.intercalate ";" (((imports.map (·.module.toString)).qsort (· < ·)).toList)
 
-private
-def syntax_stats (style : Lean4Fmt.Style.Style) (stx : Lean.Syntax) : Nat × Nat × Nat × Nat :=
+private def syntax_stats
+            (style : Lean4Fmt.Style.Style)
+            (stx : Lean.Syntax)
+            : Nat × Nat × Nat × Nat :=
+
   let (doc, _) := Lean4Fmt.Emit.run style stx.updateLeading
   let (active, verbatim, trivia) := Lean4Fmt.Doc.stats doc
   (active, verbatim, trivia, Lean4Fmt.Syntax.policy_content_bytes stx)
@@ -71,8 +81,10 @@ def syntax_stats (style : Lean4Fmt.Style.Style) (stx : Lean.Syntax) : Nat × Nat
     fine under its own imports. The driver handles that with a retry against the
     file's own import set (`importsEnv`, cached by `importsKey`), so the union
     stays the fast path and conflicts cost only their own files. -/
-unsafe
-def batch_env (paths : Array System.FilePath) : IO Environment := do
+unsafe def batch_env
+           (paths : Array System.FilePath)
+           : IO Environment := do
+
   let mut all : Array Import := #[]
   for path in paths do
     all := all ++ (← file_imports path)
@@ -80,14 +92,16 @@ def batch_env (paths : Array System.FilePath) : IO Environment := do
 
 /-- Prepend a prebuilt farm dir to the search path. Built ONCE per invocation and
     shared (in-process, or handed to a worker via `--farm`), so no rebuild. -/
-def apply_farm (farm : Option String) : IO Unit :=
+def apply_farm
+    (farm : Option String)
+    : IO Unit :=
+
   match farm with
   | some filePath =>
     Lean.searchPathRef.modify (fun searchPath => (⟨filePath⟩ : System.FilePath) :: searchPath)
   | none => pure ()
 
-private
-structure root_search_state where
+private structure root_search_state where
   directory : Option System.FilePath
   root      : Option System.FilePath := none
   steps     : Nat := 0
@@ -103,8 +117,10 @@ structure root_search_state where
     lib dirs into ONE `Continuity/` root (`cp -rsn` recursive symlinks — the trick
     corpus-gate.sh / lean4fmt.sh use) makes every module resolve to its true owner.
     Repo root = nearest `.git` ancestor of the first input. -/
-unsafe
-def make_olean_farm (files : List String) : IO (Option String) := do
+unsafe def make_olean_farm
+           (files : List String)
+           : IO (Option String) := do
+
   let some f0 := files.head? | return none
   let p0 ← try IO.FS.realPath ⟨f0⟩ catch _ => pure ⟨f0⟩
   let mut search : root_search_state := { directory := p0.parent }
@@ -136,13 +152,13 @@ def make_olean_farm (files : List String) : IO (Option String) := do
     verbatim, so `verbatim - policy` is the honest porting tail), or `none`
     when the file doesn't parse under this env (caller decides: count it fully
     verbatim, or retry under the file's own env in a subprocess). -/
-unsafe
-def stats_for
-    (env : Environment)
-    (path contents : String)
-    (style : Lean4Fmt.Style.Style)
-    (elabFallback : Bool := true)
-    : IO (Option (Nat × Nat × Nat × Nat)) := do
+unsafe def stats_for
+           (env : Environment)
+           (path contents : String)
+           (style : Lean4Fmt.Style.Style)
+           (elabFallback : Bool := true)
+           : IO (Option (Nat × Nat × Nat × Nat)) := do
+
   match ← parse_full? env path contents elabFallback with
   | none => pure none
   | some stx => pure (some (syntax_stats style stx))

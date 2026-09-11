@@ -18,7 +18,9 @@ import lean_4_fmt.style.options
 namespace Lean4Fmt.Style
 
 /-- Straylight house style (§6). -/
-def straylight : Style :=
+def straylight
+    : Style :=
+
   {
     layout := { lineWidth := 100, indent := 2, continuationIndent := 4 }
     breaking := { colon := .breakBefore, binders := .onePerLine, attributesOwnLine := true,
@@ -53,7 +55,9 @@ def straylight : Style :=
 
 /-- Placeholder — tuned to minimize mathlib4 churn (§9). Currently = Straylight
     with the mathlib-ish binder fill (pack + wrap) and blank preservation. -/
-def mathlib : Style :=
+def mathlib
+    : Style :=
+
   { straylight with
     layout := { straylight.layout with bodyFitWidth := 70 }
     breaking := { straylight.breaking with binders := .fill, colon := .breakAfter, attributesOwnLine := true, bodyOwnLine := false, glueFun := true, opBreak := .trailing, listFill := true }
@@ -66,7 +70,9 @@ def mathlib : Style :=
     point per parse, origin-agnostic. Inline signatures, break-after colon,
     normalized binder spacing (the repo's own 70/30 majority), no body blank,
     no alignment grids. -/
-def aniva : Style :=
+def aniva
+    : Style :=
+
   {
     layout := { lineWidth := 120, indent := 2, continuationIndent := 4 }
     breaking := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,
@@ -78,7 +84,9 @@ def aniva : Style :=
 
 /-- The `purtell` style (lithe-derived), PRESCRIPTIVE: inline signatures,
     attributes on the declaration line, inline-when-fits bodies, no grids. -/
-def purtell : Style :=
+def purtell
+    : Style :=
+
   {
     layout := { lineWidth := 120, indent := 2, continuationIndent := 4 }
     breaking := { colon := .breakAfter, binders := .oneLine, attributesOwnLine := true,

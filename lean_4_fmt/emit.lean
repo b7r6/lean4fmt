@@ -29,8 +29,9 @@ namespace Lean4Fmt.Emit
 
 open Lean Lean4Fmt.Doc Lean4Fmt.Style
 
-private
-def command_kinds : Array Name :=
+private def command_kinds
+            : Array Name :=
+
   #[
     ``Lean.Parser.Command.structure,
     ``Lean.Parser.Command.inductive,
@@ -47,8 +48,9 @@ def command_kinds : Array Name :=
     ``Lean.Parser.Command.in
   ]
 
-private
-def do_kinds : Array Name :=
+private def do_kinds
+            : Array Name :=
+
   #[
     ``Lean.Parser.Term.do,
     ``Lean.Parser.Term.doNested,
@@ -67,8 +69,9 @@ def do_kinds : Array Name :=
     ``Lean.Parser.Term.doMatch
   ]
 
-private
-def tactic_kinds_primary : Array Name :=
+private def tactic_kinds_primary
+            : Array Name :=
+
   #[
     ``Lean.Parser.Term.byTactic,
     ``Lean.Parser.Tactic.exact,
@@ -106,8 +109,9 @@ def tactic_kinds_primary : Array Name :=
     `Lean.calc
   ]
 
-private
-def tactic_kinds_secondary : Array Name :=
+private def tactic_kinds_secondary
+            : Array Name :=
+
   #[
     ``Lean.Parser.Tactic.split,
     `Lean.Parser.Tactic.obtain,
@@ -143,12 +147,16 @@ def tactic_kinds_secondary : Array Name :=
     `Lean.Parser.Term.byTactic'
   ]
 
-private
-def is_tactic_kind (kind : Name) : Bool :=
+private def is_tactic_kind
+            (kind : Name)
+            : Bool :=
+
   tactic_kinds_primary.contains kind || tactic_kinds_secondary.contains kind
 
-private
-def ident_doc (stx : Lean.Syntax) (identifier : Name) : Doc :=
+private def ident_doc
+            (stx : Lean.Syntax)
+            (identifier : Name)
+            : Doc :=
 
   -- preserve guillemets on keyword-named identifiers.
   let text := Lean4Fmt.Emit.bare_src stx
@@ -251,11 +259,19 @@ partial def walk
 end
 
 /-- Format a whole module to a `Doc` plus collected diagnostics, under `style`. -/
-def run (style : Style) (stx : Lean.Syntax) : Doc × Array Rules.Diagnostic :=
+def run
+    (style : Style)
+    (stx : Lean.Syntax)
+    : Doc × Array Rules.Diagnostic :=
+
   (walk stx |>.run style).run #[]
 
 /-- Convenience: format a module directly to a string. -/
-def format (style : Style) (stx : Lean.Syntax) : String × Array Rules.Diagnostic :=
+def format
+    (style : Style)
+    (stx : Lean.Syntax)
+    : String × Array Rules.Diagnostic :=
+
   let (doc, diags) := run style stx
   (Lean4Fmt.Doc.render style doc, diags)
 

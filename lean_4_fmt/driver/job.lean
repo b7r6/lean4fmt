@@ -49,14 +49,14 @@ def result.changed (jobResult : result) : Bool := jobResult.output != jobResult.
     it returns a value. Catches its own errors (falling back to identity output +
     an error diagnostic) so a batch never aborts — this is what a worker pool
     dispatches. -/
-unsafe
-def run_job
-    (env : Lean.Environment)
-    (style : Style.Style)
-    (path : System.FilePath)
-    (elabFallback : Bool := true)
-    (retry : Option (String × Array String) := none)
-    : IO result := do
+unsafe def run_job
+           (env : Lean.Environment)
+           (style : Style.Style)
+           (path : System.FilePath)
+           (elabFallback : Bool := true)
+           (retry : Option (String × Array String) := none)
+           : IO result := do
+
   let original ← IO.FS.readFile path
   try
     -- per-file config: `style` is the CLI base; fmt.lean chain overrides
@@ -80,23 +80,24 @@ def run_job
 /-- Whether a result is a candidate for the subprocess retry: unchanged output
     with a parse diagnostic (a superset-env conflict, an own-notation file the
     union could not help, or a genuinely broken file — the retry sorts them). -/
-private
-def result.retryable (jobResult : result) : Bool :=
+private def result.retryable
+            (jobResult : result)
+            : Bool :=
+
   jobResult.output == jobResult.original && jobResult.diagnostics.any (·.rule == "parse")
 
-private
-structure retry_state where
+private structure retry_state where
   results  : Array result
   cursor   : Nat := 0
   children : Array (IO.Process.Child ⟨.null, .piped, .piped⟩) := #[]
 
 /-- Retry parse-conflicted jobs as bounded waves of isolated processes. -/
-private unsafe
-def run_retries
-    (initialResults : Array result)
-    (exe : String)
-    (extraArgs : Array String)
-    : IO (Array result) := do
+private unsafe def run_retries
+                   (initialResults : Array result)
+                   (exe : String)
+                   (extraArgs : Array String)
+                   : IO (Array result) := do
+
   let conflicted :=
     (Array.range initialResults.size).filter (fun idx => initialResults[idx]!.retryable)
   if conflicted.isEmpty then
@@ -147,13 +148,13 @@ def run_retries
     retry as ONE-FILE SUBPROCESSES, spawned in bounded concurrent waves — they
     are independent processes, each importing its own (subset) env, so the only
     coupling is transient memory: `LEAN4FMT_JOBS` bounds the wave (default 8). -/
-unsafe
-def run_all
-    (style : Style.Style)
-    (paths : Array System.FilePath)
-    (elabFallback : Bool := true)
-    (retry : Option (String × Array String) := none)
-    : IO (Array result) := do
+unsafe def run_all
+           (style : Style.Style)
+           (paths : Array System.FilePath)
+           (elabFallback : Bool := true)
+           (retry : Option (String × Array String) := none)
+           : IO (Array result) := do
+
   let env ← Frontend.batch_env paths
   -- main pass: IO tasks over the shared frozen env (default task priority = the
   -- runtime's core-sized pool; the env is `leakEnv`-persistent, shared
@@ -177,7 +178,10 @@ def run_all
 /-- Expand file/dir inputs into the `.lean` file set to process (directories are
     walked, `.lake` build trees skipped), deduplicated and in a deterministic
     (sorted) order so runs are reproducible. -/
-def expand (inputs : Array System.FilePath) : IO (Array System.FilePath) := do
+def expand
+    (inputs : Array System.FilePath)
+    : IO (Array System.FilePath) := do
+
   let mut files : Array System.FilePath := #[]
   for inputPath in inputs do
     if ← inputPath.isDir then files := files ++ (← find_lean inputPath)

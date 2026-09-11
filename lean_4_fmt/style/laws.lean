@@ -13,23 +13,26 @@ import lean_4_fmt.style.patch
 
 namespace Lean4Fmt.Style
 
-private
-theorem option_apply
-        {valueType : Type}
-        (base : valueType)
-        (first second : Option valueType)
-        : second.getD (first.getD base) = (second <|> first).getD base := by
+private theorem option_apply
+                {valueType : Type}
+                (base : valueType)
+                (first second : Option valueType)
+                : second.getD (first.getD base) = (second <|> first).getD base := by
+
   cases first <;> cases second <;> rfl
 
-private
-theorem option_overlay_assoc
-        {valueType : Type}
-        (first second third : Option valueType)
-        : ((third <|> second) <|> first) = (third <|> (second <|> first)) := by
+private theorem option_overlay_assoc
+                {valueType : Type}
+                (first second third : Option valueType)
+                : ((third <|> second) <|> first) = (third <|> (second <|> first)) := by
+
   cases first <;> cases second <;> cases third <;> rfl
 
 /-- The empty tree-local override changes nothing. -/
-theorem apply_empty (style : Style) : style.apply {} = style := by
+theorem apply_empty
+        (style : Style)
+        : style.apply {} = style := by
+
   cases style
   rfl
 
@@ -38,6 +41,7 @@ theorem apply_append
         (style : Style)
         (first second : style_patch)
         : (style.apply first).apply second = style.apply (style_patch.append first second) := by
+
   cases style
   cases first
   cases second
@@ -48,6 +52,7 @@ theorem patch_append_assoc
         (first second third : style_patch)
         : style_patch.append (style_patch.append first second) third
             = style_patch.append first (style_patch.append second third) := by
+
   cases first
   cases second
   cases third
@@ -58,6 +63,7 @@ theorem resolve_empty
         (style : Style)
         (path : List String)
         : override_tree.resolve style path [] = style :=
+
   rfl
 
 /-- Resolving an overlay is sequential resolution. This is the central
@@ -68,6 +74,7 @@ theorem resolve_overlay
         (earlier later : override_tree)
         : override_tree.resolve style path (override_tree.overlay earlier later)
             = override_tree.resolve (override_tree.resolve style path earlier) path later := by
+
   induction earlier generalizing style with
   | nil => rfl
   | cons override rest induction =>
@@ -78,7 +85,10 @@ theorem resolve_overlay
 theorem overlay_empty_left (tree : override_tree) : override_tree.overlay [] tree = tree := rfl
 
 /-- Tree overlay has a right identity. -/
-theorem overlay_empty_right (tree : override_tree) : override_tree.overlay tree [] = tree := by
+theorem overlay_empty_right
+        (tree : override_tree)
+        : override_tree.overlay tree [] = tree := by
+
   exact List.append_nil tree
 
 /-- Tree overlay is associative; discovery may group directory chains freely. -/
@@ -86,6 +96,7 @@ theorem overlay_assoc
         (first second third : override_tree)
         : override_tree.overlay (override_tree.overlay first second) third
             = override_tree.overlay first (override_tree.overlay second third) := by
+
   exact List.append_assoc first second third
 
 /-- For two matching entries, the later patch wins exactly as sequential
@@ -98,6 +109,7 @@ theorem resolve_matching_pair
         (secondMatches : second.matches path = true)
         : override_tree.resolve style path [first, second]
             = (style.apply first.patch).apply second.patch := by
+
   simp only [override_tree.resolve, firstMatches, secondMatches, ↓reduceIte]
 
 /-- The same deterministic-precedence fact stated through patch composition. -/
@@ -109,6 +121,7 @@ theorem resolve_matching_pair_append
         (secondMatches : second.matches path = true)
         : override_tree.resolve style path [first, second]
             = style.apply (style_patch.append first.patch second.patch) := by
+
   rw [resolve_matching_pair style path first second firstMatches secondMatches]
   exact apply_append style first.patch second.patch
 
@@ -122,6 +135,7 @@ theorem resolve_preserves_tightening
         {lowerStyle upperStyle : Style}
         (tightened : tightens lowerStyle upperStyle)
         : tightens (tree.resolve lowerStyle path) (tree.resolve upperStyle path) := by
+
   induction tree generalizing lowerStyle upperStyle with
   | nil => exact tightened
   | cons override rest induction =>
@@ -140,7 +154,9 @@ theorem resolve_preserves_tightening
 
 /-- Raising the minimum symbol length is the canonical tightening order for the
     short-symbol floor. -/
-def symbol_floor_tightens : Tightening := fun lowerStyle upperStyle =>
+def symbol_floor_tightens
+    : Tightening := fun lowerStyle upperStyle =>
+
   lowerStyle.linting.symbolMinChars ≤ upperStyle.linting.symbolMinChars
 
 /-- Group-level patches preserve the symbol-floor order: either both floors are
@@ -148,6 +164,7 @@ def symbol_floor_tightens : Tightening := fun lowerStyle upperStyle =>
 theorem patch_preserves_symbol_floor
         (patch : style_patch)
         : patch.preserves_tightening symbol_floor_tightens := by
+
   intro lowerStyle upperStyle tightened
   cases patch with
   | mk layout breaking alignment blankLines spacing imports comments naming linting =>
@@ -162,6 +179,7 @@ theorem resolve_preserves_symbol_floor
         {lowerStyle upperStyle : Style}
         (tightened : symbol_floor_tightens lowerStyle upperStyle)
         : symbol_floor_tightens (tree.resolve lowerStyle path) (tree.resolve upperStyle path) := by
+
   apply resolve_preserves_tightening symbol_floor_tightens tree path
   · intro override _
     exact patch_preserves_symbol_floor override.patch
@@ -169,7 +187,9 @@ theorem resolve_preserves_symbol_floor
 
 /-- Enabling semantic collection-loop names tightens the policy; disabling the
     rule is the least element of this Boolean axis. -/
-def semantic_collection_loops_tighten : Tightening := fun lowerStyle upperStyle =>
+def semantic_collection_loops_tighten
+    : Tightening := fun lowerStyle upperStyle =>
+
   lowerStyle.linting.requireSemanticCollectionLoopNames = true
       → upperStyle.linting.requireSemanticCollectionLoopNames = true
 
@@ -178,6 +198,7 @@ def semantic_collection_loops_tighten : Tightening := fun lowerStyle upperStyle 
 theorem patch_preserves_semantic_collection_loops
         (patch : style_patch)
         : patch.preserves_tightening semantic_collection_loops_tighten := by
+
   intro lowerStyle upperStyle tightened
   cases patch with
   | mk layout breaking alignment blankLines spacing imports comments naming linting =>
@@ -196,6 +217,7 @@ theorem resolve_preserves_semantic_collection_loops
         : semantic_collection_loops_tighten
           (tree.resolve lowerStyle path)
           (tree.resolve upperStyle path) := by
+
   apply resolve_preserves_tightening semantic_collection_loops_tighten tree path
   · intro override _
     exact patch_preserves_semantic_collection_loops override.patch
@@ -203,7 +225,9 @@ theorem resolve_preserves_semantic_collection_loops
 
 /-- Enabling semantic field names tightens the policy; disabling the rule is
     the least element of this Boolean axis. -/
-def semantic_field_names_tighten : Tightening := fun lowerStyle upperStyle =>
+def semantic_field_names_tighten
+    : Tightening := fun lowerStyle upperStyle =>
+
   lowerStyle.linting.requireSemanticFieldNames = true
       → upperStyle.linting.requireSemanticFieldNames = true
 
@@ -212,6 +236,7 @@ def semantic_field_names_tighten : Tightening := fun lowerStyle upperStyle =>
 theorem patch_preserves_semantic_field_names
         (patch : style_patch)
         : patch.preserves_tightening semantic_field_names_tighten := by
+
   intro lowerStyle upperStyle tightened
   cases patch with
   | mk layout breaking alignment blankLines spacing imports comments naming linting =>
@@ -228,6 +253,7 @@ theorem resolve_preserves_semantic_field_names
         {lowerStyle upperStyle : Style}
         (tightened : semantic_field_names_tighten lowerStyle upperStyle)
         : semantic_field_names_tighten (tree.resolve lowerStyle path) (tree.resolve upperStyle path) := by
+
   apply resolve_preserves_tightening semantic_field_names_tighten tree path
   · intro override _
     exact patch_preserves_semantic_field_names override.patch
@@ -235,7 +261,9 @@ theorem resolve_preserves_semantic_field_names
 
 /-- Enabling semantic declaration names tightens the policy; disabling the rule
     is the least element of this Boolean axis. -/
-def semantic_declaration_names_tighten : Tightening := fun lowerStyle upperStyle =>
+def semantic_declaration_names_tighten
+    : Tightening := fun lowerStyle upperStyle =>
+
   lowerStyle.linting.requireSemanticDeclarationNames = true
       → upperStyle.linting.requireSemanticDeclarationNames = true
 
@@ -244,6 +272,7 @@ def semantic_declaration_names_tighten : Tightening := fun lowerStyle upperStyle
 theorem patch_preserves_semantic_declaration_names
         (patch : style_patch)
         : patch.preserves_tightening semantic_declaration_names_tighten := by
+
   intro lowerStyle upperStyle tightened
   cases patch with
   | mk layout breaking alignment blankLines spacing imports comments naming linting =>
@@ -262,6 +291,7 @@ theorem resolve_preserves_semantic_declaration_names
         : semantic_declaration_names_tighten
           (tree.resolve lowerStyle path)
           (tree.resolve upperStyle path) := by
+
   apply resolve_preserves_tightening semantic_declaration_names_tighten tree path
   · intro override _
     exact patch_preserves_semantic_declaration_names override.patch
@@ -271,18 +301,23 @@ theorem resolve_preserves_semantic_declaration_names
 theorem recursive_helper_policy_apply_identity
         (style : Style)
         : (style.apply {}).linting.requireSemanticRecursiveHelperNames
-            = style.linting.requireSemanticRecursiveHelperNames := by rw [apply_empty]
+            = style.linting.requireSemanticRecursiveHelperNames := by
+
+  rw [apply_empty]
 
 /-- Patch grouping cannot change the recursive-helper policy projection. -/
 theorem recursive_helper_policy_patch_assoc
         (first second third : style_patch)
         : (style_patch.append (style_patch.append first second) third).linting
             = (style_patch.append first (style_patch.append second third)).linting := by
+
   rw [patch_append_assoc]
 
 /-- Enabling semantic recursive-helper names tightens the policy; disabling the
     rule is the least element of this Boolean axis. -/
-def semantic_recursive_helper_names_tighten : Tightening := fun lowerStyle upperStyle =>
+def semantic_recursive_helper_names_tighten
+    : Tightening := fun lowerStyle upperStyle =>
+
   lowerStyle.linting.requireSemanticRecursiveHelperNames = true
       → upperStyle.linting.requireSemanticRecursiveHelperNames = true
 
@@ -291,6 +326,7 @@ def semantic_recursive_helper_names_tighten : Tightening := fun lowerStyle upper
 theorem patch_preserves_semantic_recursive_helper_names
         (patch : style_patch)
         : patch.preserves_tightening semantic_recursive_helper_names_tighten := by
+
   intro lowerStyle upperStyle tightened
   cases patch with
   | mk layout breaking alignment blankLines spacing imports comments naming linting =>
@@ -309,6 +345,7 @@ theorem resolve_preserves_semantic_recursive_helper_names
         : semantic_recursive_helper_names_tighten
           (tree.resolve lowerStyle path)
           (tree.resolve upperStyle path) := by
+
   apply resolve_preserves_tightening semantic_recursive_helper_names_tighten tree path
   · intro override _
     exact patch_preserves_semantic_recursive_helper_names override.patch
@@ -318,18 +355,23 @@ theorem resolve_preserves_semantic_recursive_helper_names
 theorem lambda_policy_apply_identity
         (style : Style)
         : (style.apply {}).linting.requireSemanticLambdaNames
-            = style.linting.requireSemanticLambdaNames := by rw [apply_empty]
+            = style.linting.requireSemanticLambdaNames := by
+
+  rw [apply_empty]
 
 /-- Patch grouping cannot change the semantic-lambda policy projection. -/
 theorem lambda_policy_patch_assoc
         (first second third : style_patch)
         : (style_patch.append (style_patch.append first second) third).linting
             = (style_patch.append first (style_patch.append second third)).linting := by
+
   rw [patch_append_assoc]
 
 /-- Enabling semantic lambda names tightens the policy; disabling the rule is
     the least element of this Boolean axis. -/
-def semantic_lambda_names_tighten : Tightening := fun lowerStyle upperStyle =>
+def semantic_lambda_names_tighten
+    : Tightening := fun lowerStyle upperStyle =>
+
   lowerStyle.linting.requireSemanticLambdaNames = true
       → upperStyle.linting.requireSemanticLambdaNames = true
 
@@ -338,6 +380,7 @@ def semantic_lambda_names_tighten : Tightening := fun lowerStyle upperStyle =>
 theorem patch_preserves_semantic_lambda_names
         (patch : style_patch)
         : patch.preserves_tightening semantic_lambda_names_tighten := by
+
   intro lowerStyle upperStyle tightened
   cases patch with
   | mk layout breaking alignment blankLines spacing imports comments naming linting =>
@@ -356,6 +399,7 @@ theorem resolve_preserves_semantic_lambda_names
         : semantic_lambda_names_tighten
           (tree.resolve lowerStyle path)
           (tree.resolve upperStyle path) := by
+
   apply resolve_preserves_tightening semantic_lambda_names_tighten tree path
   · intro override _
     exact patch_preserves_semantic_lambda_names override.patch
@@ -365,6 +409,7 @@ theorem resolve_preserves_semantic_lambda_names
 theorem let_policy_apply_identity
         (style : Style)
         : (style.apply {}).linting.requireSemanticLetNames = style.linting.requireSemanticLetNames := by
+
   rw [apply_empty]
 
 /-- Patch grouping cannot change the semantic-let policy projection. -/
@@ -372,11 +417,14 @@ theorem let_policy_patch_assoc
         (first second third : style_patch)
         : (style_patch.append (style_patch.append first second) third).linting
             = (style_patch.append first (style_patch.append second third)).linting := by
+
   rw [patch_append_assoc]
 
 /-- Enabling semantic let names tightens the policy; disabling the rule is the
     least element of this Boolean axis. -/
-def semantic_let_names_tighten : Tightening := fun lowerStyle upperStyle =>
+def semantic_let_names_tighten
+    : Tightening := fun lowerStyle upperStyle =>
+
   lowerStyle.linting.requireSemanticLetNames = true
       → upperStyle.linting.requireSemanticLetNames = true
 
@@ -385,6 +433,7 @@ def semantic_let_names_tighten : Tightening := fun lowerStyle upperStyle =>
 theorem patch_preserves_semantic_let_names
         (patch : style_patch)
         : patch.preserves_tightening semantic_let_names_tighten := by
+
   intro lowerStyle upperStyle tightened
   cases patch with
   | mk layout breaking alignment blankLines spacing imports comments naming linting =>
@@ -401,6 +450,7 @@ theorem resolve_preserves_semantic_let_names
         {lowerStyle upperStyle : Style}
         (tightened : semantic_let_names_tighten lowerStyle upperStyle)
         : semantic_let_names_tighten (tree.resolve lowerStyle path) (tree.resolve upperStyle path) := by
+
   apply resolve_preserves_tightening semantic_let_names_tighten tree path
   · intro override _
     exact patch_preserves_semantic_let_names override.patch

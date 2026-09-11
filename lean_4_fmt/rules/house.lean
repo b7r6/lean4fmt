@@ -18,81 +18,99 @@ namespace Lean4Fmt.Rules.House
 open Lean
 open Lean4Fmt.Style
 
-private
-def source_of? (stx : Syntax) : Option String := (stx.getSubstring? false false).map (·.toString)
+private def source_of?
+            (stx : Syntax)
+            : Option String :=
 
-private
-def pos_of (stx : Syntax) : Nat := (stx.getRange?.map (·.start.byteIdx)).getD 0
+  (stx.getSubstring? false false).map (·.toString)
 
-private
-def line_count (src : String) : Nat := (src.splitOn "\n").length
+private def pos_of (stx : Syntax) : Nat := (stx.getRange?.map (·.start.byteIdx)).getD 0
 
-private
-def occurrence_count (needle src : String) : Nat := (src.splitOn needle).length - 1
+private def line_count (src : String) : Nat := (src.splitOn "\n").length
 
-private
-def stanza_break_count (src : String) : Nat :=
+private def occurrence_count (needle src : String) : Nat := (src.splitOn needle).length - 1
+
+private def stanza_break_count
+            (src : String)
+            : Nat :=
+
   let lines := src.splitOn "\n"
   let body := (lines.dropWhile (fun line => !(line.contains ":="))).drop 1
   (body.zip body.tail).foldl
-    (fun count pair =>
-      let current := pair.1.trimAscii
-      let next := pair.2.trimAscii
-      let structuralContinuation :=
-        next.startsWith "where" || next.startsWith "termination_by"
-            || next.startsWith "decreasing_by"
-      if current.isEmpty && !next.isEmpty && !next.startsWith "--" && !next.startsWith "/-"
-          && !structuralContinuation then
-        count + 1
-      else
-        count)
+    (
+      fun count pair =>
+        let current := pair.1.trimAscii
+        let next := pair.2.trimAscii
+        let structuralContinuation :=
+          next.startsWith "where" || next.startsWith "termination_by"
+              || next.startsWith "decreasing_by"
+        if current.isEmpty && !next.isEmpty && !next.startsWith "--" && !next.startsWith "/-"
+            && !structuralContinuation then
+          count + 1
+        else
+          count
+    )
     0
 
-private partial
-def first_do_seq? (stx : Syntax) : Option Syntax :=
+private partial def first_do_seq?
+                    (stx : Syntax)
+                    : Option Syntax :=
+
   if stx.getKind == ``Lean.Parser.Term.doSeqIndent then
     some stx
   else
     stx.getArgs.findSome? first_do_seq?
 
-private
-def do_statement_count (stx : Syntax) : Nat :=
+private def do_statement_count
+            (stx : Syntax)
+            : Nat :=
+
   match first_do_seq? stx with
   | none => 1
   | some sequence =>
     sequence.getArgs.foldl
-      (fun count group =>
-        count
-            + group.getArgs.foldl
-              (fun inner child =>
-                if child.getKind == ``Lean.Parser.Term.doSeqItem then inner + 1 else inner)
-              0)
+      (
+        fun count group =>
+          count
+              + group.getArgs.foldl
+                (
+                  fun inner child =>
+                    if child.getKind == ``Lean.Parser.Term.doSeqItem then inner + 1 else inner
+                )
+                0
+      )
       0
 
-private
-def is_bind_operator (stx : Syntax) : Bool := stx.isAtom && source_of? stx == some ">>="
+private def is_bind_operator (stx : Syntax) : Bool := stx.isAtom && source_of? stx == some ">>="
 
-private
-def is_direct_bind_chain (stx : Syntax) : Bool := stx.getArgs.any is_bind_operator
+private def is_direct_bind_chain (stx : Syntax) : Bool := stx.getArgs.any is_bind_operator
 
-private
-def is_decl_body_kind (kind : Name) : Bool :=
+private def is_decl_body_kind
+            (kind : Name)
+            : Bool :=
+
   kind == ``Lean.Parser.Command.definition || kind == ``Lean.Parser.Command.theorem
       || kind == ``Lean.Parser.Command.opaque
       || kind == ``Lean.Parser.Command.abbrev
       || kind == ``Lean.Parser.Command.instance
 
-private
-def is_handler_decl_kind (kind : Name) : Bool :=
+private def is_handler_decl_kind
+            (kind : Name)
+            : Bool :=
+
   kind == ``Lean.Parser.Command.definition || kind == ``Lean.Parser.Command.opaque
 
-private
-def is_declaration_value_kind (kind : Name) : Bool :=
+private def is_declaration_value_kind
+            (kind : Name)
+            : Bool :=
+
   kind == ``Lean.Parser.Command.declValSimple || kind == ``Lean.Parser.Command.declValEqns
       || kind == ``Lean.Parser.Command.whereStructInst
 
-private
-def is_dispatch_kind (kind : Name) : Bool :=
+private def is_dispatch_kind
+            (kind : Name)
+            : Bool :=
+
   kind == ``Lean.Parser.Command.declValEqns || kind == ``termIfThenElse
       || kind == ``termDepIfThenElse
       || kind == ``Lean.Parser.Term.doIf
@@ -109,46 +127,60 @@ def is_dispatch_kind (kind : Name) : Bool :=
       || kind == ``Lean.Parser.Term.doRepeat
       || kind == ``Lean.Parser.Term.doRepeatUntil
 
-private
-def is_nested_declaration_kind (kind : Name) : Bool :=
+private def is_nested_declaration_kind
+            (kind : Name)
+            : Bool :=
+
   is_decl_body_kind kind || kind == ``Lean.Parser.Term.letRecDecl
 
-private partial
-def branch_count (root : Syntax) (stx : Syntax) : Nat :=
+private partial def branch_count
+                    (root : Syntax)
+                    (stx : Syntax)
+                    : Nat :=
+
   if stx != root && is_nested_declaration_kind stx.getKind then
     0
   else
     let here := if is_dispatch_kind stx.getKind then 1 else 0
     stx.getArgs.foldl (fun count child => count + branch_count root child) here
 
-private
-def declaration_branch_count (stx : Syntax) : Nat :=
+private def declaration_branch_count
+            (stx : Syntax)
+            : Nat :=
+
   match stx.getArgs.find? (is_declaration_value_kind ·.getKind) with
   | some body => branch_count body body
   | none      => 0
 
-private partial
-def identifier_count : Syntax → Nat
+private partial def identifier_count : Syntax → Nat
   | .ident ..      => 1
   | .node _ _ args => args.foldl (fun count child => count + identifier_count child) 0
   | _              => 0
 
-private
-def binder_name_count (children : Array Syntax) : Nat :=
-  (children.foldl
-    (fun (count, inType) child =>
-      if inType then
-        (count, true)
-      else
-        let source := (source_of? child).getD ""
-        if child.getKind == ``Lean.Parser.Term.typeSpec || source.contains ':' then
-          (count, true)
-        else
-          (count + identifier_count child, false))
-    (0, false)).1
+private def binder_name_count
+            (children : Array Syntax)
+            : Nat :=
 
-private
-def explicit_binder_parameter_count (binder : Syntax) : Nat :=
+  (
+    children.foldl
+      (
+        fun (count, inType) child =>
+          if inType then
+            (count, true)
+          else
+            let source := (source_of? child).getD ""
+            if child.getKind == ``Lean.Parser.Term.typeSpec || source.contains ':' then
+              (count, true)
+            else
+              (count + identifier_count child, false)
+      )
+      (0, false)
+  ).1
+
+private def explicit_binder_parameter_count
+            (binder : Syntax)
+            : Nat :=
+
   if binder.isIdent then
     1
   else if binder.getKind == ``Lean.Parser.Term.explicitBinder then
@@ -157,8 +189,10 @@ def explicit_binder_parameter_count (binder : Syntax) : Nat :=
   else
     0
 
-private
-def declaration_parameter_count (stx : Syntax) : Nat :=
+private def declaration_parameter_count
+            (stx : Syntax)
+            : Nat :=
+
   match stx.getArgs.find? (·.getKind == ``Lean.Parser.Command.declSig) with
   | none => 0
   | some signature =>
@@ -167,13 +201,13 @@ def declaration_parameter_count (stx : Syntax) : Nat :=
     | some binders =>
       binders.getArgs.foldl (fun count binder => count + explicit_binder_parameter_count binder) 0
 
-private
-def lint_stanza_breaks
-    (policy : Linting)
-    (stx : Syntax)
-    (src : String)
-    (found : Array Diagnostic)
-    : Array Diagnostic :=
+private def lint_stanza_breaks
+            (policy : Linting)
+            (stx : Syntax)
+            (src : String)
+            (found : Array Diagnostic)
+            : Array Diagnostic :=
+
   let count :=
     if is_handler_decl_kind stx.getKind && policy.requireStanzaComments then
       stanza_break_count src
@@ -188,13 +222,13 @@ def lint_stanza_breaks
         rule := "house/stanza-comment",
         message := s!"declaration has {count} uncommented blank-line stanza breaks; introduce each next block with a one-line imperative comment" }
 
-private
-def lint_declaration
-    (policy : Linting)
-    (stx : Syntax)
-    (src : String)
-    (found : Array Diagnostic)
-    : Array Diagnostic :=
+private def lint_declaration
+            (policy : Linting)
+            (stx : Syntax)
+            (src : String)
+            (found : Array Diagnostic)
+            : Array Diagnostic :=
+
   let lines := line_count src
   let found :=
     if lines > 60 then
@@ -238,8 +272,11 @@ def lint_declaration
   else
     found
 
-private
-def lint_match_alt (stx : Syntax) (found : Array Diagnostic) : Array Diagnostic :=
+private def lint_match_alt
+            (stx : Syntax)
+            (found : Array Diagnostic)
+            : Array Diagnostic :=
+
   match stx.getArgs.back? with
   | some body =>
     let operations := do_statement_count body
@@ -262,8 +299,12 @@ def lint_match_alt (stx : Syntax) (found : Array Diagnostic) : Array Diagnostic 
       found
   | none => found
 
-private partial
-def visit (policy : Linting) (stx : Syntax) (found : Array Diagnostic) : Array Diagnostic :=
+private partial def visit
+                    (policy : Linting)
+                    (stx : Syntax)
+                    (found : Array Diagnostic)
+                    : Array Diagnostic :=
+
   let found :=
     if is_decl_body_kind stx.getKind then
       match source_of? stx with
@@ -278,6 +319,7 @@ def lint (style : Style) (stx : Syntax) : Array Diagnostic := visit style.lintin
 example : stanza_break_count "def f := do\n\n  action" = 1 := by native_decide
 
 example : stanza_break_count "def f := do\n\n  -- perform the action.\n  action" = 0 := by
+
   native_decide
 
 example : stanza_break_count "def f := value\n\nwhere\n  value := 1" = 0 := by native_decide

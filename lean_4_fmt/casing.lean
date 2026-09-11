@@ -38,8 +38,10 @@ def Case.of_string? : String → Option Case
   | _            => none
 
 /-- Capitalize the first character. -/
-private
-def cap (source : String) : String :=
+private def cap
+            (source : String)
+            : String :=
+
   match source.toList with
   | [] => ""
   | headChar :: tailChars => String.ofList (headChar.toUpper :: tailChars)
@@ -47,8 +49,10 @@ def cap (source : String) : String :=
 /-- Split one `_`-free piece on lower/digit → Upper boundaries and immediately
     before the final capital of an acronym followed by lowercase (`HTTPServer`
     → `HTTP`, `Server`). Each word is lowercased. -/
-private
-def split_piece (source : String) : List String :=
+private def split_piece
+            (source : String)
+            : List String :=
+
   let rec visit
       (previous : Option Char)
       (current : List Char)
@@ -71,11 +75,18 @@ def split_piece (source : String) : List String :=
 
 /-- Split an identifier into lowercased words, honoring BOTH snake_case (split on
     `_`) and camel/UpperCamel (split on case boundaries). -/
-def split_words (source : String) : List String :=
+def split_words
+    (source : String)
+    : List String :=
+
   (source.splitOn "_").flatMap split_piece |>.filter (· ≠ "")
 
 /-- Join words in the target case. -/
-def to_case (target_case : Case) (words : List String) : String :=
+def to_case
+    (target_case : Case)
+    (words : List String)
+    : String :=
+
   match target_case with
   | .snake => String.intercalate "_" words
   | .camel =>
@@ -87,7 +98,11 @@ def to_case (target_case : Case) (words : List String) : String :=
 
 /-- Convert an identifier to the target case, preserving a leading `_` run (the
     Lean private/root convention) and a trailing `'` run (primes) as affixes. -/
-def convert (target_case : Case) (source : String) : String :=
+def convert
+    (target_case : Case)
+    (source : String)
+    : String :=
+
   if target_case == .preserve then
     source
   else

@@ -36,20 +36,22 @@ def emit_diag (document : Rules.Diagnostic) : emit_m Unit := modify (·.push doc
 abbrev Walk := Lean.Syntax → emit_m Doc
 
 /-- Bare source of a form (no leading/trailing trivia). -/
-def bare_src (stx : Lean.Syntax) : String :=
+def bare_src
+    (stx : Lean.Syntax)
+    : String :=
+
   (stx.getSubstring? false false).map (·.toString) |>.getD ""
 
-private
-structure canonical_piece_state where
+private structure canonical_piece_state where
   output : String := ""
   cursor : Nat := 0
 
-private
-def append_canonical_piece
-    (state : canonical_piece_state)
-    (code quotation : String)
-    (cursor : Nat)
-    : canonical_piece_state :=
+private def append_canonical_piece
+            (state : canonical_piece_state)
+            (code quotation : String)
+            (cursor : Nat)
+            : canonical_piece_state :=
+
   { output := state.output ++ Lean4Fmt.Doc.canon_verbatim_ws code ++ quotation, cursor }
 
 /-- `canonVerbatimWs` applied PIECEWISE around embedded quotation TERMS: the
@@ -60,7 +62,12 @@ def append_canonical_piece
     `skipBytes` shifts the range base when `s` is a SUFFIX of the node's bare
     source (spanBodyBlank hands us the tail lines). Whole-node fallbacks: no
     substring/position info, or range geometry that doesn't land inside `s`. -/
-def canon_ws_piecewise (stx : Lean.Syntax) (source : String) (skipBytes : Nat := 0) : String :=
+def canon_ws_piecewise
+    (stx : Lean.Syntax)
+    (source : String)
+    (skipBytes : Nat := 0)
+    : String :=
+
   Id.run
     do
       if Lean4Fmt.Syntax.has_quotation_command stx then
@@ -93,7 +100,11 @@ def canon_ws_piecewise (stx : Lean.Syntax) (source : String) (skipBytes : Nat :=
     `verbatim` emits it; PROBE constructions (docs built speculatively and
     possibly discarded) use `verbatimQuiet` and log at their decision site —
     the trail reports what is EMITTED, not what was considered. -/
-def log_opt_out (stx : Lean.Syntax) (why : String := "") : emit_m Unit :=
+def log_opt_out
+    (stx : Lean.Syntax)
+    (why : String := "")
+    : emit_m Unit :=
+
   let pos := (stx.getPos?.map (·.byteIdx)).getD 0
   let len := ((stx.getTailPos?.map (·.byteIdx)).getD pos) - pos
   emit_diag
@@ -109,7 +120,10 @@ def log_opt_out (stx : Lean.Syntax) (why : String := "") : emit_m Unit :=
     trivia) — the renderer dedents continuations by that, so the block re-anchors
     correctly at whatever column it is placed (the composition seam, §0.3).
     This variant is TRAIL-QUIET — for speculative doc construction. -/
-def verbatim_quiet (stx : Lean.Syntax) : emit_m Doc := do
+def verbatim_quiet
+    (stx : Lean.Syntax)
+    : emit_m Doc := do
+
   let lead := (Lean4Fmt.Syntax.leading? stx).getD ""
   let base :=
     if lead.any (· == '\n') then
@@ -134,7 +148,11 @@ def verbatim_quiet (stx : Lean.Syntax) : emit_m Doc := do
   else pure (.verbatim (canon source) base)
 
 /-- Opaque reproduction WITH the opt-out trail entry — the safe default. -/
-def verbatim (stx : Lean.Syntax) (why : String := "") : emit_m Doc := do
+def verbatim
+    (stx : Lean.Syntax)
+    (why : String := "")
+    : emit_m Doc := do
+
   if !(bare_src stx).isEmpty then   -- an empty node emits nothing: not an opt-out
     log_opt_out stx why
   verbatim_quiet stx
@@ -142,12 +160,19 @@ def verbatim (stx : Lean.Syntax) (why : String := "") : emit_m Doc := do
 /-- Source-exact reproduction for a layout-sensitive owner that already sits at
     its final column. Unlike `verbatim`, this does not canonicalize or reanchor
     token payloads whose internal whitespace is semantic. -/
-def source_exact (stx : Lean.Syntax) (why : String) : emit_m Doc := do
+def source_exact
+    (stx : Lean.Syntax)
+    (why : String)
+    : emit_m Doc := do
+
   log_opt_out stx why
   pure (.verbatim (bare_src stx) 0)
 
 /-- Byte-exact passthrough of a whole form INCLUDING its leading trivia. -/
-def passthrough (stx : Lean.Syntax) : emit_m Doc := do
+def passthrough
+    (stx : Lean.Syntax)
+    : emit_m Doc := do
+
   emit_diag
     { severity := .debug,
       pos      := (stx.getPos?.map (·.byteIdx)).getD 0,
@@ -181,6 +206,7 @@ def arms_aligned
     (arms : Array (Doc × Option Doc))
     (fallback : Doc)
     : Doc :=
+
   Id.run do
     if mode == Lean4Fmt.Style.align_mode.never || arms.size < 2 then
       return fallback
@@ -205,27 +231,23 @@ structure arm_piece where
       comment) — `none` rides plain and terminates its run. -/
   gridRow : Option (Doc × Option Doc)
 
-private
-structure arm_run_state where
+private structure arm_run_state where
   plainDoc : Doc := .nil
   rows     : Array (Doc × Option Doc) := #[]
   allGrid  : Bool := true
 
-private
-structure arm_runs_state where
+private structure arm_runs_state where
   output      : Doc := .nil
   run         : Array arm_piece := #[]
   sectionLead : Doc := .nil
 
-private
-structure alt_pattern_state where
+private structure alt_pattern_state where
   groups  : Array String := #[]
   current : Array Lean.Syntax := #[]
   valid   : Bool := true
   doc     : Doc := .nil
 
-private
-structure arm_piece_state where
+private structure arm_piece_state where
   pieces        : Array arm_piece := #[]
   patternDoc    : Doc := .nil
   patternBroken : Bool := false
@@ -244,6 +266,7 @@ def arms_aligned_runs
     (maxDelta : Nat)
     (pieces : Array arm_piece)
     : Doc :=
+
   Id.run do
     let flush :=
       fun (out sectLead : Doc) (sect : Array arm_piece) =>
@@ -278,7 +301,10 @@ def arms_aligned_runs
     return flush state.output state.sectionLead state.run
 
 /-- The `matchAlt` nodes of a `matchAlts` node (groups flattened). -/
-def match_alts_of (altsNode : Lean.Syntax) : Array Lean.Syntax :=
+def match_alts_of
+    (altsNode : Lean.Syntax)
+    : Array Lean.Syntax :=
+
   Id.run do
     let mut alts : Array Lean.Syntax := #[]
     for group in altsNode.getArgs do
@@ -286,22 +312,22 @@ def match_alts_of (altsNode : Lean.Syntax) : Array Lean.Syntax :=
         if child.getKind == ``Lean.Parser.Term.matchAlt then alts := alts.push child
     return alts
 
-private
-def flush_alt_pattern_group
-    (joinFlat? : Lean.Syntax → Option String)
-    (group : Array Lean.Syntax)
-    : Option String := do
+private def flush_alt_pattern_group
+            (joinFlat? : Lean.Syntax → Option String)
+            (group : Array Lean.Syntax)
+            : Option String := do
+
   if group.isEmpty then none
   let text ← joinFlat? (Lean.mkNullNode group)
   if text.isEmpty || text.any (· == '\n') then none
   else some text
 
-private
-def push_alt_pattern_separator
-    (joinFlat? : Lean.Syntax → Option String)
-    (separator : Lean.Syntax)
-    (state : alt_pattern_state)
-    : alt_pattern_state :=
+private def push_alt_pattern_separator
+            (joinFlat? : Lean.Syntax → Option String)
+            (separator : Lean.Syntax)
+            (state : alt_pattern_state)
+            : alt_pattern_state :=
+
   let trivia_empty :=
     ((Lean4Fmt.Syntax.leading? separator).getD "").trimAscii.toString.isEmpty
         && ((Lean4Fmt.Syntax.trailing? separator).getD "").trimAscii.toString.isEmpty
@@ -328,6 +354,7 @@ def alt_pattern_stack?
     (patStx : Lean.Syntax)
     (joinFlat? : Lean.Syntax → Option String)
     : emit_m (Option (Doc × Bool)) := do
+
   let width := (← read).layout.lineWidth
   let mut state : alt_pattern_state := {}
   for child in patStx.getArgs do
@@ -363,12 +390,12 @@ def alt_pattern_stack?
       documents
   return some result
 
-private
-def arm_body_part
-    (body : Lean.Syntax)
-    (bodyDoc : Doc)
-    (sourceBroken preserveLineBreaks : Bool)
-    : Doc :=
+private def arm_body_part
+            (body : Lean.Syntax)
+            (bodyDoc : Doc)
+            (sourceBroken preserveLineBreaks : Bool)
+            : Doc :=
+
   let glueBody :=
     body.getKind == ``Lean.Parser.Term.do || body.getKind == ``Lean.Parser.Term.byTactic
   if glueBody then
@@ -378,13 +405,13 @@ def arm_body_part
   else
     .group (.nest 2 (.line ++ bodyDoc))
 
-private
-def arm_grid_row
-    (body : Lean.Syntax)
-    (bodyDoc patternDoc : Doc)
-    (hasTrail patternBroken : Bool)
-    (arrowText : String)
-    : Option (Doc × Option Doc) :=
+private def arm_grid_row
+            (body : Lean.Syntax)
+            (bodyDoc patternDoc : Doc)
+            (hasTrail patternBroken : Bool)
+            (arrowText : String)
+            : Option (Doc × Option Doc) :=
+
   let inlineOk :=
     body.getKind != ``Lean.Parser.Term.do && !Lean4Fmt.Doc.hasMultilineVerbatim bodyDoc
   if inlineOk && !hasTrail && arrowText == "=>" && !patternBroken then
@@ -412,6 +439,7 @@ def arm_pieces?
     (alts : Array Lean.Syntax)
     (joinFlat? : Lean.Syntax → Option String := fun _ => none)
     : emit_m (Option (Array arm_piece)) := do
+
   let mut state : arm_piece_state := {}
   for h : idx in [0:alts.size] do
     let alt := alts[idx]
@@ -444,9 +472,9 @@ def arm_pieces?
         state := { state with patternDoc := pieceDoc, patternBroken := broken }
       | none =>
         let piece : arm_piece :=
-          { sep := sep,
-            plain := plainSep,
-            doc := (← verbatim alt "arm-multiline-pattern-piece") ++ trailDoc,
+          { sep     := sep,
+            plain   := plainSep,
+            doc     := (← verbatim alt "arm-multiline-pattern-piece") ++ trailDoc,
             gridRow := none }
         state := { state with pieces := state.pieces.push piece }
         continue

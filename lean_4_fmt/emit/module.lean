@@ -16,8 +16,7 @@ namespace Lean4Fmt.Emit.Module
 
 open Lean Lean4Fmt.Doc
 
-private
-structure trivia_state where
+private structure trivia_state where
   idx    : Nat := 0
   doc    : Doc := .nil
   blanks : Nat := 0
@@ -25,14 +24,15 @@ structure trivia_state where
   depth  : Nat := 0
   chunk  : Array String := #[]
 
-private
-structure module_state where
+private structure module_state where
   output       : Doc := .nil
   previous     : Option (Lean.Syntax × Doc) := none
   pendingTrail : Doc := .nil
 
-private
-def import_lines_doc? (imports : Array Lean.Syntax) : Option Doc :=
+private def import_lines_doc?
+            (imports : Array Lean.Syntax)
+            : Option Doc :=
+
   Id.run do
     let mut document : Doc := .nil
     for idx in [0:imports.size] do
@@ -63,8 +63,10 @@ def import_lines_doc? (imports : Array Lean.Syntax) : Option Doc :=
     `unit` places it byte-exact); the LAST import's trailing is the header's
     trailing, likewise. `none` (verbatim) on a `module`/`prelude` marker, a
     multi-line import span, or a seamless comment. -/
-private
-def header_doc? (headerSyntax : Lean.Syntax) : Option Doc :=
+private def header_doc?
+            (headerSyntax : Lean.Syntax)
+            : Option Doc :=
+
   Id.run do
     if headerSyntax.getKind != ``Lean.Parser.Module.header then
       return none
@@ -86,14 +88,14 @@ def header_doc? (headerSyntax : Lean.Syntax) : Option Doc :=
     whitespace runs between chunks become structural separators (blank runs
     clamp to policy). `none` when the trivia has a shape no seam owns
     (a same-line head segment with content). -/
-private
-def flush_trivia_chunk
-    (atFileStart : Bool)
-    (document : Doc)
-    (blanks : Nat)
-    (sawAny : Bool)
-    (chunk : Array String)
-    : Doc :=
+private def flush_trivia_chunk
+            (atFileStart : Bool)
+            (document : Doc)
+            (blanks : Nat)
+            (sawAny : Bool)
+            (chunk : Array String)
+            : Doc :=
+
   if chunk.isEmpty then
     document
   else
@@ -102,21 +104,25 @@ def flush_trivia_chunk
     document ++ separator
         ++ .textRaw (String.intercalate "\n" (chunk.toList.map (·.trimAsciiEnd.toString)))
 
-private
-def trivia_depth_delta (text : String) : Nat :=
+private def trivia_depth_delta
+            (text : String)
+            : Nat :=
+
   (text.splitOn "/-").length - 1 - ((text.splitOn "-/").length - 1)
 
-private
-def append_open_comment_line
-    (state : trivia_state)
-    (line text : String)
-    : trivia_state := { state with
+private def append_open_comment_line
+            (state : trivia_state)
+            (line text : String)
+            : trivia_state := { state with
   chunk := state.chunk.push line
   depth := state.depth + trivia_depth_delta text
 }
 
-private
-def append_blank_trivia_line (atFileStart last : Bool) (state : trivia_state) : trivia_state :=
+private def append_blank_trivia_line
+            (atFileStart last : Bool)
+            (state : trivia_state)
+            : trivia_state :=
+
   if last then
     state
   else if !state.chunk.isEmpty then
@@ -129,12 +135,12 @@ def append_blank_trivia_line (atFileStart last : Bool) (state : trivia_state) : 
   else
     { state with blanks := state.blanks + 1 }
 
-private
-def append_comment_start_line
-    (atFileStart : Bool)
-    (state : trivia_state)
-    (line text : String)
-    : trivia_state :=
+private def append_comment_start_line
+            (atFileStart : Bool)
+            (state : trivia_state)
+            (line text : String)
+            : trivia_state :=
+
   let state :=
     if !state.chunk.isEmpty && text.startsWith "/-" then
       { state with
@@ -151,12 +157,12 @@ def append_comment_start_line
   else
     state
 
-private
-def advance_trivia_line?
-    (atFileStart : Bool)
-    (lines : List String)
-    (state : trivia_state)
-    : Option trivia_state :=
+private def advance_trivia_line?
+            (atFileStart : Bool)
+            (lines : List String)
+            (state : trivia_state)
+            : Option trivia_state :=
+
   let line := lines[state.idx]!
   let last := state.idx + 1 == lines.length
   let text := line.trimAscii.toString
@@ -177,8 +183,11 @@ def advance_trivia_line?
     whitespace runs between chunks become structural separators (blank runs
     clamp to policy). `none` when the trivia has a shape no seam owns
     (a same-line head segment with content). -/
-private
-def module_trivia? (lead : String) (atFileStart : Bool) : Option Doc :=
+private def module_trivia?
+            (lead : String)
+            (atFileStart : Bool)
+            : Option Doc :=
+
   Id.run
     do
       let lines := lead.splitOn "\n"
@@ -213,25 +222,27 @@ def module_trivia? (lead : String) (atFileStart : Bool) : Option Doc :=
 
 /-- Drop the leftmost separator of a seam doc (the file head has no previous
     line — a leading hardline/blank would open the file with a stray newline). -/
-private partial
-def drop_leading_sep : Doc → Doc
+private partial def drop_leading_sep : Doc → Doc
   | .cat leftValue rightValue => .cat (drop_leading_sep leftValue) rightValue
   | .hardline => .nil
   | .blank _ => .nil
   | document => document
 
-private
-def module_doc_is_multiline (style : Lean4Fmt.Style.Style) (body : Doc) : Bool :=
+private def module_doc_is_multiline
+            (style : Lean4Fmt.Style.Style)
+            (body : Doc)
+            : Bool :=
+
   match Lean4Fmt.Doc.flat_width body with
   | some width => width > style.layout.lineWidth
   | none       => true
 
-private
-def module_gap_is_normalizable
-    (style : Lean4Fmt.Style.Style)
-    (previous current : Lean.Syntax)
-    (previousBody currentBody : Doc)
-    : Bool :=
+private def module_gap_is_normalizable
+            (style : Lean4Fmt.Style.Style)
+            (previous current : Lean.Syntax)
+            (previousBody currentBody : Doc)
+            : Bool :=
+
   if style.blankLines.policy != Lean4Fmt.Style.blank_policy.normalize then
     false
   else
@@ -239,11 +250,16 @@ def module_gap_is_normalizable
       ((Lean4Fmt.Syntax.trailing? previous).getD "") ++ ((Lean4Fmt.Syntax.leading? current).getD "")
     let newlines := (gap.toList.filter (· == '\n')).length
     gap.toList.all (·.isWhitespace) && newlines ≥ 1
-        && (module_doc_is_multiline style previousBody || module_doc_is_multiline style currentBody
-            || newlines ≥ 2)
+        && (
+          module_doc_is_multiline style previousBody || module_doc_is_multiline style currentBody
+              || newlines ≥ 2
+        )
 
-private
-def module_file_head (style : Lean4Fmt.Style.Style) (leading : String) : Doc :=
+private def module_file_head
+            (style : Lean4Fmt.Style.Style)
+            (leading : String)
+            : Doc :=
+
   if style.blankLines.policy == Lean4Fmt.Style.blank_policy.normalize then
     match module_trivia? leading (atFileStart := true) with
     | some document => document
@@ -251,11 +267,11 @@ def module_file_head (style : Lean4Fmt.Style.Style) (leading : String) : Doc :=
   else
     .textRaw leading
 
-private
-def normalized_comment_gap?
-    (style : Lean4Fmt.Style.Style)
-    (trailing leading : String)
-    : Option Doc := do
+private def normalized_comment_gap?
+            (style : Lean4Fmt.Style.Style)
+            (trailing leading : String)
+            : Option Doc := do
+
   if style.blankLines.policy != Lean4Fmt.Style.blank_policy.normalize then none
   if trailing.any (· == '\n') then none
   let trailingText := trailing.trimAscii.toString
@@ -264,29 +280,29 @@ def normalized_comment_gap?
   let trailingDoc : Doc := if trailingText.isEmpty then .nil else .text (" " ++ trailingText)
   return trailingDoc ++ separator
 
-private
-def append_comment_or_raw_gap
-    (style : Lean4Fmt.Style.Style)
-    (state : module_state)
-    (current : Lean.Syntax)
-    (body : Doc)
-    (trailing leading : String)
-    : module_state :=
+private def append_comment_or_raw_gap
+            (style : Lean4Fmt.Style.Style)
+            (state : module_state)
+            (current : Lean.Syntax)
+            (body : Doc)
+            (trailing leading : String)
+            : module_state :=
+
   match normalized_comment_gap? style trailing leading with
   | some gap => { state with output := state.output ++ gap ++ body }
   | none =>
     { state with
       output := state.output ++ state.pendingTrail ++ Lean4Fmt.Emit.leading_raw current ++ body }
 
-private
-def append_after_previous
-    (style : Lean4Fmt.Style.Style)
-    (state : module_state)
-    (current : Lean.Syntax)
-    (body : Doc)
-    (previous : Lean.Syntax)
-    (previousBody : Doc)
-    : module_state :=
+private def append_after_previous
+            (style : Lean4Fmt.Style.Style)
+            (state : module_state)
+            (current : Lean.Syntax)
+            (body : Doc)
+            (previous : Lean.Syntax)
+            (previousBody : Doc)
+            : module_state :=
+
   if (Lean4Fmt.Emit.bare_src previous).isEmpty
       && ((Lean4Fmt.Syntax.trailing? previous).getD "").isEmpty then
     { state with
@@ -304,13 +320,13 @@ def append_after_previous
     else
       append_comment_or_raw_gap style state current body trailing leading
 
-private
-def append_module_body
-    (style : Lean4Fmt.Style.Style)
-    (state : module_state)
-    (current : Lean.Syntax)
-    (body : Doc)
-    : module_state :=
+private def append_module_body
+            (style : Lean4Fmt.Style.Style)
+            (state : module_state)
+            (current : Lean.Syntax)
+            (body : Doc)
+            : module_state :=
+
   let state :=
     match state.previous with
     | some (previous, previousBody) =>
@@ -325,8 +341,11 @@ def append_module_body
     pendingTrail := Lean4Fmt.Emit.trailing_raw current
   }
 
-private
-def append_eoi (state : module_state) (command : Lean.Syntax) : module_state :=
+private def append_eoi
+            (state : module_state)
+            (command : Lean.Syntax)
+            : module_state :=
+
   let leading := (Lean4Fmt.Syntax.leading? command).getD ""
   if leading.toList.all (·.isWhitespace) then
     state
@@ -337,24 +356,24 @@ def append_eoi (state : module_state) (command : Lean.Syntax) : module_state :=
       previous := none
     }
 
-private
-def append_module_command
-    (walk : Lean4Fmt.Emit.Walk)
-    (style : Lean4Fmt.Style.Style)
-    (state : module_state)
-    (command : Lean.Syntax)
-    : Lean4Fmt.Emit.emit_m module_state := do
+private def append_module_command
+            (walk : Lean4Fmt.Emit.Walk)
+            (style : Lean4Fmt.Style.Style)
+            (state : module_state)
+            (command : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m module_state := do
+
   if command.getKind == ``Lean.Parser.Command.eoi then
     return append_eoi state command
   let body ← walk command
   return append_module_body style state command body
 
-private
-def initial_header_state
-    (walk : Lean4Fmt.Emit.Walk)
-    (style : Lean4Fmt.Style.Style)
-    (header : Lean.Syntax)
-    : Lean4Fmt.Emit.emit_m module_state := do
+private def initial_header_state
+            (walk : Lean4Fmt.Emit.Walk)
+            (style : Lean4Fmt.Style.Style)
+            (header : Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m module_state := do
+
   let body ← match header_doc? header with
   | some document => pure document
   | none => walk header
@@ -364,18 +383,21 @@ def initial_header_state
     pendingTrail := Lean4Fmt.Emit.trailing_raw header
   }
 
-private
-def initial_module_state
-    (walk : Lean4Fmt.Emit.Walk)
-    (style : Lean4Fmt.Style.Style)
-    (header? : Option Lean.Syntax)
-    : Lean4Fmt.Emit.emit_m module_state :=
+private def initial_module_state
+            (walk : Lean4Fmt.Emit.Walk)
+            (style : Lean4Fmt.Style.Style)
+            (header? : Option Lean.Syntax)
+            : Lean4Fmt.Emit.emit_m module_state :=
+
   match header? with
   | some header => initial_header_state walk style header
   | none        => pure {}
 
-private
-def finish_module (style : Lean4Fmt.Style.Style) (state : module_state) : Doc :=
+private def finish_module
+            (style : Lean4Fmt.Style.Style)
+            (state : module_state)
+            : Doc :=
+
   let finalWhitespace :=
     match state.previous with
     | some (previous, _) =>
@@ -398,7 +420,11 @@ def finish_module (style : Lean4Fmt.Style.Style) (state : module_state) : Doc :=
     byte-exact: gaps carrying comments (banners, section markers), same-line
     gaps, and gaps between single-line forms (runs of one-line defs keep their
     hand grouping). `.preserve` keeps every gap byte-exact. -/
-def emit (walk : Lean4Fmt.Emit.Walk) (stx : Lean.Syntax) : Lean4Fmt.Emit.emit_m Doc := do
+def emit
+    (walk : Lean4Fmt.Emit.Walk)
+    (stx : Lean.Syntax)
+    : Lean4Fmt.Emit.emit_m Doc := do
+
   let style ← read
   let args := stx.getArgs
   let mut state ← initial_module_state walk style args[0]?
