@@ -15,9 +15,25 @@ import lean_4_fmt.driver.config
 
 namespace Lean4Fmt.Driver
 
+/-- Format in-memory `contents` attributed to `path`, returning the gated output
+    (never worse than input) and lint diagnostics. The seam shared by file and
+    stdin formatting: `path` resolves the `--style` preset config and labels
+    diagnostics; the bytes come from the caller. -/
+unsafe
+def format_contents
+    (path : String)
+    (contents : String)
+    (width : Nat := 100)
+    (preset : String := "straylight")
+    (elabFallback : Bool := true)
+    : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
+  let base := (Lean4Fmt.Style.by_name? preset).getD Lean4Fmt.Style.straylight
+  let base := { base with layout := { base.layout with lineWidth := width } }
+  let style ← style_for base path
+  Lean4Fmt.Frontend.format_file path contents style elabFallback
+
 /-- Format one file, returning the gated output (never worse than input) and the
-    lint diagnostics. Resolves the `--style` preset via `Style.byName?` (falling
-    back to straylight) and overrides the line width from `--width`. -/
+    lint diagnostics. Reads `path` from disk, then delegates to `format_contents`. -/
 unsafe
 def format_file
     (path : String)
@@ -26,9 +42,6 @@ def format_file
     (elabFallback : Bool := true)
     : IO (String × Array Lean4Fmt.Rules.Diagnostic) := do
   let contents ← IO.FS.readFile path
-  let base := (Lean4Fmt.Style.by_name? preset).getD Lean4Fmt.Style.straylight
-  let base := { base with layout := { base.layout with lineWidth := width } }
-  let style ← style_for base path
-  Lean4Fmt.Frontend.format_file path contents style elabFallback
+  format_contents path contents width preset elabFallback
 
 end Lean4Fmt.Driver

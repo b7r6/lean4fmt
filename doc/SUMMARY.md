@@ -21,3 +21,4 @@
 
 - [The Mathlib Campaign](campaign.md)
 - [The Layout-Solver Campaign](layout-solver.md)
+- [Editor integration](editors.md)

@@ -71,6 +71,15 @@ structure Options where
       the protected formatting-study files (ServeFd, GradedMonad, ReeseAlgebra)
       keep the frozen packages mostly snakeable without being touched. -/
   protect : List String := []
+  /-- Editor mode: read source from stdin, write the formatted result to stdout
+      (layout only — never the rename axis). The gate's identity fallback means a
+      file that cannot be formatted is echoed back unchanged, so an editor buffer
+      is never corrupted. Pairs with `--stdin-path` for config/context resolution. -/
+  stdin : Bool := false
+  /-- The real on-disk path of the stdin buffer, used only to resolve style
+      config (nearest `fmt.lean`/preset) and for diagnostics — contents still come
+      from stdin. Editors pass the buffer's filename here. -/
+  stdinPath : Option String := none
   files : List String := []
   deriving Repr, Inhabited
 
@@ -104,12 +113,14 @@ def parse (args : List String) : Options :=
       | "--elab" :: value :: rest =>
         parseArgs { options with elabFallback := value != "off" } rest
       | "--no-retry" :: rest => parseArgs { options with retry := false } rest
+      | "--stdin" :: rest => parseArgs { options with stdin := true } rest
+      | "--stdin-path" :: path :: rest => parseArgs { options with stdinPath := some path } rest
       | "--lake" :: value :: rest => parseArgs { options with lakeEnv := value != "off" } rest
       | file :: rest => parseArgs { options with files := options.files ++ [file] } rest
       | [] => options
 
 def usage : String :=
-  "Usage: lean4fmt [--check | --write | --stats | --lint] [--json] [--width N] [--style NAME] [--rename-case snake|camel|upperCamel|preserve] [--elab auto|off] [--lake auto|off] <file...>\n\n"
+  "Usage: lean4fmt [--check | --write | --stats | --lint] [--stdin [--stdin-path PATH]] [--json] [--width N] [--style NAME] [--rename-case snake|camel|upperCamel|preserve] [--elab auto|off] [--lake auto|off] <file...>\n\n--stdin: read source on stdin, write formatted source on stdout (editor mode; identity fallback never corrupts the buffer).\n\n"
       ++ "Multiple files in one invocation are supported (each is parsed against its own\n"
       ++ "imports). If a file's syntax-extension initializers ever conflict in-process,\n"
       ++ "fall back to one file per process: find . -name '*.lean' | xargs -n1 lean4fmt"
