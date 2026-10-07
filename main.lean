@@ -937,8 +937,38 @@ def emit_result
   | _ => pure ()
   return failed
 
+/-- Editor mode (`--stdin`): read source on stdin, format it attributed to
+    `--stdin-path` (or `<stdin>`), write the gated result to stdout. The gate
+    falls back to identity, so an unformattable buffer is echoed back unchanged —
+    an editor buffer is never corrupted. No lake discovery: layout is
+    best-effort/syntactic, which is what a format-on-save wants (sub-second; see
+    doc/editors.md). -/
+unsafe
+def run_stdin_impl (options : Cli.Options) : IO Unit := do
+  let contents ← (← IO.getStdin).readToEnd
+  let path := options.stdinPath.getD "<stdin>"
+  -- Degrade to identity on ANY failure (unparseable input, elaboration-needed
+  -- notation without an env, exceptions): echo the original bytes so an editor
+  -- buffer is never corrupted or emptied. This is the stdin analogue of the
+  -- driver's per-job identity fallback (Driver.run_job), which format_contents
+  -- bypasses.
+  try
+    let (output, _diagnostics) ←
+      Lean4Fmt.Driver.format_contents path contents (options.width.getD 100) options.preset
+        options.elabFallback
+    IO.print output
+  catch _ =>
+    IO.print contents
+
+@[implemented_by run_stdin_impl]
+opaque run_stdin (options : Cli.Options) : IO Unit
+
 def main (argv : List String) : IO Unit := do
   let options := Cli.parse argv
+  if options.stdin then
+    init_env
+    run_stdin options
+    return
   if options.mode != .renamePlan && options.files.isEmpty then
     (← IO.getStderr).putStrLn Cli.usage
     IO.Process.exit 1
