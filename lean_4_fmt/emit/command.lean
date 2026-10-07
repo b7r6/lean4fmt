@@ -426,8 +426,7 @@ def constructor_verbatim_piece
     let docText := (bare_src args[0]!).trimAscii.toString
     if !docText.isEmpty then
       let tail := Lean.mkNullNode (args.extract 1 args.size)
-      return
-      (
+      return (
         .textRaw docText ++ .hardline,
         "",
         some (← Lean4Fmt.Emit.verbatim tail "inductive-constructor-tail-piece")
